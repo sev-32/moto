@@ -25,9 +25,17 @@
     return { m: 0, r: [0, 0, 0] };
   }
   function systemCog(F, rider) {
-    const S = F.S, mr = rider.m, mb = S.mSprung - mr, mF = S.mUnsprungF, mR = S.mUnsprungR, M = mb + mr + mF + mR;
+    const S = F.S, mF = S.mUnsprungF, mR = S.mUnsprungR, FK = F._frontKinematics(), RK = F._rearKinematics();
+    const RB = CORE.rider;
+    if (RB?.active && RB.initialized) {
+      // physical rider body: rigid parts on the bike + sprung pelvis/torso masses
+      const mb = S.mSprung - RB.model.totalKg, pts = [[mb, F.p], [mF, FK.hubW], [mR, RK.hubW], [RB.pelvis.m, RB.pelvis.x], [RB.upper.m, RB.upper.x]];
+      for (const part of RB.rigid) pts.push([part.m, v5add(F.p, v5qrot(F.q, part.r))]);
+      const M = pts.reduce((a, x) => a + x[0], 0), c = [0, 1, 2].map((i) => pts.reduce((a, x) => a + x[0] * x[1][i], 0) / M);
+      return { c, M, FK, RK };
+    }
+    const mr = rider.m, mb = S.mSprung - mr, M = mb + mr + mF + mR;
     const pr = v5add(F.p, v5qrot(F.q, rider.r));
-    const FK = F._frontKinematics(), RK = F._rearKinematics();
     const c = [0, 1, 2].map((i) => (mb * F.p[i] + mr * pr[i] + mF * FK.hubW[i] + mR * RK.hubW[i]) / M);
     return { c, M, FK, RK };
   }
@@ -51,7 +59,7 @@
     let I = 0;
     return (s, targetRad, dt) => {
       const e = targetRad - s.roll;
-      if (Math.abs(e) < iBand * DEGR) I = clamp(I + e * dt, -0.3, 0.3);
+      if (Math.abs(e) < iBand * DEGR) I = clamp(I + e * dt, -0.8, 0.8);
       else I *= Math.exp(-dt / 0.4);
       return clamp(kp * e - kd * s.rollRate + ki * I, -max, max);
     };
@@ -153,11 +161,26 @@
       },
     },
     lean35: {
-      speed: 22, T: 7, gear: 3, about: "steady turn: counter-steer into a 35 deg right lean, hold with part throttle",
+      speed: 22, T: 7, gear: 3, rider: { auto: false }, about: "steady turn: counter-steer into a 35 deg right lean (rider in line, no hang-off), hold with part throttle",
       control(c) {
         const tgt = c.t < 0.5 ? 0 : 35 * DEGR;
-        c.cmd.throttle = 0.18 + 0.12 * Math.min(1, Math.abs(c.s.roll) / (35 * DEGR));
+        c.cmd.throttle = clamp(0.2 + 0.05 * Math.min(1, Math.abs(c.s.roll) / (35 * DEGR)) + 0.05 * (22 - c.s.speed), 0, 1); // hold ~22 m/s
         c.steer = c.mem.lean(c.s, tgt, c.dt);
+      },
+    },
+    radius60: {
+      speed: 20, T: 10, gear: 3, about: "constant 60 m radius right-hander at 20 m/s (0.68 g): the rider's hang-off decides the bike's lean",
+      control(c) {
+        // a rider sets up the corner: curvature eased in over 1.5 s, lean feed-forward for the
+        // target curvature, slow trim on the (low-passed) yaw-rate error
+        const m = c.mem, V = Math.max(1, c.s.speed), e0 = clamp((c.t - 0.5) / 1.5, 0, 1), ramp = e0 * e0 * (3 - 2 * e0);
+        const rT = (-V / 60) * ramp; // right turn = negative yaw rate
+        const ff = Math.atan((V * -rT) / 9.81);
+        m.ey = (m.ey || 0) + (c.s.yawRate - rT - (m.ey || 0)) * Math.min(1, c.dt / 0.5);
+        if (c.t > 2.2) m.iy = clamp((m.iy || 0) + m.ey * c.dt, -1.2, 1.2);
+        const lean = clamp(ff + 0.15 * m.ey + 0.12 * (m.iy || 0), -48 * DEGR, 48 * DEGR);
+        c.cmd.throttle = clamp(0.22 + 0.06 * (20 - c.s.speed) + 0.06 * Math.min(1, Math.abs(c.s.roll) / (35 * DEGR)), 0, 1);
+        c.steer = m.lean(c.s, lean, c.dt);
       },
     },
     slalom: {
@@ -174,8 +197,13 @@
   function simulate(name, opts = {}) {
     const d = DEFS[name];
     if (!d) throw Error("unknown maneuver " + name);
-    const F = free, pt = PT();
+    const F = free, pt = PT(), RB = CORE.rider;
     const wasPaused = API.isPaused?.();
+    const riderSave = RB ? { auto: RB.config.auto.enabled, manual: { ...RB.manual } } : null;
+    if (RB && d.rider) {
+      if ("auto" in d.rider) RB.setAuto(d.rider.auto);
+      RB.setPosture(d.rider);
+    }
     API.setDomain?.("FREE_ROAD");
     API.pause?.();
     API.setAssistMode?.(opts.assist || d.assist || "RAW");
@@ -234,6 +262,13 @@
       }
       if (Math.abs(v5bodyAngles(F.q).rollRad) > 1.45) { M.crashT = M.crashT ?? +t.toFixed(3); break; }
     }
+    if (RB && riderSave) {
+      RB.setAuto(riderSave.auto);
+      RB.setPosture(riderSave.manual);
+    }
+    const tail = trace.filter((x) => x.t > (trace.length ? trace[trace.length - 1].t : 0) - 2);
+    M.steadyRollDeg = tail.length ? tail.reduce((a, x) => a + x.roll, 0) / tail.length : null;
+    M.steadyYawRateDeg = tail.length ? tail.reduce((a, x) => a + x.yawRate, 0) / tail.length : null;
     M.wallMs = +(performance.now() - t0).toFixed(0);
     M.simS = +(trace.length ? trace[trace.length - 1].t : 0).toFixed(2);
     M.distanceM = +Math.hypot(F.p[0], F.p[1]).toFixed(1);

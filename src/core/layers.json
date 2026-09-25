@@ -24,6 +24,11 @@
       "description": "Implicit wheel spin, suspension end-of-travel physics, chain force routing (anti-squat), aerodynamics, rider feet-down support, impulse joint limits"
     },
     {
+      "id": "rider-body",
+      "file": "40_rider_body.js",
+      "description": "Physical rider: segment masses, pelvis/torso posture servos with reactions at seat/pegs/bars, hang-off, tuck, weight shift, stand; drives legacy rider pose and aero posture"
+    },
+    {
       "id": "maneuvers",
       "file": "90_maneuvers.js",
       "description": "Rider-in-the-loop maneuver library (brake, stoppie, wheelie, launch, lean, slalom) for tests and console"

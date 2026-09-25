@@ -178,6 +178,7 @@
     tires.front.reset();
     tires.rear.reset();
     F.wheelDyn = null;
+    F.__lucidSettling = true;
     const vertical = (T) => {
       // settle is a vertical equilibrium: drop the horizontal tire forces and aligning moments so
       // the brush cannot lock in a preload while the suspension sags (hubs move fore/aft)
@@ -216,6 +217,7 @@
     F.time = 0;
     F.stepIndex = 0;
     F.history = [];
+    F.__lucidSettling = false;
     for (const k of Object.keys(F.energy || {})) F.energy[k] = 0;
     tires.front.resetBrush();
     tires.rear.resetBrush();
@@ -307,7 +309,7 @@
   }
   function riderAdvance(dt) {
     const B = global.LUCID_RIDER_MOTORCYCLE_DYNAMICS_V1287;
-    if (!B?.advance) return;
+    if (!B?.advance || CORE.rider?.active) return; // the physical rider body drives the pose instead
     riderAcc += dt;
     const h = 1 / RT.riderBridgeHz;
     if (riderAcc >= h) {

@@ -272,6 +272,13 @@
   }
 
   CH.wrenches = [chainWrench, rotorSwingarmShare, aeroWrench, feetDownWrench];
+  // extension points (rider body layer): optional mass-matrix provider, gravity mass of the
+  // sprung body, callbacks after the chassis state has been advanced
+  CH.massMatrix = null;
+  CH.sprungGravityMassKg = null;
+  CH.postIntegrate = [];
+  CH.addBodyForce = addBodyForce;
+  CH.addBodyMoment = addBodyMoment;
 
   // ------------------------------------------------------------------ coupled integrator
   function solveUnit(M, k) {
@@ -303,9 +310,9 @@
   const legacyCoupled = FP._integrateCoupled;
   FP._integrateCoupled = function (dt) {
     if (!CH.enabled) return legacyCoupled.call(this, dt);
-    const S = this.S, su = this._suspensionForces(), mb = this._massMatrixAndBias(), Q = Array(9).fill(0);
+    const S = this.S, su = this._suspensionForces(), mb = CH.massMatrix ? CH.massMatrix(this) : this._massMatrixAndBias(), Q = Array(9).fill(0);
     const gF = [0, 0, -S.mUnsprungF * S.g], gR = [0, 0, -S.mUnsprungR * S.g];
-    Q[2] -= S.mSprung * S.g;
+    Q[2] -= (CH.sprungGravityMassKg ? CH.sprungGravityMassKg(this) : S.mSprung) * S.g;
     this._addExternalForce(Q, this.tf.force, this.tf.contactPoint, this.FK, "front");
     this._addExternalForce(Q, this.tr.force, this.tr.contactPoint, this.RK, "rear");
     this._addExternalMoment(Q, this.tf.aligningMomentWorld, this.FK, "front");
@@ -364,6 +371,7 @@
     if (this.rearAngle > amax + 0.02) { this.rearAngle = amax + 0.02; if (this.rearRate > 0) this.rearRate = 0; }
     this.p = v5add(this.p, v5mul(this.v, dt));
     this.q = v5qstep(this.q, this.w, dt);
+    for (const fn of CH.postIntegrate) fn(this, dt);
     const tireLever = v5axisMoment(this.FK.pivotW, this.tf.contactPoint, this.tf.force, this.FK.axisW);
     const alignSteer = v5dot(this.tf.aligningMomentWorld || [0, 0, 0], this.FK.axisW), tireSteer = tireLever + alignSteer;
     this.internal = {

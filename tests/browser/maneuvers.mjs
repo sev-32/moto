@@ -23,6 +23,7 @@ const EXPECT = {
   wheelie: { noCrash: 1, maxLiftF: [0.2, 1.0], maxPitchDeg: [10, 45] },
   lean35: { noCrash: 1, maxAbsRollDeg: [33, 38] },
   slalom: { noCrash: 1, maxAbsRollDeg: [12, 26] },
+  radius60: { noCrash: 1, maxAbsRollDeg: [25, 42] },
 };
 function check(name, m) {
   const e = EXPECT[name] || {}, fails = [];
