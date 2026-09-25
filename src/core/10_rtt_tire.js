@@ -98,11 +98,12 @@
       verticalDampingNs: 180,            // tire hysteresis damping (N s/m)
       rimStopDeflectionM: 0.042,         // onset of rim contact / sidewall collapse
       rimStopStiffness: 1.8e6,
+      rimStopDampingNs: 6000,            // rim / sidewall impact is plastic-ish: strongly damped
       corneringStiffness: 13.5, corneringLoadExp: 0.78, corneringPressureExp: 0.22,
       longStiffness: 18.5, longLoadExp: 0.85,
       camberGain: 1.08,                  // camber-spin effectiveness (1 = thin disc); tuned so C_Fgamma ~ 0.95 Fz
       turnSlipGain: 1.0,
-      mu: 1.18, muKineticRatio: 0.78, muDecayVelocity: 6.0, muLateralRatio: 0.97,
+      mu: 1.40, muKineticRatio: 0.78, muDecayVelocity: 6.0, muLateralRatio: 0.97, // peak Fx/Fz ~1.29: sport tire, dry asphalt
       carcassLateralStiffness: 1.25e5, carcassTau: 0.0035,
       rollingResistance: 0.013,
       effectiveRadiusDeflectionFactor: 0.33,
@@ -114,11 +115,12 @@
       verticalDampingNs: 220,
       rimStopDeflectionM: 0.040,
       rimStopStiffness: 2.2e6,
+      rimStopDampingNs: 7000,
       corneringStiffness: 12.5, corneringLoadExp: 0.8, corneringPressureExp: 0.2,
       longStiffness: 20.5, longLoadExp: 0.85,
       camberGain: 1.42,
       turnSlipGain: 1.0,
-      mu: 1.27, muKineticRatio: 0.76, muDecayVelocity: 5.5, muLateralRatio: 0.97,
+      mu: 1.38, muKineticRatio: 0.76, muDecayVelocity: 5.5, muLateralRatio: 0.97,
       carcassLateralStiffness: 1.55e5, carcassTau: 0.0035,
       rollingResistance: 0.015,
       effectiveRadiusDeflectionFactor: 0.33,
@@ -147,9 +149,15 @@
       this.out = {
         Fz: 0, Fx: 0, Fy: 0, Mz: 0, areaM2: 0, halfLengthM: 0, halfWidthM: 0, deflectionM: 0, contactLateralM: 0,
         contactDepthM: 0, rollingResistanceTorqueNm: 0, effectiveRadiusM: geometry.R0, loadedRadiusM: geometry.R0, kappa: 0, alpha: 0, slidingFraction: 0,
-        utilization: 0, slidingPowerW: 0, rollingPowerW: 0, pneumaticTrailM: 0, contact: false, carcassYM: 0, muPeak: 0,
+        utilization: 0, slidingPowerW: 0, rollingPowerW: 0, pneumaticTrailM: 0, contact: false, carcassYM: 0, muPeak: 0, dFxdOmega: 0,
       };
       this.reset();
+    }
+    resetBrush() {
+      this.ux.fill(0);
+      this.uy.fill(0);
+      this.slide.fill(0);
+      this.yc = 0;
     }
     reset() {
       this.ux.fill(0);
@@ -232,7 +240,10 @@
         Fz = (gaugePa + P.carcassPressurePa) * geo.A;
         Fz += P.verticalDampingNs * Math.min(0, I.hDot) * -1 * clamp(defl / 0.002, 0, 1); // compression damping
         Fz -= P.verticalDampingNs * Math.max(0, I.hDot) * clamp(defl / 0.002, 0, 1) * 0.6; // lighter rebound
-        if (defl > P.rimStopDeflectionM) Fz += P.rimStopStiffness * (defl - P.rimStopDeflectionM);
+        if (defl > P.rimStopDeflectionM) {
+          const e = defl - P.rimStopDeflectionM, c = (P.rimStopDampingNs || 0) * Math.min(1, e / 0.003);
+          Fz += P.rimStopStiffness * e + (I.hDot < 0 ? -c * I.hDot : -0.25 * c * I.hDot);
+        }
         Fz = Math.max(0, Fz);
       }
       o.Fz = Fz;
@@ -258,7 +269,7 @@
       if (!o.contact || aMean <= 1e-5) {
         this.ux.fill(0); this.uy.fill(0); this.slide.fill(0);
         this.yc *= Math.exp(-dt / 0.01);
-        o.Fx = o.Fy = o.Mz = 0; o.slidingFraction = 0; o.utilization = 0; o.slidingPowerW = 0; o.rollingPowerW = 0; o.pneumaticTrailM = 0;
+        o.Fx = o.Fy = o.Mz = 0; o.slidingFraction = 0; o.utilization = 0; o.slidingPowerW = 0; o.rollingPowerW = 0; o.pneumaticTrailM = 0; o.dFxdOmega = 0;
         o.rollingResistanceTorqueNm = 0;
         this.lastFy = 0; this.lastFz = 0; o.carcassYM = this.yc;
         return o;
@@ -365,11 +376,12 @@
       const dyc = beta * (FyNew / cC - this.yc);
       this.yc += dyc;
       o.carcassYM = this.yc;
-      let Fx = 0, Fy = 0, Mz = 0, slideA = 0, utilSum = 0, Psl = 0;
+      let Fx = 0, Fy = 0, Mz = 0, slideA = 0, utilSum = 0, Psl = 0, dFxdW = 0;
+      const kxw = kx * dt + lowV; // d(stress_x)/d(slip velocity) of an adhered bristle over one step
       for (let k = 0; k < NL; k++) {
         const Ak = L.A[k];
         if (Ak <= 0 || L.a[k] <= 1e-5) continue;
-        const dA = Ak / NX, yk = L.y[k], base = k * NX;
+        const dA = Ak / NX, yk = L.y[k], base = k * NX, dWk = kxw * L.r[k] * dA;
         for (let i = 0; i < NX; i++) {
           const j = base + i;
           let sx = SX[j], sy = SY[j];
@@ -383,6 +395,7 @@
               this.slide[j] = 1;
             }
             utilSum += Math.min(1, r) * PLA[j] * dA;
+            if (!this.slide[j]) dFxdW += dWk;
           } else utilSum += PLA[j] * dA;
           if (this.slide[j]) {
             slideA += dA;
@@ -403,6 +416,10 @@
       o.slidingPowerW = Psl;
       o.rollingPowerW = Math.abs(o.rollingResistanceTorqueNm * I.omega);
       o.pneumaticTrailM = Math.abs(Fy) > 5 ? Mz / Fy : 0;
+      // dFx/d(omega) over the next step from the bristles that are still adhered: lets the host
+      // integrate wheel spin implicitly (the explicit update is unstable once kx*A*R^2*dt^2/I > ~2,
+      // e.g. at very high load or low speed).
+      o.dFxdOmega = dFxdW;
       o.muPeak = mu0;
       this.lastFy = Fy;
       this.lastFz = Fz;

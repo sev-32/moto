@@ -2,7 +2,31 @@
   "schema": "lucid-moto.core-layers.v1",
   "version": "V2.0.0-dev",
   "layers": [
-    { "id": "rtt-tire", "file": "10_rtt_tire.js", "description": "Real-time pneumatic brush tire model (RTT)" },
-    { "id": "realtime-integration", "file": "20_realtime_integration.js", "description": "RTT into V5 free road, real-time fixed-step loop, lite telemetry, throttled rider bridge" }
+    {
+      "id": "boot-order-guards",
+      "file": "05_boot_order_guards.js",
+      "afterLegacyScript": 36,
+      "description": "Publish the V1.29.6.2 wrist-grip and V1.29.7 operational-rider APIs only once their boots finish (fixes the intermittent V1.30 boot crash)"
+    },
+    {
+      "id": "rtt-tire",
+      "file": "10_rtt_tire.js",
+      "description": "Real-time pneumatic brush tire model (RTT)"
+    },
+    {
+      "id": "realtime-integration",
+      "file": "20_realtime_integration.js",
+      "description": "RTT into V5 free road, real-time fixed-step loop, lite telemetry, throttled rider bridge"
+    },
+    {
+      "id": "chassis-dynamics",
+      "file": "30_chassis_dynamics.js",
+      "description": "Implicit wheel spin, suspension end-of-travel physics, chain force routing (anti-squat), aerodynamics, rider feet-down support, impulse joint limits"
+    },
+    {
+      "id": "maneuvers",
+      "file": "90_maneuvers.js",
+      "description": "Rider-in-the-loop maneuver library (brake, stoppie, wheelie, launch, lean, slalom) for tests and console"
+    }
   ]
 }

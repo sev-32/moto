@@ -24,7 +24,7 @@ const r = await page.evaluate(() => {
   // straight run with no input for 4 s
   f.reset(20, 0);
   const traj = [];
-  for (let i = 0; i <= 4 * 540; i++) { if (i % 108 === 0) { const m = f.compute(); traj.push({ t: +m.timeS.toFixed(2), v: +m.body.speedMps.toFixed(2), roll: +m.body.rollDeg.toFixed(3), steer: +m.steering.angleDeg.toFixed(3), yaw: +m.body.yawDeg.toFixed(2), NF: +m.front.loadN.toFixed(0), NR: +m.rear.loadN.toFixed(0) }); } f.__rttLite = true; f.step(); }
+  for (let i = 0; i <= 4 * 540; i++) { if (i % 108 === 0) { f.__rttLite = false; const m = f.compute(); traj.push({ t: +m.timeS.toFixed(2), v: +m.body.speedMps.toFixed(2), roll: +m.body.rollDeg.toFixed(3), steer: +m.steering.angleDeg.toFixed(3), yaw: +m.body.yawDeg.toFixed(2), NF: +m.front.loadN.toFixed(0), NR: +m.rear.loadN.toFixed(0) }); } f.__rttLite = true; f.step(); }
   f.__rttLite = false;
   return { core: C && C.stats(), settle, prof, traj, tireModel: C && C.tireModel() };
 });

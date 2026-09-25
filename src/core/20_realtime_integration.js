@@ -67,6 +67,15 @@
     return which === "front" ? free.S.frontPsi : free.S.rearPsi;
   }
 
+  function gripScale(sol, which) {
+    // V1.26 thermal feedback writes p.mu = baseMu * gripFactor (baseMu = legacy particle-tire mu).
+    // RTT keeps its own calibrated mu and takes the thermal grip factor as a ratio.
+    const base = +global.LUCID_BRAKE_TIRE_FEEDBACK?.state?.tires?.[which]?.baseMu || legacyMu[which];
+    const s = (+sol.p.mu || base) / base;
+    return Number.isFinite(s) ? clamp(s, 0.3, 1.5) : 1;
+  }
+  const legacyMu = { front: 1.18, rear: 1.27 }; // FiniteThicknessTyreSolverV5 presets
+
   // ------------------------------------------------------------------ _advanceTyre override
   const baseAdvance = FP._advanceTyre;
   const tmp = { wW: [0, 0, 0] };
@@ -97,7 +106,7 @@
     const psi = hotPressurePsi(which);
     const o = T.step({
       dt, h, hDot: v5dot(K.hubV, up), gamma: F.camberRad, Vx, Vy, yawRate: v5dot(wW, up), omega,
-      pressurePa: psi * PSI, mu: sol.p.mu, muScale: RT.road.mu(K.hubW[0], K.hubW[1]),
+      pressurePa: psi * PSI, mu: T.P.mu * gripScale(sol, which), muScale: RT.road.mu(K.hubW[0], K.hubW[1]),
     });
     // legacy consumers read slip state from the solver parameter block (TC / ABS / thermal)
     sol.p.slipRatio = o.kappa;
@@ -169,8 +178,20 @@
     tires.front.reset();
     tires.rear.reset();
     F.wheelDyn = null;
+    const vertical = (T) => {
+      // settle is a vertical equilibrium: drop the horizontal tire forces and aligning moments so
+      // the brush cannot lock in a preload while the suspension sags (hubs move fore/aft)
+      if (!T || !T.force) return;
+      const up = T.frame?.up || V5_UP, fn = v5dot(T.force, up);
+      T.force = [up[0] * fn, up[1] * fn, up[2] * fn];
+      T.aligningMomentWorld = [0, 0, 0];
+    };
     for (let i = 0; i < n; i++) {
+      tires.front.resetBrush();
+      tires.rear.resetBrush();
       F._syncTyres(dt);
+      vertical(F.tf);
+      vertical(F.tr);
       F.omegaF = V / Math.max(0.2, tires.front.out.effectiveRadiusM || S.rF);
       F.omegaR = V / Math.max(0.2, tires.rear.out.effectiveRadiusM || S.rR);
       F._integrateCoupled(dt);
@@ -196,6 +217,8 @@
     F.stepIndex = 0;
     F.history = [];
     for (const k of Object.keys(F.energy || {})) F.energy[k] = 0;
+    tires.front.resetBrush();
+    tires.rear.resetBrush();
     F._syncTyres(dt, true);
   }
   FP.reset = function (speed = this.S.initialSpeedMps, rollDeg = this.S.initialRollDeg) {
