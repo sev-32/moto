@@ -1,5 +1,8 @@
 {
   "schema": "lucid-moto.core-layers.v1",
   "version": "V2.0.0-dev",
-  "layers": []
+  "layers": [
+    { "id": "rtt-tire", "file": "10_rtt_tire.js", "description": "Real-time pneumatic brush tire model (RTT)" },
+    { "id": "realtime-integration", "file": "20_realtime_integration.js", "description": "RTT into V5 free road, real-time fixed-step loop, lite telemetry, throttled rider bridge" }
+  ]
 }
