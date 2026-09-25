@@ -1,0 +1,1 @@
+window.__DYNO_PITCH_CONTINUITY_REPAIR__={schema:'ducati916.dyno-pitch-continuity.v1',source:'V1.12',oldHardClampRad:[-.55,.45],oldHardClampDeg:[-31.5126787,25.7831008],emergencyGuardDeg:60,antiWindup:true,scope:'DYNO only',freeRoadChanged:false,physicalCalibration:false};

@@ -1,0 +1,1 @@
+window.__TIRE_BOTTOMING_REPAIR__={schema:'ducati916.tire-rim-protection.v1',source:'V1.13',normalStaticGeometryUnchanged:true,rimStopOnsetFrac:.70,rimStopK:420000,rimStopK2:14000000,rimStopC:10000,authority:'progressive radial bottoming support; not physical rim-damage model'};

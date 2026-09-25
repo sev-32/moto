@@ -1,0 +1,17 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_TIRE_V8_0_CONTINUOUS_CONTACT",
+  "file": "Ducati916_TIRE_V8_0_CONTINUOUS_CONTACT.html",
+  "sha256": "1ad0116af12bc7640ee52773a48f1bfd874ef14134949af531bf3020c3625978",
+  "bytes": 12502481,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "TIRE_DATA"
+      ],
+      "sha256": "b4eaed468a7afb1f218df899b009e9a1c07e0bcf79730d6e11a1adb2e8796782"
+    }
+  ]
+}

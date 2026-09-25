@@ -1,0 +1,77 @@
+{
+  "schema": "lucid-moto.reference-index.v1",
+  "builds": [
+    {
+      "id": "Ducati916_TIRE_PHYSICS_V8_2_MULTIRATE",
+      "file": "Ducati916_TIRE_PHYSICS_V8_2_MULTIRATE.html",
+      "sha256": "a3ccea35d3b6c9e6cf8a523d32ca6a03f864901408e0e2fb502f4583e9bf45fe",
+      "bytes": 12551215,
+      "aliases": [
+        "Ducati916_TIRE_V8_2_MULTIRATE_HISTORY.html"
+      ]
+    },
+    {
+      "id": "Ducati916_TIRE_V6_3_5_SMOOTH_LAYERED",
+      "file": "Ducati916_TIRE_V6_3_5_SMOOTH_LAYERED.html",
+      "sha256": "61c2cb501ff50559207a2755de4e1ce0f30f624d1ca9ad3b668b0b28c9f47945",
+      "bytes": 12462818,
+      "aliases": []
+    },
+    {
+      "id": "Ducati916_TIRE_V7_0_LEAN_CONTACT_GRIP",
+      "file": "Ducati916_TIRE_V7_0_LEAN_CONTACT_GRIP.html",
+      "sha256": "863d6624f50feaadbdbd231ba4cf5fe26595963412e75b4bf5beb6201d9cc6ff",
+      "bytes": 12479309,
+      "aliases": []
+    },
+    {
+      "id": "Ducati916_TIRE_V8_0_CONTINUOUS_CONTACT",
+      "file": "Ducati916_TIRE_V8_0_CONTINUOUS_CONTACT.html",
+      "sha256": "1ad0116af12bc7640ee52773a48f1bfd874ef14134949af531bf3020c3625978",
+      "bytes": 12502481,
+      "aliases": []
+    },
+    {
+      "id": "Ducati916_TIRE_V8_3_EXPERIMENTAL_APPROVAL_UI",
+      "file": "Ducati916_TIRE_V8_3_EXPERIMENTAL_APPROVAL_UI.html",
+      "sha256": "ab31b49a5415e831de3f0b79fb87ccb808a50eaca0c8733c976e944bbb70b072",
+      "bytes": 12656800,
+      "aliases": []
+    },
+    {
+      "id": "Ducati916_VEHICLE_V5_0_FREE_ROAD",
+      "file": "Ducati916_VEHICLE_V5_0_FREE_ROAD.html",
+      "sha256": "65e00c7ea23207fe52a86bcc2944b437852f39d2a13b0b95b9659017bb89ed87",
+      "bytes": 19503510,
+      "aliases": []
+    },
+    {
+      "id": "Ducati916_VEHICLE_V5_3_2_BEAD_STEERING",
+      "file": "Ducati916_VEHICLE_V5_3_2_BEAD_STEERING.html",
+      "sha256": "22d7e9e521f24e43ef5ce77748d2f8e14633ab68893d20c6234bedf14a704fc9",
+      "bytes": 19558444,
+      "aliases": []
+    },
+    {
+      "id": "Ducati916_VEHICLE_V5_4_ASSIST_CAMERA_TELEMETRY",
+      "file": "Ducati916_VEHICLE_V5_4_ASSIST_CAMERA_TELEMETRY.html",
+      "sha256": "b9faca81418421ce10671af09960dfef57e3384e2263fb5be2b34db9af6a9456",
+      "bytes": 19606513,
+      "aliases": []
+    },
+    {
+      "id": "Ducati916_VEHICLE_V5_6_7_TIRE_RIM_BRAKE_REACTION",
+      "file": "Ducati916_VEHICLE_V5_6_7_TIRE_RIM_BRAKE_REACTION.html",
+      "sha256": "b48615bfa193d623186f74357893e0ea4182e371d1824ffdc06e1e700d6d92d1",
+      "bytes": 19686562,
+      "aliases": [
+        "Ducati916_FULL_MOTORCYCLE_PHYSICS_V5_6_7.html"
+      ]
+    }
+  ],
+  "studio": {
+    "note": "The V5.6.7 + V1.31.0 artist-in-loop studio is the live legacy runtime in src/legacy (rebuild: node tools/build.mjs --target legacy --verify).",
+    "file": "Ducati916_V5_6_7_V1_31_0_ARTIST_IN_LOOP_STUDIO.html",
+    "sha256": "666b4a3fa2138b8a6a94ef94982ee1845bf1651be74a4d842dd2a5d9bf813467"
+  }
+}

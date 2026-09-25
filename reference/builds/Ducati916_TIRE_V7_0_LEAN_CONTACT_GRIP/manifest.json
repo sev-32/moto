@@ -1,0 +1,17 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_TIRE_V7_0_LEAN_CONTACT_GRIP",
+  "file": "Ducati916_TIRE_V7_0_LEAN_CONTACT_GRIP.html",
+  "sha256": "863d6624f50feaadbdbd231ba4cf5fe26595963412e75b4bf5beb6201d9cc6ff",
+  "bytes": 12479309,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "TIRE_DATA"
+      ],
+      "sha256": "3049ab16e4b2c51bc40cdb508188baa1ab658f03a3f67c798c8f148f876bf193"
+    }
+  ]
+}

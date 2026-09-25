@@ -1,0 +1,1 @@
+const DATA=@@TIRE_DATA@@;

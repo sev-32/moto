@@ -1,0 +1,37 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_VEHICLE_V5_0_FREE_ROAD",
+  "file": "Ducati916_VEHICLE_V5_0_FREE_ROAD.html",
+  "sha256": "65e00c7ea23207fe52a86bcc2944b437852f39d2a13b0b95b9659017bb89ed87",
+  "bytes": 19503510,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "GLB",
+        "__FRONT_ASSET__",
+        "__REAR_ASSET__"
+      ],
+      "sha256": "db2bc050f5060105beeefdf94f7aa0e5dab2e3b902da217dd41df8d38dd1ae33"
+    },
+    {
+      "index": 1,
+      "file": "01.js",
+      "tokens": [],
+      "sha256": "a1633423b8ca86da2dc5859e852559a6fb61777aefd0de63498f76ea7765d40f"
+    },
+    {
+      "index": 2,
+      "file": "02.js",
+      "tokens": [],
+      "sha256": "46daf9f6b35e7cad2f21035b0a4ccb73c66b3a6fb33528f2ac053082f24f8f37"
+    },
+    {
+      "index": 3,
+      "file": "03.js",
+      "tokens": [],
+      "sha256": "e650a4507d214bb87232dc070e679185f985efe21c05e7ac9eb2ddc8dca03d51"
+    }
+  ]
+}

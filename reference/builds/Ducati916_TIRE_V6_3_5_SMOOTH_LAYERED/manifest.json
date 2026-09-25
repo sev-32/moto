@@ -1,0 +1,23 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_TIRE_V6_3_5_SMOOTH_LAYERED",
+  "file": "Ducati916_TIRE_V6_3_5_SMOOTH_LAYERED.html",
+  "sha256": "61c2cb501ff50559207a2755de4e1ce0f30f624d1ca9ad3b668b0b28c9f47945",
+  "bytes": 12462818,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "TIRE_DATA"
+      ],
+      "sha256": "7182604cd87c0e3fe0998b42b5dc3a6ad65d10af4239652c4d17b6c594171b8c"
+    },
+    {
+      "index": 1,
+      "file": "01.js",
+      "tokens": [],
+      "sha256": "b21d7cfbc20bcfd9744f866e8636f1a34fdb2f475bd626df3cb03938df606c7d"
+    }
+  ]
+}

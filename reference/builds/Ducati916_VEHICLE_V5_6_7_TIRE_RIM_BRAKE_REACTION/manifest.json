@@ -1,0 +1,37 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_VEHICLE_V5_6_7_TIRE_RIM_BRAKE_REACTION",
+  "file": "Ducati916_VEHICLE_V5_6_7_TIRE_RIM_BRAKE_REACTION.html",
+  "sha256": "b48615bfa193d623186f74357893e0ea4182e371d1824ffdc06e1e700d6d92d1",
+  "bytes": 19686562,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "GLB",
+        "__FRONT_ASSET__",
+        "__REAR_ASSET__"
+      ],
+      "sha256": "db2bc050f5060105beeefdf94f7aa0e5dab2e3b902da217dd41df8d38dd1ae33"
+    },
+    {
+      "index": 1,
+      "file": "01.js",
+      "tokens": [],
+      "sha256": "a1633423b8ca86da2dc5859e852559a6fb61777aefd0de63498f76ea7765d40f"
+    },
+    {
+      "index": 2,
+      "file": "02.js",
+      "tokens": [],
+      "sha256": "46daf9f6b35e7cad2f21035b0a4ccb73c66b3a6fb33528f2ac053082f24f8f37"
+    },
+    {
+      "index": 3,
+      "file": "03.js",
+      "tokens": [],
+      "sha256": "9c1caa08044ed91d524000744a7fb78505c4c710549dc5bfe94f02322a7fedeb"
+    }
+  ]
+}

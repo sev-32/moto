@@ -1,0 +1,17 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_TIRE_PHYSICS_V8_2_MULTIRATE",
+  "file": "Ducati916_TIRE_PHYSICS_V8_2_MULTIRATE.html",
+  "sha256": "a3ccea35d3b6c9e6cf8a523d32ca6a03f864901408e0e2fb502f4583e9bf45fe",
+  "bytes": 12551215,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "TIRE_DATA"
+      ],
+      "sha256": "3afa0a8fff5e97c93881b394bb2442ad890e4b46cbe68a06ab643df5b782d6dc"
+    }
+  ]
+}

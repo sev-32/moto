@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ducati 916 Tire Evolution Lab V8.3 — Approval & Dynamics Workbench</title>
+<style>
+:root{
+  --bg:#04070a;--bg2:#071018;--panel:#0b151c;--panel2:#101d26;--panel3:#142630;
+  --line:#294550;--line2:#1a3039;--text:#dcecf3;--muted:#83a1ae;--cyan:#67d9ff;
+  --green:#76efad;--amber:#ffc667;--red:#ff7468;--violet:#c995ff;--ducati:#d72b25;
+  --header:52px;--tabs:42px;--rail:410px;
+}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font:12px/1.38 ui-monospace,SFMono-Regular,Consolas,monospace}
+button,input,select,output{font:inherit}
+button,select{border:1px solid #385965;background:#12232c;color:var(--text);border-radius:5px;padding:6px 9px;cursor:pointer}
+button:hover,button.active,select:focus{border-color:var(--cyan);background:#174050;outline:none}
+button.warn{border-color:#745141;color:var(--amber)}
+button.danger{border-color:#73423d;color:#ffb0a7}
+input[type=range]{width:100%;accent-color:var(--cyan)}
+input[type=checkbox]{accent-color:var(--cyan)}
+.good{color:var(--green)!important}.warn{color:var(--amber)!important}.bad{color:var(--red)!important}.muted{color:var(--muted)}
+.tiny{font-size:10px;color:var(--muted)}.micro{font-size:9px;color:#688692}.mono{font-variant-numeric:tabular-nums}.hidden{display:none!important}
+#app{width:100%;height:100%;display:grid;grid-template-rows:var(--header) var(--tabs) minmax(0,1fr);background:var(--bg)}
+#topbar{display:grid;grid-template-columns:minmax(360px,1fr) auto;align-items:center;gap:15px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0d181f,#071016)}
+#brand{min-width:0;display:flex;align-items:center;gap:12px}.ducatiMark{width:7px;height:30px;border-radius:2px;background:var(--ducati);box-shadow:0 0 18px #d72b2577}
+#brandText{min-width:0}.title{font-size:15px;font-weight:800;letter-spacing:.075em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.subtitle{font-size:10px;color:#819eaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#topStatus{display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap}.statusChip{padding:4px 7px;border:1px solid #31505c;border-radius:4px;background:#0b171e}.statusChip b{font-weight:700}
+#workspaceTabs{display:flex;align-items:stretch;gap:2px;padding:4px 8px;border-bottom:1px solid var(--line);background:#081219;overflow-x:auto}
+#workspaceTabs button{border-radius:4px;padding:5px 12px;background:#0e1b23;white-space:nowrap}#workspaceTabs button.active{background:#163846;border-color:#5abbd8}
+#shell{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) var(--rail)}
+#workspaceHost{position:relative;min-width:0;min-height:0;border-right:1px solid var(--line);background:#05090d}
+.workspace{position:absolute;inset:0;display:grid;visibility:hidden;pointer-events:none;min-width:0;min-height:0;overflow:hidden}.workspace.active{visibility:visible;pointer-events:auto}
+#controlRail{min-height:0;display:grid;grid-template-rows:39px minmax(0,1fr);background:#081118}
+#sideTabs{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:4px;border-bottom:1px solid var(--line)}#sideTabs button{padding:4px 3px;font-size:10px;letter-spacing:.05em}#sideTabs button.active{background:#163846;border-color:#5abbd8}
+#sidePanels{position:relative;min-height:0}.sidePanel{position:absolute;inset:0;display:none;overflow:auto;padding:8px;scrollbar-color:#385965 #081118}.sidePanel.active{display:block}
+.card,details{background:var(--panel);border:1px solid var(--line);border-radius:7px;margin-bottom:8px;padding:9px}.card h3,details>summary{margin:0 0 7px;color:#9bc8d9;font-size:10px;letter-spacing:.12em}.card.emphasis{background:#0e2029;border-color:#467180}.card.alert{background:#1a1416;border-color:#69443e}.card.blocked{border-color:#695d39;background:#17170f}
+.r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:3px 2px;border-bottom:1px solid #152a33}.r span{color:#83a1ae}.r b{text-align:right;font-weight:550;max-width:230px;overflow-wrap:anywhere}
+.ctrl{display:grid;grid-template-columns:minmax(0,1fr) 78px;gap:5px 8px;align-items:center;padding:6px 1px;border-bottom:1px solid #152a33}.ctrl label{color:#a2bdc8}.ctrl input{grid-column:1}.ctrl output{grid-column:2;grid-row:1/3;text-align:right;color:#ecfaff;font-weight:650}
+.checkrow{display:flex;align-items:flex-start;gap:7px;padding:4px 0;color:#9fb9c4}.checkrow input{margin-top:2px}
+.buttonGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.buttonGrid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.buttonRow{display:flex;gap:5px;flex-wrap:wrap}.buttonRow button{flex:1 1 auto}
+.fieldRow{display:grid;grid-template-columns:110px minmax(0,1fr);gap:7px;align-items:center;margin:5px 0}.fieldRow label{color:#8fabba}.fieldRow output{color:#eaf9ff;text-align:right}
+.scenarioTitle{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.scenarioTitle b{font-size:13px}.scenarioTitle span{font-size:9px;color:var(--amber);border:1px solid #6e5333;padding:2px 5px;border-radius:3px}
+.progressTrack{height:5px;background:#162a33;border-radius:4px;overflow:hidden;margin:8px 0}.progressTrack i{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--cyan),var(--amber),var(--red))}
+.scenarioSummary{display:grid;grid-template-columns:1fr auto;gap:3px 8px}.scenarioSummary span{color:#82a1ae}.scenarioSummary b{text-align:right}
+#vehicleWorkspace{grid-template-rows:minmax(0,1fr) 128px}
+#vehicleStage{position:relative;min-height:0;overflow:hidden;background:radial-gradient(circle at 48% 42%,#15222a 0,#081017 58%,#030609 100%)}
+#gl{display:block;width:100%;height:100%}
+#vehicleToolbar{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;align-items:flex-end;gap:5px;max-width:54%;z-index:4}.toolGroup{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;padding:4px;border:1px solid #2a4651;border-radius:6px;background:#061018e8;backdrop-filter:blur(4px)}.toolGroup .label{align-self:center;color:#7796a3;font-size:9px;letter-spacing:.12em;padding:0 3px}
+#hudPrimary{position:absolute;left:10px;top:10px;display:grid;grid-template-columns:repeat(3,minmax(118px,1fr));gap:5px;max-width:min(55%,700px);z-index:3;pointer-events:none}.metric{padding:6px 8px;border:1px solid #2e4b58;border-radius:6px;background:#061018e8;min-width:0}.metric.wide{grid-column:span 2}.metric span{display:block;color:#7d9ca9;font-size:9px;letter-spacing:.08em}.metric b{display:block;margin-top:2px;font-size:14px;color:#edfaff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stageLegend{position:absolute;left:10px;bottom:10px;max-width:440px;padding:7px 9px;border:1px solid #2b4855;border-radius:6px;background:#061018e8;color:#96b3bf;pointer-events:none}.legendDot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}.legendDot.current{background:#c8d3d7}.legendDot.source{background:#4c7b8c}.legendDot.force{background:var(--cyan)}
+#quadLabels{position:absolute;inset:0;display:none;pointer-events:none}.quadLabel{position:absolute;padding:3px 6px;border:1px solid #345563;background:#061018dd;color:#a9c8d5;font-size:9px}.ql1{left:8px;top:8px}.ql2{left:50%;top:8px}.ql3{left:8px;top:50%}.ql4{left:50%;top:50%}
+#timelineDock{display:grid;grid-template-columns:minmax(0,1fr) 278px;gap:8px;padding:8px;border-top:1px solid var(--line);background:#081219;min-height:0}.timelineWrap{position:relative;min-width:0}.timelineWrap canvas{width:100%;height:78px;display:block;border:1px solid #203a45;border-radius:5px}.timelineControls{display:flex;gap:4px;margin-top:4px}.timelineControls button{padding:3px 8px}.timelineReadout{display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:8px;border:1px solid #203a45;border-radius:5px;background:#0b171e;overflow:auto}.timelineReadout span{color:#83a1ae}.timelineReadout b{text-align:right}
+#contactWorkspace,#sectionWorkspace{grid-template-columns:minmax(0,1fr) 278px;background:#061018}
+.largeCanvasWrap{position:relative;min-width:0;min-height:0;padding:10px}.largeCanvasWrap canvas{display:block;width:100%;height:100%;border:1px solid #284754;border-radius:7px;background:#061018}
+.workspaceInfo{overflow:auto;padding:10px;border-left:1px solid var(--line);background:#091219}.workspaceInfo h2{margin:0 0 8px;font-size:14px}.workspaceInfo p{color:#8eacb8}.legendGrid{display:grid;grid-template-columns:1fr auto;gap:6px 10px;margin:9px 0}.legendGrid span{color:#85a4b1}.legendGrid b{text-align:right}.evidenceNote{padding:8px;border:1px solid #5d5030;background:#17160e;color:#d9c488;border-radius:6px}
+#telemetryWorkspace{grid-template-rows:42px minmax(0,1fr);background:#061018}.workspaceToolbar{display:flex;align-items:center;gap:5px;padding:6px 9px;border-bottom:1px solid var(--line);background:#0a151c}.workspaceToolbar .spacer{flex:1}.plotGrid{min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:7px;padding:7px}.plotCard{position:relative;min-width:0;min-height:0;border:1px solid #294651;border-radius:7px;overflow:hidden;background:#061018}.plotCard h3{position:absolute;left:9px;top:6px;z-index:2;margin:0;color:#9bc8d9;font-size:9px;letter-spacing:.1em;pointer-events:none}.plotCard canvas{display:block;width:100%;height:100%}
+#approvalWorkspace{grid-template-rows:48px minmax(0,1fr);background:#071018}.approvalGrid{overflow:auto;padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:8px;align-content:start}.approvalCard{border:1px solid #2a4752;border-radius:7px;background:#0c171e;padding:10px}.approvalCard.pass{border-color:#346a51}.approvalCard.fail{border-color:#7b403a}.approvalCard.blocked{border-color:#6f5b32}.approvalCard h3{margin:0 0 8px;color:#9dbbc7;font-size:10px;letter-spacing:.1em}.approvalCard .big{font-size:19px;font-weight:900}.approvalCard p{margin:7px 0 0;color:#8ba8b4}.approvalCard b{display:block;margin-top:3px}
+#evidenceWorkspace{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:7px;padding:7px;background:#061018}.evidencePane{position:relative;min-width:0;min-height:0;border:1px solid #294651;border-radius:7px;overflow:hidden}.evidencePane h3{position:absolute;left:9px;top:6px;z-index:2;margin:0;color:#9bc8d9;font-size:9px}.evidencePane canvas{width:100%;height:100%;display:block}
+@media(max-width:1250px){:root{--rail:360px}#hudPrimary{grid-template-columns:repeat(2,minmax(110px,1fr));max-width:52%}.metric.wide{grid-column:span 2}}
+@media(max-width:980px){#shell{grid-template-columns:minmax(0,1fr) 310px}.toolGroup button{padding:4px 6px}.title{font-size:13px}}
+</style>
+</head>
+<body>
+<div id="app">
+<header id="topbar">
+  <div id="brand"><i class="ducatiMark"></i><div id="brandText"><div class="title">DUCATI 916 TIRE EVOLUTION LAB V8.3 · APPROVAL & DYNAMICS WORKBENCH</div><div class="subtitle">Frozen V8.2 tire/contact/history core · procedural motorcycle context · exact full-Ducati mesh not supplied</div></div></div>
+  <div id="topStatus"><span class="statusChip"><b id="modelStatus" class="warn">NUMERICAL CHECKING</b></span><span class="statusChip" id="glstatus">WebGL initializing…</span><span class="statusChip" id="topRuntime">0 fps</span></div>
+</header>
+<nav id="workspaceTabs">
+  <button data-workspace="vehicleWorkspace" class="active">Vehicle / Wheel Dynamics</button>
+  <button data-workspace="contactWorkspace">True-Scale Contact</button>
+  <button data-workspace="sectionWorkspace">Camber & Layer Section</button>
+  <button data-workspace="telemetryWorkspace">Telemetry</button>
+  <button data-workspace="approvalWorkspace">Approval Gates</button>
+  <button data-workspace="evidenceWorkspace">Raw Evidence</button>
+</nav>
+<main id="shell">
+<section id="workspaceHost">
+  <section class="workspace active" id="vehicleWorkspace">
+    <div id="vehicleStage">
+      <canvas id="gl"></canvas>
+      <div id="hudPrimary"></div>
+      <div id="vehicleToolbar">
+        <div class="toolGroup"><span class="label">SCENE</span><button data-scene="bike" class="active">Full bike</button><button data-scene="tire">Tire lab</button><button data-scene="contact">Contact low</button><button data-scene="front">Wheel rig</button><button data-scene="quad">4-view</button></div>
+        <div class="toolGroup"><span class="label">CAMERA</span><button data-camera="chase" class="active">3/4</button><button data-camera="side">Side</button><button data-camera="front">Front</button><button data-camera="low">Patch</button><button data-camera="orbit">Wheel orbit</button><button id="resetCam">Reset</button></div>
+        <div class="toolGroup"><span class="label">FIELD</span><button data-mode="outer" class="active">Rubber</button><button data-mode="deform">Flex</button><button data-mode="cut">Layers</button><button data-mode="pressure">Pressure</button><button data-mode="grip">Shear</button><button data-mode="air">Air</button><button id="pause">Pause core</button></div>
+      </div>
+      <div id="stageLegend"><span class="legendDot current"></span>current loaded envelope &nbsp; <span class="legendDot source"></span>source-state ghost &nbsp; <span class="legendDot force"></span>force vectors &nbsp; <span class="tiny">green/red arc = applied drive/brake torque</span><br><span class="tiny">The loaded envelope is Eulerian and remains road-locked; wheel hardware and tread-material markers rotate through it. Flex mode exaggerates the complete computed envelope and preserves a source ghost.</span></div>
+      <div id="quadLabels"><span class="quadLabel ql1">BIKE 3/4</span><span class="quadLabel ql2">FRONT</span><span class="quadLabel ql3">CONTACT LOW</span><span class="quadLabel ql4">SIDE</span></div>
+    </div>
+    <div id="timelineDock">
+      <div class="timelineWrap"><canvas id="timelineCanvas"></canvas><div class="timelineControls"><button id="timelineBack">−1 s</button><button id="timelinePlay">Run scenario</button><button id="timelineForward">+1 s</button><span class="tiny" style="align-self:center">amber: target lean · red/green: brake/drive torque · violet: target slip angle</span></div></div>
+      <div class="timelineReadout" id="timelineReadout"></div>
+    </div>
+  </section>
+
+  <section class="workspace" id="contactWorkspace">
+    <div class="largeCanvasWrap"><canvas id="contactLarge"></canvas></div>
+    <aside class="workspaceInfo"><h2>TRUE-SCALE CONTACT EVIDENCE</h2><p>Filled clipped contact triangles are shown on a locked millimetre grid. The dashed outline is the source-state footprint. This view is intentionally not auto-normalized by default.</p>
+      <div class="buttonRow"><button id="contactFixedScale" class="active">120 mm fixed</button><button id="contactFit">Fit patch</button><button id="contactShear">Shear vectors</button></div>
+      <div class="buttonGrid" style="margin-top:6px"><button id="contactSourceState">Source</button><button id="contactLowLoad">800 N</button><button id="contactHighLoad">2200 N</button><button id="contactLowPressure">22 psi</button><button id="contactHighPressure">42 psi</button><button id="contactChallenge">42° challenge</button></div>
+      <div class="fieldRow"><label for="contactFrame">coordinate frame</label><select id="contactFrame"><option value="road">road</option><option value="tire">tire-local</option></select></div>
+      <div class="legendGrid"><span>peak pressure</span><b id="legendPeak">—</b><span>mean pressure</span><b id="legendMean">—</b><span>projected area</span><b id="legendArea">—</b><span>width × length</span><b id="legendExtent">—</b><span>tire-local COP</span><b id="legendCop">—</b><span>area change vs source</span><b id="legendDelta">—</b><span>target / integrated load</span><b id="legendLoad">—</b><span>pressure / camber</span><b id="legendState">—</b></div>
+      <div class="evidenceNote">Approval boundary: footprint geometry is numerically resolved by the continuous contact path. Physical pressure accuracy remains blocked until footprint-film or rig data is supplied.</div>
+    </aside>
+  </section>
+
+  <section class="workspace" id="sectionWorkspace">
+    <div class="largeCanvasWrap"><canvas id="sectionLarge"></canvas></div>
+    <aside class="workspaceInfo"><h2>CAMBER & LAYER SECTION</h2><p>This is a tire-local axial/radial section. The road plane is transformed into wheel coordinates, so camber is no longer represented as a misleading tilted silhouette.</p>
+      <div class="buttonRow"><button id="sectionSourceGhost" class="active">Source ghost</button><button id="sectionExaggerate">1× deformation</button><button id="sectionLabels" class="active">Labels</button></div>
+      <div id="sectionInfo" style="margin-top:8px"></div>
+      <div class="evidenceNote" style="margin-top:8px">The highlighted road contact segment and local COP are derived from the same continuous contact solution used by force integration.</div>
+    </aside>
+  </section>
+
+  <section class="workspace" id="telemetryWorkspace">
+    <div class="workspaceToolbar"><b>PHYSICALLY GROUPED TIME HISTORIES</b><span class="muted">No mixed-scale “mystery bars”; motion, forces, tire state, and wheel/runtime are separated.</span><span class="spacer"></span><button id="clearTelemetry">Clear</button><button id="freezeTelemetry">Freeze plots</button></div>
+    <div class="plotGrid"><div class="plotCard"><h3>MOTION COMMANDS</h3><canvas id="telemetryMotion"></canvas></div><div class="plotCard"><h3>FORCES & MOMENT</h3><canvas id="telemetryForce"></canvas></div><div class="plotCard"><h3>CONTACT / THERMAL / ENERGY</h3><canvas id="telemetryTire"></canvas></div><div class="plotCard"><h3>WHEEL SPEED / TORQUE / RUNTIME</h3><canvas id="telemetryWheel"></canvas></div></div>
+  </section>
+
+  <section class="workspace" id="approvalWorkspace">
+    <div class="workspaceToolbar"><b>APPROVAL MATRIX</b><span class="muted">Numerical execution is distinct from physical calibration and whole-vehicle validity.</span><span class="spacer"></span><button id="runApprovalSweep">Run response sweep</button><button id="exportState">Export state JSON</button></div>
+    <div id="approvalGrid" class="approvalGrid"></div>
+  </section>
+
+  <section class="workspace" id="evidenceWorkspace">
+    <div class="evidencePane"><h3>COMPACT TIRE-LOCAL SECTION</h3><canvas id="cross"></canvas></div>
+    <div class="evidencePane"><h3>COMPACT CONTACT PATCH</h3><canvas id="patch"></canvas></div>
+    <div class="evidencePane"><h3>FORCE / ALIGNING-MOMENT HISTORY</h3><canvas id="trace"></canvas></div>
+    <div class="evidencePane"><h3>RAW NUMERICAL SUMMARY</h3><canvas id="rawSummary"></canvas></div>
+  </section>
+</section>
+
+<aside id="controlRail">
+  <nav id="sideTabs"><button data-side="driverPanel" class="active">Scenario</button><button data-side="tirePanel">Tire</button><button data-side="visualPanel">Visual</button><button data-side="modelPanel">Model</button></nav>
+  <div id="sidePanels">
+    <section class="sidePanel active" id="driverPanel">
+      <div class="card alert"><h3>DYNAMIC TEST SCENARIO</h3><div class="scenarioTitle"><b id="scenarioName">Manual tire rig</b><span id="scenarioStatus">MANUAL</span></div><p id="scenarioDescription" class="tiny">Direct tire sliders.</p>
+        <div class="fieldRow"><label for="scenarioSelect">test</label><select id="scenarioSelect"><option value="manual">Manual tire rig</option><option value="free">Free rolling</option><option value="brake">High-speed braking</option><option value="trail">Trail braking into corner</option><option value="corner">Steady 45° corner</option><option value="exit">Corner exit / drive torque</option><option value="slalom">Alternating slalom</option><option value="loadSweep">Vertical-load sweep</option><option value="pressureSweep">Inflation-pressure sweep</option></select></div>
+        <div class="fieldRow"><label for="activeAxle">modeled axle</label><select id="activeAxle"><option value="front">front</option><option value="rear">rear proxy</option></select></div>
+        <div class="fieldRow"><label for="timeScale">time scale</label><input id="timeScale" type="range" min="0.1" max="3" step="0.1" value="1"><output id="timeScaleOut">1.0×</output></div>
+        <div class="progressTrack"><i id="scenarioProgress"></i></div><div id="scenarioSummary" class="scenarioSummary"></div>
+        <div class="buttonGrid three" style="margin-top:8px"><button id="scenarioPlay">Run scenario</button><button id="scenarioReset">Reset</button><button id="scenarioStep">+0.1 s</button></div>
+      </div>
+      <div class="card emphasis"><h3>PROPOSED SINGLE-WHEEL DYNAMICS HARNESS</h3><div id="rigControls"></div><label class="checkrow"><input id="loadTransfer" type="checkbox" checked>longitudinal load-transfer proxy</label><label class="checkrow"><input id="speedHold" type="checkbox">external road-speed hold (dyno/corner tests)</label><p class="tiny">Wheel speed is integrated from applied drive/brake torque and tire contact torque. Vehicle speed is integrated from tire force, rolling resistance, and aerodynamic drag. This is an auditable development harness, not a validated motorcycle model.</p></div>
+      <div class="card"><h3>PROCEDURAL VEHICLE CONTEXT</h3><div id="vehicleState"></div><p class="tiny warn">The motorcycle is a procedural 916-inspired visual rig because no exact full-bike asset was supplied. The rear tire is a visual proxy unless selected as the modeled axle.</p></div>
+    </section>
+
+    <section class="sidePanel" id="tirePanel">
+      <div class="card emphasis"><h3>TIRE / ROAD INPUTS</h3><div id="controls"></div><label class="checkrow"><input id="autoThermal" type="checkbox">auto thermal state from transport work</label><div class="buttonGrid"><button id="sourceState">Source state</button><button id="nativeTarget">Native target</button><button id="challengeState">42° challenge</button><button id="resetDyn">Reset material history</button></div></div>
+      <details open><summary>CONTINUOUS CONTACT STATE</summary><div id="contactState"></div></details>
+      <details open><summary>CONVECTED MATERIAL-HISTORY GRIP</summary><div id="forceState"></div></details>
+    </section>
+
+    <section class="sidePanel" id="visualPanel">
+      <div class="card"><h3>SCENE CONTENT</h3><label class="checkrow"><input id="showRig" type="checkbox">procedural wheel / motorcycle context</label><label class="checkrow"><input id="showGhost" type="checkbox">source-state tire ghost</label><label class="checkrow"><input id="showMarkers" type="checkbox">rotating tread-material markers</label><label class="checkrow"><input id="showForces" type="checkbox">force / moment vectors</label><label class="checkrow"><input id="showRoad" type="checkbox">road grid and motion markers</label></div>
+      <div class="card"><h3>DEFORMATION DISPLAY</h3><div class="fieldRow"><label for="deformVisualScale">visual scale</label><input id="deformVisualScale" type="range" min="1" max="12" step="0.25" value="1"><output id="deformVisualScaleOut">1.00×</output></div><p class="tiny">1× is the computed envelope. Larger values exaggerate displacement for diagnosis and are always labeled as visualization.</p></div>
+      <div class="card"><h3>VIEW SHORTCUTS</h3><div class="buttonGrid"><button data-scene="bike">Full bike</button><button data-scene="tire">Tire lab</button><button data-scene="quad">4-view</button><button data-scene="contact">Contact low</button><button data-camera="chase">3/4 camera</button><button data-camera="side">Side camera</button><button data-camera="front">Front camera</button><button data-camera="low">Patch + wheel</button></div></div>
+    </section>
+
+    <section class="sidePanel" id="modelPanel">
+      <div class="card blocked"><h3>CLAIM BOUNDARY</h3><p class="tiny">The exact V6.3.5 numerical payload and V8.2 contact/history core are preserved. V8.3 adds approval views, a proposed causal single-wheel dynamics harness, and procedural vehicle context. Layer constants, pressure modes, grip, thermal, wetness, high-lean behavior, and whole-vehicle dynamics remain physically uncalibrated.</p></div>
+      <details open><summary>PROVENANCE</summary><div id="prov"></div></details>
+      <details><summary>MULTI-RATE / DEADLINES</summary><div id="schedulerState"></div></details>
+      <details><summary>PERFORMANCE / COHERENCE</summary><div id="performanceState"></div></details>
+      <details><summary>PRESSURE BASIS</summary><div id="pressureState"></div></details>
+      <details><summary>LAYER OWNERSHIP</summary><div id="layers"></div></details>
+      <div class="card"><h3>BASE SELF-AUDIT</h3><div id="audit"></div><div id="auditNote" class="tiny warn"></div></div>
+    </section>
+  </div>
+</aside>
+</main>
+</div>
+<script>@@SCRIPT_00@@</script>
+</body>
+</html>

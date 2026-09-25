@@ -1,0 +1,90 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>V1.28.6.2 Rig-Safe Continuous Corner Balance · V1.28.6 Rider Dynamics Positions · V1.28.5.5B Intuitive Body Map · V1.28.5.5A Viewport Authoring · V1.28.5.4 Rider Graph Studio · V1.28.5.3 Live Rider Controls · V1.28.5.2 Rider Dynamics · V1.28.5.1 Real Contacts · V1.28.4.1 Hand/Wrist Fix · V1.28.2 Usable Baseline · Ducati 916 · LUCID MOTO</title><style>
+:root{--bg:#050a0e;--p:#0b141b;--p2:#101c24;--ln:#253b48;--tx:#dcecf3;--mu:#82a0af;--cy:#6fdcff;--gr:#78efb1;--am:#ffc66c;--rd:#ff7365;--vi:#c88cff}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font:12px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace}button,input,select{font:inherit}button,select{background:#14232d;color:var(--tx);border:1px solid #385664;border-radius:4px;padding:5px 8px}button:hover{border-color:var(--cy)}button.active{background:#174151;border-color:var(--cy)}input[type=range]{width:100%;accent-color:var(--cy)}#app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 420px;grid-template-rows:minmax(0,1fr) 318px}#view{position:relative;min-width:0;min-height:0;border-right:1px solid var(--ln);border-bottom:1px solid var(--ln)}#gl{width:100%;height:100%;display:block;background:#071018}#badge{position:absolute;top:10px;left:12px;background:#061018e8;border:1px solid #375466;border-radius:7px;padding:8px 10px;max-width:58%;pointer-events:none}.ttl{font-size:16px;font-weight:800;letter-spacing:.08em}.good{color:var(--gr)}.warn{color:var(--am)}.tiny{font-size:10px;color:var(--mu)}#viewBtns{position:absolute;top:10px;right:10px;display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:40%}#ctrl{grid-column:2;grid-row:1/3;overflow:auto;padding:9px;background:var(--p)}.sec{background:var(--p2);border:1px solid var(--ln);border-radius:7px;padding:8px;margin-bottom:8px}.sec h3{font-size:10px;letter-spacing:.13em;color:#9bcadb;margin:0 0 6px}.buttons{display:flex;gap:5px;flex-wrap:wrap}.row{display:grid;grid-template-columns:1fr 100px;gap:6px;align-items:center;margin:5px 0}.row .v{text-align:right;color:var(--cy)}.row input{grid-column:1/3}.checks{display:grid;grid-template-columns:1fr 1fr;gap:4px}.checks label{display:flex;align-items:center;gap:5px;color:#a9c0cb}.status{white-space:pre-wrap;background:#071118;border:1px solid #1b303b;border-radius:4px;padding:6px;color:#94afbb;margin-top:6px}.tele .r{display:grid;grid-template-columns:1fr auto;gap:8px;padding:2px 4px;border-bottom:1px solid #14262f}.tele .r span{color:#86a3b1}.tele .r b{font-weight:500;color:#e8f8ff}.tele{max-height:520px;overflow:auto}#bottom{grid-column:1;grid-row:2;display:grid;grid-template-columns:1.15fr 1fr .95fr;background:#071118;min-width:0}.pane{position:relative;border-right:1px solid var(--ln);min-width:0;min-height:0;overflow:hidden}.pane:last-child{border-right:0}.pane h3{position:absolute;top:6px;left:10px;margin:0;font-size:10px;letter-spacing:.12em;color:#9bcadb;z-index:2}.pane canvas{position:absolute;inset:0;width:100%;height:100%}.legend{position:absolute;right:8px;top:6px;color:#7f9ba8;font-size:10px}.big{font-size:13px}.critical{color:var(--rd)}
+</style></head><body>
+<div id="app"><section id="view"><canvas id="gl"></canvas><div id="badge"><div class="ttl">DUCATI 916 VEHICLE DYNAMICS LAB V5.3.3 · BALANCE PROVENANCE / STABILITY</div><div>Dual-domain development build: V4 dyno regression + V5.2.1 coupled free-road state + predictive slip diagnostics</div><div class="good">V4 DYNO PRESERVED · COUPLED 9-SPEED MASS MATRIX · SPATIAL WHEEL TORQUE · ACTUAL vs ∞-GRIP TRAJECTORIES · CRASH PROXIES</div><div class="warn">TEST BUILD — V5.3 fixes the free-road tire-force discontinuity, projects nominal steering onto the center plane while retaining exact source geometry in telemetry, pre-seeds rolling tire structure, closes the missing front bead-to-sidewall render surface, and exposes 181-node live part telemetry. Source fork offset, inertia, rotor gyros, tire mass ownership, tire transient relaxation and collision calibration remain provisional and explicitly audited.</div><div class="tiny" id="glstatus">initializing…</div></div><div id="viewBtns"><button data-view="side" class="active">Side</button><button data-view="persp">3/4</button><button data-view="front">Front</button><button data-view="rear">Rear</button><button data-view="drive">Drivetrain</button><button data-view="fork">Fork</button><button data-view="belly">Belly</button><button data-view="top">Top</button><button data-view="chase">Chase</button><button data-view="path">Path</button></div></section>
+<aside id="ctrl"><div class="sec" id="tireQualitySec"><h3>TIRE STRUCTURAL QUALITY · ONE BUILD</h3><div class="row"><span>Quality profile</span><span class="v" id="tireQualityV">STANDARD · 22</span><select id="tireQuality" style="grid-column:1/3"><option value="STANDARD" selected>Standard · 22 rings · authority</option><option value="HIGH">High · 36 rings · normalized</option><option value="ULTRA">Ultra · 48 rings · normalized / heavy</option></select></div><div class="status" id="tireQualityState">STANDARD · 22 rings · 9 XPBD · physical contact 110</div><div class="tiny">One executable. Changing quality reloads this same executable into a clean tire topology and restarts DYNO/FREE ROAD state. No separate quality builds are required. Standard remains the regression/physics authority profile.</div></div><div class="sec"><h3>SIMULATION DOMAIN</h3><div class="buttons"><button id="domainDyno" class="active">V4 DYNO</button><button id="domainFree">V5.3 FREE ROAD</button></div><div class="tiny">DYNO keeps V4 behavior for regression. FREE ROAD uses an independent floating chassis / steering / articulated foundation. Switching domains resets only the selected domain.</div></div>
+<div class="sec"><h3>V5.3 FREE ROAD · RAW RIDER / COUPLED</h3><div class="buttons"><button id="freeStart">Start / release</button><button id="freeReset">Reset free</button><button id="freeAudit">V5 audit</button><button id="freeRecord">Record telemetry</button><button id="freeScenario">Brake-pulse scenario</button><button id="freeExport">Export last run</button></div><div class="status" id="freeState">RAW / assistance OFF</div><div class="row"><span>Initial speed</span><span class="v" id="freeSpeedV"></span><input id="freeSpeed" type="range" min="0" max="60" step="0.5" value="20"></div><div class="row"><span>Initial roll perturbation</span><span class="v" id="freeRollV"></span><input id="freeRoll" type="range" min="-30" max="30" step="0.25" value="0"></div><div class="row"><span>Steering torque</span><span class="v" id="freeSteerV"></span><input id="freeSteer" type="range" min="-25" max="25" step="0.25" value="0"></div><div class="row"><span>Front brake line</span><span class="v" id="freeFBV"></span><input id="freeFB" type="range" min="0" max="120" step="1" value="0"></div><div class="row"><span>Rear brake line</span><span class="v" id="freeRBV"></span><input id="freeRB" type="range" min="0" max="120" step="1" value="0"></div><div class="row"><span>Direct rear-wheel research torque</span><span class="v" id="freeDriveV"></span><input id="freeDrive" type="range" min="-500" max="900" step="10" value="0"></div><div class="tiny">A/D or ←/→ applies steering torque. Space applies a temporary 70-bar front-brake command. No balance assistance, engine, clutch or gearbox is hidden in this build. Wheel/contact torque now uses the explicit spatial spin-axis convention; the coupled mass matrix is visible in telemetry.</div></div>
+<div class="sec"><h3>WHOLE-BIKE TEST RIG</h3><div class="buttons"><button id="static">Live static</button><button id="drop">DROP BIKE</button><button id="bump">Bump pulse</button><button id="pause">Pause</button><button id="step">Single step</button><button id="reset">Reset</button></div><div class="status" id="mode">STATIC · live controls</div></div>
+<div class="sec"><h3>ROLLING ROAD / BRAKE / DRIVE</h3><div class="buttons"><button id="roll">Start rolling</button><button id="stopRoll">Stop rolling</button><button id="zeroCmd">Zero brake / drive</button></div><div class="row"><span>Road speed</span><span class="v" id="speedV"></span><input id="speed" type="range" min="0" max="60" step="0.5" value="20"></div><label><input id="holdSpeed" type="checkbox" checked> hold translational road speed (dyno constraint at CoG)</label><div class="row"><span>Front brake line</span><span class="v" id="fbV"></span><input id="fb" type="range" min="0" max="120" step="1" value="0"></div><div class="row"><span>Rear brake line</span><span class="v" id="rbV"></span><input id="rb" type="range" min="0" max="120" step="1" value="0"></div><div class="row"><span>Rear-wheel drive torque</span><span class="v" id="driveV"></span><input id="drive" type="range" min="0" max="900" step="10" value="0"></div><div class="tiny">100 bar maps to the established V84 full-brake torque calibration (1180 N·m front / 265 N·m rear). Rolling slip is solved from wheel angular speed versus road speed; manual slip-ratio sliders are ignored while rolling.</div></div>
+<div class="sec"><h3>PREDICTIVE TRAJECTORY / SLIP DIAGNOSTICS</h3><div class="checks"><label><input id="showTrajectory" type="checkbox" checked> actual vs ∞-grip paths</label><label><input id="showSlipDiag" type="checkbox" checked> wheel / velocity / slip rays</label></div><div class="row"><span>Prediction horizon</span><span class="v" id="trajHorizonV"></span><input id="trajHorizon" type="range" min="0.5" max="5.0" step="0.25" value="1.25"></div><div class="tiny">Cyan/blue = frozen continuation of the current live hub motion/yaw state. Green = instantaneous no-slip / “infinite-grip” wheel-plane kinematic reference. Purple whiskers = path divergence; that divergence includes transient/countersteer state lag and is NOT tire slip alone. Amber = wheel plane, cyan ray = actual hub velocity, magenta = contact-surface slip velocity. Crosses mark time samples/endpoints. This is a diagnostic projection, not a claim of perfect future prediction. Path view is a high follow camera centered ahead of the motorcycle for trajectory inspection.</div></div>
+<div class="sec"><h3>INERTIAL / G-LOADS</h3><div class="row"><span>Vertical load</span><span class="v" id="vgV"></span><input id="vg" type="range" min="0.20" max="3.00" step="0.02" value="1.00"></div><div class="row"><span>Longitudinal accel</span><span class="v" id="lgV"></span><input id="lg" type="range" min="-1.30" max="1.30" step="0.02" value="0"></div><div class="row"><span>Lateral accel</span><span class="v" id="latgV"></span><input id="latg" type="range" min="-1.60" max="1.60" step="0.02" value="0"></div><div class="row"><span>Manual lean</span><span class="v" id="leanV"></span><input id="lean" type="range" min="-60" max="60" step="0.5" value="0"></div><label><input id="autoLean" type="checkbox" checked> auto lean = atan(lateral-g / vertical-g)</label></div>
+<div class="sec"><h3>TIRE / SUSPENSION</h3><div class="row"><span>Front pressure</span><span class="v" id="fpV"></span><input id="fp" type="range" min="18" max="45" step="0.2" value="32"></div><div class="row"><span>Rear pressure</span><span class="v" id="rpV"></span><input id="rp" type="range" min="18" max="45" step="0.2" value="34.8"></div><div class="row"><span>Tire hysteresis scale</span><span class="v" id="tlV"></span><input id="tl" type="range" min="0.10" max="20" step="0.10" value="1.0"></div><div class="row"><span>Fork damping scale</span><span class="v" id="fdV"></span><input id="fd" type="range" min="0.10" max="3.0" step="0.05" value="1.0"></div><div class="row"><span>Rear shock damping</span><span class="v" id="rdV"></span><input id="rd" type="range" min="0.10" max="3.0" step="0.05" value="1.0"></div><div class="row"><span>Fork spring scale</span><span class="v" id="fsV"></span><input id="fs" type="range" min="0.60" max="1.50" step="0.02" value="1.0"></div><div class="row"><span>Rear spring scale</span><span class="v" id="rsV"></span><input id="rs" type="range" min="0.60" max="1.50" step="0.02" value="1.0"></div><div class="row"><span>Front slip angle</span><span class="v" id="fsaV"></span><input id="fsa" type="range" min="-12" max="12" step="0.2" value="0"></div><div class="row"><span>Rear slip angle</span><span class="v" id="rsaV"></span><input id="rsa" type="range" min="-12" max="12" step="0.2" value="0"></div><div class="row"><span>Front slip ratio</span><span class="v" id="fsrV"></span><input id="fsr" type="range" min="-0.30" max="0.30" step="0.01" value="0"></div><div class="row"><span>Rear slip ratio</span><span class="v" id="rsrV"></span><input id="rsr" type="range" min="-0.30" max="0.30" step="0.01" value="0"></div></div>
+<div class="sec"><h3>EXCITATION</h3><div class="row"><span>Bike drop height</span><span class="v" id="dhV"></span><input id="dh" type="range" min="0.01" max="0.30" step="0.005" value="0.06"></div><div class="row"><span>Bump height</span><span class="v" id="bhV"></span><input id="bh" type="range" min="0" max="0.080" step="0.002" value="0.025"></div><div class="row"><span>Simulation rate</span><span class="v" id="srV"></span><input id="sr" type="range" min="1" max="6" step="1" value="3"></div></div>
+<div class="sec"><h3>DISPLAY / INSPECTION</h3><div class="checks"><label><input id="showTireWire" type="checkbox"> tire lattice</label><label><input id="showInner" type="checkbox"> inner liners</label><label><input id="showForce" type="checkbox" checked> load vectors</label><label><input id="showShock" type="checkbox" checked> shock/fork axes</label><label><input id="showChain" type="checkbox" checked> chain links / kinematics</label><label><input id="showTread" type="checkbox" checked> moving tread markers</label><label><input id="showRoad" type="checkbox" checked> road/grid</label><label><input id="showChassis" type="checkbox" checked> full Ducati</label></div></div>
+<div class="sec"><h3>LIVE TELEMETRY</h3><div id="tele" class="tele"></div></div>
+<div class="sec"><h3>AUTHORITY / MODEL BOUNDARY</h3><div class="tiny">Bike mass: 211 kg operating calibration + 75 kg rider. Unsprung groups: 25 kg front / 22 kg rear. Wheelbase 1.410 m. Fork: 127 mm travel, 17.6 kN/m. Rear: 130 mm travel, 28.4 kN/m progressive wheel rate. Compression/rebound damping comes from the existing Ducati V84 calibration. Both tires retain V5 finite-thickness outer/inner surfaces and closed cavity. In FULL BIKE mode the tires do not own sprung payload; suspension forces act on their dynamic axle hubs. Rear drive torque acts through a chain/sprocket moment into the swingarm coordinate. Rolling-road mode integrates wheel inertia and tire slip separately from the existing imposed longitudinal-g test. Road restitution is zero.</div></div></aside>
+<section id="bottom"><div class="pane"><h3>HEAVE / WHEEL-HOP / SUSPENSION HISTORY</h3><span class="legend">body · front axle · rear axle · travel</span><canvas id="history"></canvas></div><div class="pane"><h3>FRONT / REAR CONTACT MANIFOLDS</h3><canvas id="patches"></canvas></div><div class="pane"><h3>ENERGY / DISSIPATION</h3><canvas id="energy"></canvas></div></section></div>
+<script>@@SCRIPT_00@@</script>
+<script>@@SCRIPT_01@@</script>
+<script>@@SCRIPT_02@@</script>
+<script>@@SCRIPT_03@@</script>
+<script>@@SCRIPT_04@@</script>
+<script>@@SCRIPT_05@@</script><script>@@SCRIPT_06@@</script><script>@@SCRIPT_07@@</script><script>@@SCRIPT_08@@</script>
+<script>@@SCRIPT_09@@</script>
+
+<script>@@SCRIPT_10@@</script>
+
+<script>@@SCRIPT_11@@</script>
+
+<script>@@SCRIPT_12@@</script>
+
+<script>@@SCRIPT_13@@</script>
+
+<script>@@SCRIPT_14@@</script>
+
+<script>@@SCRIPT_15@@</script>
+
+<script>@@SCRIPT_16@@</script>
+
+<script>@@SCRIPT_17@@</script>
+
+<script>@@SCRIPT_18@@</script>
+
+<script>@@SCRIPT_19@@</script>
+
+<!-- V1.28.4.1 HAND / WRIST CORRECTION -->
+<script>@@SCRIPT_20@@</script>
+
+<!-- V1.28.5.1 REAL GEOMETRY RIDER CONTACTS -->
+<script>@@SCRIPT_21@@</script>
+
+<!-- V1.28.5.2 RIDER MASS / REACTION COUPLING -->
+<script>@@SCRIPT_22@@</script>
+
+<!-- V1.28.5.3 LIVE SEMANTIC RIDER CONTROLLER -->
+<script>@@SCRIPT_23@@</script>
+
+<!-- V1.28.5.4 RIDER CAUSAL GRAPH STUDIO -->
+<script>@@SCRIPT_24@@</script>
+
+<!-- V1.28.5.5A VIEWPORT-FIRST RIDER AUTHORING STUDIO -->
+<script>@@SCRIPT_25@@</script>
+
+<!-- V1.28.5.5B INTUITIVE RIDER / BIKE NAVIGATOR -->
+<script>@@SCRIPT_26@@</script>
+
+<!-- V1.28.6 RIDER DYNAMICS POSITION ENGINE -->
+<script>@@SCRIPT_27@@</script>
+
+<!-- V1.28.6.2 RIG-SAFE CONTINUOUS CORNER BALANCE -->
+<script>@@SCRIPT_28@@</script>
+<script>@@SCRIPT_29@@</script>
+
+<script id="lucid-v1288-embodied-constraint-solver">@@SCRIPT_30@@</script>
+
+
+<script>@@SCRIPT_31@@</script>
+
+<script>@@SCRIPT_32@@</script>
+
+<script>@@SCRIPT_33@@</script>
+
+<script>@@SCRIPT_34@@</script>
+
+<script>@@SCRIPT_35@@</script>
+<script>@@SCRIPT_36@@</script>
+
+<script>@@SCRIPT_37@@</script>
+
+<script>@@SCRIPT_38@@</script>
+</body></html>

@@ -1,0 +1,17 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_TIRE_V8_3_EXPERIMENTAL_APPROVAL_UI",
+  "file": "Ducati916_TIRE_V8_3_EXPERIMENTAL_APPROVAL_UI.html",
+  "sha256": "ab31b49a5415e831de3f0b79fb87ccb808a50eaca0c8733c976e944bbb70b072",
+  "bytes": 12656800,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "TIRE_DATA"
+      ],
+      "sha256": "5a94ac43d3b7d1697d1578ace9a1b2213604ceaca8797ba632eeae9670cc3b7a"
+    }
+  ]
+}

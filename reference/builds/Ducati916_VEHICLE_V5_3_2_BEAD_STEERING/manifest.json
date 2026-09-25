@@ -1,0 +1,37 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_VEHICLE_V5_3_2_BEAD_STEERING",
+  "file": "Ducati916_VEHICLE_V5_3_2_BEAD_STEERING.html",
+  "sha256": "22d7e9e521f24e43ef5ce77748d2f8e14633ab68893d20c6234bedf14a704fc9",
+  "bytes": 19558444,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "GLB",
+        "__FRONT_ASSET__",
+        "__REAR_ASSET__"
+      ],
+      "sha256": "db2bc050f5060105beeefdf94f7aa0e5dab2e3b902da217dd41df8d38dd1ae33"
+    },
+    {
+      "index": 1,
+      "file": "01.js",
+      "tokens": [],
+      "sha256": "a1633423b8ca86da2dc5859e852559a6fb61777aefd0de63498f76ea7765d40f"
+    },
+    {
+      "index": 2,
+      "file": "02.js",
+      "tokens": [],
+      "sha256": "46daf9f6b35e7cad2f21035b0a4ccb73c66b3a6fb33528f2ac053082f24f8f37"
+    },
+    {
+      "index": 3,
+      "file": "03.js",
+      "tokens": [],
+      "sha256": "50280ed89b2feb7576e5d68c7a46945e1072defbc3be17e3fb9e8abc49b47196"
+    }
+  ]
+}

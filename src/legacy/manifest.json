@@ -1,0 +1,336 @@
+{
+  "schema": "lucid-moto.legacy-manifest.v1",
+  "source": "fe560470-Ducati916_V5_6_7_V1_31_0_ARTIST_IN_LOOP_STUDIO.html",
+  "sourceSha256": "666b4a3fa2138b8a6a94ef94982ee1845bf1651be74a4d842dd2a5d9bf813467",
+  "sourceBytes": 25386269,
+  "shell": "shell.html",
+  "assets": {
+    "glb": {
+      "file": "assets/models/ducati916.glb",
+      "sha256": "91141c45a457efd8aed308ca3d705f291b06df09fa39dc9f06680a8cccfbf38e",
+      "bytes": 14141620
+    },
+    "frontTire": {
+      "file": "assets/tires/front_asset.json",
+      "sha256": "4284a80decc9f5fdd16d177f7ade4b9d2b7ba4ffc8405d987ec228509b0e95a9"
+    },
+    "rearTire": {
+      "file": "assets/tires/rear_asset.json",
+      "sha256": "7af8c2fd35b63ffdd8fcdf762ef6f7ffd481e9fa06a7d7e9c30053f2bfcadcb0"
+    }
+  },
+  "scripts": [
+    {
+      "index": 0,
+      "label": "assets",
+      "file": "00_assets.template.js",
+      "attrs": "",
+      "sha256": "9b363187243dce5bfef66aa9bbb645a70e5363060c67c33cc3b530823baa99c7",
+      "bytes": 19342707
+    },
+    {
+      "index": 1,
+      "label": "tyre_solver_v5",
+      "file": "01_tyre_solver_v5.js",
+      "attrs": "",
+      "sha256": "787012488910d5bbd442ac87b88032834a738c3ebf802de78b2d7d63addcd4ae",
+      "bytes": 45255
+    },
+    {
+      "index": 2,
+      "label": "vehicle_lab_v4",
+      "file": "02_vehicle_lab_v4.js",
+      "attrs": "",
+      "sha256": "1d712b7210ed808e8dfdd9da67ac5cd9c82d00a049dd76ae51f0d5ec71bb3300",
+      "bytes": 27161
+    },
+    {
+      "index": 3,
+      "label": "vehicle_v5_6_7_main",
+      "file": "03_vehicle_v5_6_7_main.js",
+      "attrs": "",
+      "sha256": "e66c467536a1398dce52adc1979d0b4ed2fc5aad950713c2d13a39be27c15ded",
+      "bytes": 310646
+    },
+    {
+      "index": 4,
+      "label": "chain_parametric_v2",
+      "file": "04_chain_parametric_v2.js",
+      "attrs": "",
+      "sha256": "805677ef55a5bbe8d10ceda43b48c3fea3c4763c10f2b0adc7169bb294621565",
+      "bytes": 13090
+    },
+    {
+      "index": 5,
+      "label": "sim_overlay",
+      "file": "05_sim_overlay.js",
+      "attrs": "",
+      "sha256": "9bf9fe0705d8f3d03d75bcb5f6f52941e9ab4d3b09b2b034ccc39013df03bb25",
+      "bytes": 22316
+    },
+    {
+      "index": 6,
+      "label": "dyno_pitch_repair",
+      "file": "06_dyno_pitch_repair.js",
+      "attrs": "",
+      "sha256": "8f4a990d5b9310cc1245d8cd7d4ed37891020d94fb37779d32257cb26b33eb5a",
+      "bytes": 272
+    },
+    {
+      "index": 7,
+      "label": "tire_bottoming_repair",
+      "file": "07_tire_bottoming_repair.js",
+      "attrs": "",
+      "sha256": "4a111f572df81db7c977637d9cffcc1ac8b0b99a7345afdc51c0549d4e068c19",
+      "bytes": 278
+    },
+    {
+      "index": 8,
+      "label": "tire_quality_v119",
+      "file": "08_tire_quality_v119.js",
+      "attrs": "",
+      "sha256": "6173662b1170cf887e700008be98ced6bebdf8819880a492174840f3eb6300c6",
+      "bytes": 575
+    },
+    {
+      "index": 9,
+      "label": "powertrain_v121",
+      "file": "09_powertrain_v121.js",
+      "attrs": "",
+      "sha256": "14fe122dcd2782becbc76230c2de9ce890fd7bc8c67b8ed1fb171416cf39a229",
+      "bytes": 26240
+    },
+    {
+      "index": 10,
+      "label": "acoustic_studio_v122",
+      "file": "10_acoustic_studio_v122.js",
+      "attrs": "",
+      "sha256": "bc752d0214cfbc3e12cc6b31ac649b390faef42f653b37a0e507a2af2eb62d3a",
+      "bytes": 57804
+    },
+    {
+      "index": 11,
+      "label": "ui_shell_v123",
+      "file": "11_ui_shell_v123.js",
+      "attrs": "",
+      "sha256": "6d34f0a56069f9fc2ad81dfead4274df1a6cdd25919a4a5c05959a77a1ad0d74",
+      "bytes": 29539
+    },
+    {
+      "index": 12,
+      "label": "free_ride_v124",
+      "file": "12_free_ride_v124.js",
+      "attrs": "",
+      "sha256": "ce6f2d6efea4f2e7bc05c826f030d97a7ba040c20c46e669b86ade34a31acf53",
+      "bytes": 30545
+    },
+    {
+      "index": 13,
+      "label": "orchestration_thermal_v125",
+      "file": "13_orchestration_thermal_v125.js",
+      "attrs": "",
+      "sha256": "8e1b8b9b5a875cf14562a2ca33261e060d2db8101870f89418ff622e697e4a11",
+      "bytes": 45370
+    },
+    {
+      "index": 14,
+      "label": "brake_tire_feedback_v126",
+      "file": "14_brake_tire_feedback_v126.js",
+      "attrs": "",
+      "sha256": "3bc4038a6f9aef3f95430be35f3756d78d1e9999fec0b45aa7aadac429691143",
+      "bytes": 36193
+    },
+    {
+      "index": 15,
+      "label": "thermal_materials_v127",
+      "file": "15_thermal_materials_v127.js",
+      "attrs": "",
+      "sha256": "d03d4f27046e081e35b58416a0c810abff2481994df170da1b294a2f484c015e",
+      "bytes": 23019
+    },
+    {
+      "index": 16,
+      "label": "thermofluid_v128",
+      "file": "16_thermofluid_v128.js",
+      "attrs": "",
+      "sha256": "0b6c9e3dc6a591bf4e7734dcf7fa068174781b2d0d7e8c2c1811a5dd18ecd09f",
+      "bytes": 38995
+    },
+    {
+      "index": 17,
+      "label": "recovery_v1281",
+      "file": "17_recovery_v1281.js",
+      "attrs": "",
+      "sha256": "a857ea9fd4c5e4950c50d1df68f5765866bc9fff9c078aa720317594b9ccf96c",
+      "bytes": 16536
+    },
+    {
+      "index": 18,
+      "label": "usability_v1282",
+      "file": "18_usability_v1282.js",
+      "attrs": "",
+      "sha256": "6d0a2d6c58e04dd2a3f3e64ad592bef14b673754f0abe3fef755c10ef2a38640",
+      "bytes": 18821
+    },
+    {
+      "index": 19,
+      "label": "stability_rigs_v1283",
+      "file": "19_stability_rigs_v1283.js",
+      "attrs": "",
+      "sha256": "5219b756be9b11c24e4a5bb0daaad02249fe6ffbe775c232cdbc67fb4a77682b",
+      "bytes": 23059
+    },
+    {
+      "index": 20,
+      "label": "rider_skin_v12841",
+      "file": "20_rider_skin_v12841.js",
+      "attrs": "",
+      "sha256": "71154f8a8528c94ebe64d149d5ea2db7922014983a93c08bbcaed7d0e652de2b",
+      "bytes": 914079
+    },
+    {
+      "index": 21,
+      "label": "rider_contacts_v12851",
+      "file": "21_rider_contacts_v12851.js",
+      "attrs": "",
+      "sha256": "1988acf5dbc0c95ab26c8eff8767f81d178ae32740e0ca4862edbb9e59b3a01e",
+      "bytes": 25032
+    },
+    {
+      "index": 22,
+      "label": "rider_mass_coupling_v12852",
+      "file": "22_rider_mass_coupling_v12852.js",
+      "attrs": "",
+      "sha256": "f1fe36f725ce9afa52b66c0ed02615d41294cd77191f5838c286db5cb7fb33d3",
+      "bytes": 25791
+    },
+    {
+      "index": 23,
+      "label": "rider_live_control_v12853",
+      "file": "23_rider_live_control_v12853.js",
+      "attrs": "",
+      "sha256": "30e502bcc7d4992a20b6f0ec0c51a8fbc5d13919fab37c5573f08ff1daf43102",
+      "bytes": 1135888
+    },
+    {
+      "index": 24,
+      "label": "rider_graph_studio_v12854",
+      "file": "24_rider_graph_studio_v12854.js",
+      "attrs": "",
+      "sha256": "9222a30edb3857511968b6d70ad803cc29f2483aae5a17b03f71551499d85506",
+      "bytes": 104723
+    },
+    {
+      "index": 25,
+      "label": "rider_viewport_studio_v12855a",
+      "file": "25_rider_viewport_studio_v12855a.js",
+      "attrs": "",
+      "sha256": "4d08c54d93ff75c849115fc9f9e42f4ead1b950d1f5070ce60d26b091669cf42",
+      "bytes": 141697
+    },
+    {
+      "index": 26,
+      "label": "rider_bodymap_v12855b",
+      "file": "26_rider_bodymap_v12855b.js",
+      "attrs": "",
+      "sha256": "2f4cb39de08010770f713dfccd3ce487c3343410f8b20915e388869485ed9a43",
+      "bytes": 50052
+    },
+    {
+      "index": 27,
+      "label": "rider_positions_v12856",
+      "file": "27_rider_positions_v12856.js",
+      "attrs": "",
+      "sha256": "38aa2a10194e02f6563db75a212562aea5599eb52e83048db04b1c6aa792535a",
+      "bytes": 43177
+    },
+    {
+      "index": 28,
+      "label": "rider_corner_balance_v12862",
+      "file": "28_rider_corner_balance_v12862.js",
+      "attrs": "",
+      "sha256": "7e278b25ff9e515b144f7eb76f9d036892669048f106f786fac901943b51510b",
+      "bytes": 173328
+    },
+    {
+      "index": 29,
+      "label": "rider_dynamics_bridge_v1287",
+      "file": "29_rider_dynamics_bridge_v1287.js",
+      "attrs": "",
+      "sha256": "4769cb3cddcb3dbbe8b1c81f79872c6f815b88446e3d4fe78f89161a397c3516",
+      "bytes": 14655
+    },
+    {
+      "index": 30,
+      "label": "rider_constraint_solver_v1288",
+      "file": "30_rider_constraint_solver_v1288.js",
+      "attrs": " id=\"lucid-v1288-embodied-constraint-solver\"",
+      "sha256": "0dbac27d28349dec2ddc6627eba9105ed57ffe68475de099a94cadb1fcc57bee",
+      "bytes": 1613007
+    },
+    {
+      "index": 31,
+      "label": "rider_collision_registry_v1289",
+      "file": "31_rider_collision_registry_v1289.js",
+      "attrs": "",
+      "sha256": "a7f7cb3c0afc4c597e9166d4e95f7ebb78f06316fcec285d466823451b46b520",
+      "bytes": 783502
+    },
+    {
+      "index": 32,
+      "label": "rider_hand_grip_v1290",
+      "file": "32_rider_hand_grip_v1290.js",
+      "attrs": "",
+      "sha256": "9ac14a208491e0cd1e571ac6762d71ef38dde4bd50421096fa37bc8801777962",
+      "bytes": 92007
+    },
+    {
+      "index": 33,
+      "label": "rider_comfort_v1291",
+      "file": "33_rider_comfort_v1291.js",
+      "attrs": "",
+      "sha256": "0448367907265004c7205199d7e6398d78ab158ba5a8e45fd53e134932e90170",
+      "bytes": 18023
+    },
+    {
+      "index": 34,
+      "label": "rider_wrist_grip_v12962",
+      "file": "34_rider_wrist_grip_v12962.js",
+      "attrs": "",
+      "sha256": "ca4bd6cca9d8ba9f270c3a96f914ea9bbd1077d342aaa97506de5684e6dcd31d",
+      "bytes": 8149
+    },
+    {
+      "index": 35,
+      "label": "rider_peg_foot_v1295",
+      "file": "35_rider_peg_foot_v1295.js",
+      "attrs": "",
+      "sha256": "b289f53496760992c5769a3bd9baffe599750cd4c664625ccf167da6f3987eba",
+      "bytes": 43315
+    },
+    {
+      "index": 36,
+      "label": "rider_operational_v1297",
+      "file": "36_rider_operational_v1297.js",
+      "attrs": "",
+      "sha256": "6efc16849a86b20fecc27e6916c8e3a98c0ccf08431d9c3e16916992342889ca",
+      "bytes": 21500
+    },
+    {
+      "index": 37,
+      "label": "rider_operations_studio_v1300",
+      "file": "37_rider_operations_studio_v1300.js",
+      "attrs": "",
+      "sha256": "00524eb49bcdf0e8c0cac4d571a26fae38fb51e3d37691f93086ff82090dcd65",
+      "bytes": 21739
+    },
+    {
+      "index": 38,
+      "label": "rider_artist_studio_v1310",
+      "file": "38_rider_artist_studio_v1310.js",
+      "attrs": "",
+      "sha256": "5f9b8ebe9d0d8ecae920175d3a5df739f361394f469f7b53906d2ad1577acfbb",
+      "bytes": 31695
+    }
+  ]
+}

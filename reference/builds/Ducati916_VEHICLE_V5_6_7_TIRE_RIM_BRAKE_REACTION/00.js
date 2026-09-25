@@ -1,0 +1,1 @@
+window.__FRONT_ASSET__=@@FRONT_ASSET@@;window.__REAR_ASSET__=@@REAR_ASSET@@;window.__DUCATI_GLB_B64__="@@GLB_B64@@";
