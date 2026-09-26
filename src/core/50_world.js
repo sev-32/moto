@@ -316,6 +316,7 @@ precision highp float;
 in vec3 vW;in vec2 vUV;
 uniform sampler2D uF0,uF1;uniform vec4 uField;uniform vec2 uTexel;uniform float uCell;
 uniform vec4 uTrackW;uniform vec4 uPad;uniform vec4 uCaps[24];uniform int uCapN;uniform vec3 uSkid;
+uniform sampler2D uRub;uniform vec3 uRubW;uniform vec2 uRubC;
 out vec4 o;
 ${GLSL_COMMON}
 float capDist(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/max(dot(ba,ba),1e-6),0.,1.);return length(pa-ba*h);}
@@ -348,12 +349,16 @@ void main(){
  float kerbSide=F1.b;float kerb=0.;
  if(!pad&&ad>hw&&ad<hw+kw){float side=sd>0.?1.:-1.;if(abs(kerbSide)>1.5||kerbSide*side>.5)kerb=1.;}
  if(kerb>0.){float st=step(0.,F0.b);alb=mix(vec3(.72,.07,.06),vec3(.8,.8,.78),st);}
+ // rubber laid by the tires (CORE.skid deposit map: toroidal window around the bike)
+ float rub=0.;if(uRubW.z>0.&&abs(P.x-uRubC.x)<uRubW.y&&abs(P.y-uRubC.y)<uRubW.y)rub=texture(uRub,P/uRubW.x).r;
+ alb=mix(alb,vec3(.021,.02,.019),clamp(rub*.92,0.,.92));
  // soft capsule shadows of the bike and rider
  float sh=0.;for(int i=0;i<12;i++){if(i>=uCapN)break;vec4 c=uCaps[2*i],r=uCaps[2*i+1];float dd=capDist(P,c.xy,c.zw);sh=max(sh,r.y*(1.-smoothstep(r.x*.55,r.x*1.35,dd)));}
  float ndl=max(dot(N,uSun),0.);vec3 amb=mix(vec3(.09,.085,.07),uSkyZen*.9,.5+.5*N.z)*.42;
  vec3 col=alb*(amb+uSunCol*ndl*(1.-.78*sh));
  // wet-look sheen on asphalt at grazing angles
  vec3 V=normalize(uEye-vW),Hh=normalize(uSun+V);col+=asp*(1.-paint)*uSunCol*pow(max(dot(N,Hh),0.),60.)*.05;
+ col+=uSunCol*pow(max(dot(N,Hh),0.),140.)*.10*rub; // polished rubber film
  col=fogIt(col,vW);o=vec4(finish(col),1.);}`;
   const SKY_VS = `#version 300 es
 precision highp float;layout(location=0) in vec2 aP;out vec2 vN;void main(){vN=aP;gl_Position=vec4(aP,1.,1.);}`;
@@ -543,6 +548,12 @@ void main(){vec4 a=uInvVP*vec4(vN,1.,1.);vec3 d=normalize(a.xyz/a.w-uEye);o=vec4
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, R.tex1);
     gl.uniform1i(u.uF1, 1);
+    const rub = CORE.skid?.uniforms?.();
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, rub ? rub.tex : null);
+    gl.uniform1i(u.uRub, 2);
+    gl.uniform3fv(u.uRubW, rub ? rub.w : [1, 0, 0]);
+    gl.uniform2fv(u.uRubC, rub ? rub.c : [0, 0]);
     gl.bindVertexArray(R.vao);
     gl.drawElements(gl.TRIANGLES, R.count, gl.UNSIGNED_INT, 0);
     // sky fills whatever is still at the far plane
@@ -558,6 +569,8 @@ void main(){vec4 a=uInvVP*vec4(vN,1.,1.);vec3 d=normalize(a.xyz/a.w-uEye);o=vec4
       gl.depthMask(true);
     }
     gl.bindVertexArray(null);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);

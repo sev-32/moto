@@ -13,16 +13,18 @@ await page.waitForFunction(() => window.__LUCID_CORE_FX_READY__ && window.__LUCI
 const btn = page.locator("button:visible", { hasText: "CONTINUE MUTED" }).first();
 if (await btn.count()) await btn.click();
 await page.waitForTimeout(800);
+if (process.env.NODASH !== "0") await page.addStyleTag({ content: "#v124Dash,#v123RideCams{display:none!important}" }); // unobstructed shots
 
 await page.evaluate(({ scenario, view }) => {
   const C = window.LUCID_CORE, A = window.DUCATI_V5_API, f = A.free, PT = window.DUCATI_ADVANCED_POWERTRAIN;
   C.realtime.timeScale = 0; // freeze the live loop; it keeps rendering
   if (C.nimbus) C.nimbus.externalClock = true;
+  if (C.skid) { C.skid.externalClock = true; C.skid.clear(); }
   C.fx.clear();
   const cmd = new Proxy({}, { get: (_, k) => PT.states.free.command[k], set: (_, k, v) => ((PT.states.free.command[k] = v), true) }); // the powertrain may replace its command object on reset
   const S = {
     burnout: { speed: 0, setup: () => C.burnoutRig.start(), ctl: (dt) => C.burnoutRig.control(PT.states.free.command, dt) },
-    lockup: { speed: 22, setup: () => Object.assign(cmd, { gear: 3, clutch: 1, throttle: 0, frontBrakeBar: 0, rearBrakeBar: 0 }), ctl: (dt, t) => { cmd.throttle = 0; cmd.rearBrakeBar = t > 0.2 ? 40 : 0; } },
+    lockup: { speed: 22, setup: () => Object.assign(cmd, { gear: 3, clutch: 1, throttle: 0, frontBrakeBar: 0, rearBrakeBar: 0 }), ctl: (dt, t) => { cmd.throttle = 0; cmd.clutch = t > 0.15 ? 0 : 1; cmd.rearBrakeBar = t > 0.2 ? 115 : 0; } }, // clutch in, stamp on the rear pedal
     overrun: { speed: 30, setup: () => Object.assign(cmd, { gear: 2, clutch: 1, throttle: 0.9 }), ctl: (dt, t) => { cmd.throttle = t < 0.6 ? 0.9 : 0; } },
   }[scenario];
   A.setDomain("FREE_ROAD");
@@ -46,6 +48,7 @@ for (const [i, T] of shots.entries()) {
       if (k % every === 0) {
         C.fx.tick(every * dt);
         C.nimbus?.simTick(every * dt);
+        C.skid?.tick(every * dt);
         X.maxKW = Math.max(X.maxKW, C.tires.rear.out.slidingPowerW / 1000, C.tires.front.out.slidingPowerW / 1000);
       }
     }
@@ -53,7 +56,7 @@ for (const [i, T] of shots.entries()) {
     f.compute();
     const target = C.nimbus?.sync();
     const pt = PT.states.free;
-    return { target, t: +f.time.toFixed(2), v: +Math.hypot(f.v[0], f.v[1]).toFixed(2), omR: +f.omegaR.toFixed(1), rpm: Math.round(pt.engine.rpm), rig: C.burnoutRig?.phase, maxSlideKW: +X.maxKW.toFixed(1), fx: { ...C.fx.stats } };
+    return { target, t: +f.time.toFixed(2), v: +Math.hypot(f.v[0], f.v[1]).toFixed(2), omR: +f.omegaR.toFixed(1), rpm: Math.round(pt.engine.rpm), rig: C.burnoutRig?.phase, maxSlideKW: +X.maxKW.toFixed(1), fx: { ...C.fx.stats }, skid: C.skid && { ...C.skid.stats, queued: C.skid.queue.length, err: C.skid.error } };
   }, T);
   if (info.target != null) await page.waitForFunction((n) => window.LUCID_CORE.nimbus.probeCount >= n, info.target, { timeout: 180000 });
   const nb = await page.evaluate(() => { const s = window.LUCID_CORE.nimbus?.snapshot(); return s && { sourceMode: s.sourceMode, src: s.sourceBreakdown, mass: +s.sourceMassProxy.toFixed(2), thermal: Object.fromEntries(Object.entries(s.thermal).map(([k, v]) => [k, +(+v).toPrecision(3)])), updates: s.updates, steps: s.stepsQueued, error: s.error, diag: window.LUCID_CORE.nimbus.diagnose(), metrics: s.metrics && Object.fromEntries(Object.entries(s.metrics).filter(([, v]) => typeof v === "number").slice(0, 12).map(([k, v]) => [k, +v.toPrecision(3)])) }; });

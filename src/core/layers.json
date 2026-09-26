@@ -37,6 +37,11 @@
       "description": "Proving ground: 3 km circuit + test apron; shared height/signed-distance fields for tire physics and GPU terrain; sky, fog, soft bike shadow, minimap, lap timer"
     },
     {
+      "id": "skidmarks",
+      "file": "55_skidmarks.js",
+      "description": "Rubber marks: toroidal R8 deposit map around the bike, stamped from RTT frictional energy per swept patch area (burnouts, lock-ups, slides); sampled by the terrain shader"
+    },
+    {
       "id": "fx",
       "file": "60_fx.js",
       "description": "In-frame volumetric effects: physics-driven tire smoke, exhaust heat/vapour, afterfire flames, brake heat haze, grass/dirt"
