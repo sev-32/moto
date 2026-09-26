@@ -106,3 +106,52 @@ test("steady 0.8 g turn at 15 m/s: seated and steady", () => {
   const p0 = late[0].pel;
   for (const o of late) assert.ok(Math.hypot(o.pel[0] - p0[0], o.pel[1] - p0[1], o.pel[2] - p0[2]) < 0.02, `pelvis moved ${o.pel} at ${o.t}`);
 });
+
+// Stopped: a bike that can fall (1-DOF roll about its tyre contact line: 211 kg, centre of mass
+// 0.52 m, gravity + her contact reactions + the chassis' virtual standstill support at the share
+// the rider layer keeps while her foot is down). She puts a foot down on the side it leans to and
+// holds it leaning a little onto that leg.
+function standstill(phi0Deg, T = 4) {
+  const R = BIO.createRider(character, surfaces);
+  const h = R.helpers, bk = stubBike(), DEGR = Math.PI / 180;
+  const mb = 211, hb = 0.52, I = 22 + mb * hb * hb, assist = 0.4;
+  const ground = { height: () => 0, normal: () => [0, 0, 1], grip: () => 1 };
+  let phi = phi0Deg * DEGR, dphi = 0;
+  const setBike = () => { bk.R = h.Ry(phi); bk.p = h.mv(bk.R, [0, 0, 0.64]); bk.w = [0, dphi, 0]; bk.v = h.cross(bk.w, bk.p); };
+  setBike();
+  const S = BIO.presettle(R);
+  R.body.p = h.add(bk.p, h.mv(bk.R, S.rel.p)); R.body.R = h.mm(bk.R, S.rel.R); R.body.q.set(S.rel.q); R.qT.set(S.rel.qT); R.body.kinematics(); R.matchVelocity(bk);
+  let maxRoll = 0, footN = 0;
+  for (let i = 0, t = 0; t <= T; i++, t += dt) {
+    setBike();
+    const rs = R.forces(bk, ground, dt);
+    let F = [0, 0, 0], M = [0, 0, 0];
+    for (const r of rs) {
+      if (r.F) { F = h.add(F, r.F); M = h.add(M, h.cross(r.x, r.F)); } // about the world origin (on the contact line)
+      if (r.T) M = h.add(M, r.T);
+    }
+    const f = R.plan.feetDown <= 0 ? 0 : R.plan.feetDown >= 1 ? 1 : R.plan.feetDown * R.plan.feetDown * (3 - 2 * R.plan.feetDown);
+    const tgt = R.plan.feetDownWant ? f * (R.plan.footSide === "R" ? 1 : -1) * R.plan.footLeanDeg * DEGR : 0;
+    const Mv = Math.max(-450, Math.min(450, -(4000 * (phi - tgt) + 900 * dphi) * (1 - (1 - assist) * f)));
+    const ddphi = (mb * 9.81 * hb * Math.sin(phi) + M[1] + Mv - 5 * dphi) / I;
+    R.integrate(dt);
+    dphi += ddphi * dt; phi += dphi * dt;
+    if (t > 1) {
+      maxRoll = Math.max(maxRoll, Math.abs(phi) / DEGR);
+      footN = 0;
+      for (const s of R.spheres) if (s.ground.on) footN += s.ground.F[2];
+    }
+    if (!Number.isFinite(phi) || Math.abs(phi) > 1) break;
+  }
+  return { maxRoll, footN, side: R.plan.footSide, feetDown: R.plan.feetDown, finite: R.body.q.every(Number.isFinite) };
+}
+for (const a of [-1, 1]) {
+  test(`stopped, leaning ${a > 0 ? "right" : "left"} 1 deg: her ${a > 0 ? "right" : "left"} foot goes down and holds the bike`, () => {
+    const r = standstill(a);
+    assert.ok(r.finite);
+    assert.equal(r.side, a > 0 ? "R" : "L");
+    assert.ok(r.feetDown > 0.99, `feet down ${r.feetDown}`);
+    assert.ok(r.maxRoll < 6, `bike lean ${r.maxRoll.toFixed(2)} deg`);
+    assert.ok(r.footN > 50, `her foot carries ${r.footN.toFixed(0)} N`);
+  });
+}

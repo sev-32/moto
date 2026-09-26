@@ -13,7 +13,8 @@ const jsonOut = args.includes("--json") ? args[args.indexOf("--json") + 1] : nul
 const EXPECT = {
   coast: { noCrash: 1, maxAbsRollDeg: [0, 3], maxDecelG: [0.05, 0.25] },
   coastSlow: {},
-  standstill: { noCrash: 1, maxAbsRollDeg: [0, 3] },
+  // (with the physical rider one foot is down and the bike rests a few degrees on her leg)
+  standstill: { noCrash: 1, maxAbsRollDeg: [0, 5] },
   brakeFirm: { noCrash: 1, maxAbsRollDeg: [0, 3], maxDecelG: [0.6, 1.0], stopT: [2.5, 4.6] },
   brakeMax: { noCrash: 1, maxAbsRollDeg: [0, 5], maxDecelG: [0.9, 1.35] },
   brakeGrab: { maxNF: [0, 20000] },

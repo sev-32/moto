@@ -86,17 +86,29 @@ canonical skin path (nothing writes bones or skin).
   0.54 m arm: seated, her elbows stay nearly straight). A quiet-hands loop keeps her own torque
   about the steering axis near zero: the steering intent reaches the bars through the chassis
   steer input.
+* **Stopped** (below 1.2 m/s, back on the pegs above 2.2 m/s or as soon as she pulls away): one
+  foot goes down on the side the bike leans to (left if upright); the 916 is tall for her (both
+  feet would not reach; on one she is on the ball of the foot), so she slides and rolls her pelvis
+  towards it and rests the bike about a degree onto that leg, the other foot resting just above
+  its peg. She holds the lean through the seat (pelvis kept over the upright bike while seated),
+  the planted leg's knee against the bike and a sideways push on the bars, on a spring-damper plus
+  the bike's own weight moment; a tip the other way brings the other foot down. The chassis'
+  virtual standstill roll support is kept at 40 % while her foot is down (`riderBio.config.
+  balanceAssist`, declared): her own contacts alone hold it only when it already leans onto her
+  foot. Pulling away she pushes the bike upright and lifts the foot.
 * **Coupling**: her contact forces enter the V5 generalized forces (the grips also load the
   steering axis), her body integrates after the bike with the same forces (momentum exchanged
   exactly); the V5 mass matrix and gravity become bike-only (the V5 values lump a 75.337 kg rider).
 * **Checks** (`tests/rider_biomech.test.mjs`, stub bike): weight on the bike within 2 %, static
   drift < 5 mm, trunk and head nearer the vertical than a bike rocking ±8° at 0.5 Hz, seated
-  through a 1 g stop (< 8 cm forward, < 5 cm up, back in place after), 0.8 g drive, 0.8 g turn;
+  through a 1 g stop (< 8 cm forward, < 5 cm up, back in place after), 0.8 g drive, 0.8 g turn,
+  stopped on a bike free to fall (foot down on the right side, bike held within 6°);
   plus the 14 maneuvers in the coupled simulation. Cost: ~0.45 ms per 540 Hz step (forces,
   integration, amortized IK) and ~2 ms per frame for skinning (headless CPU).
-* **Not yet**: feet down / walking the bike at a standstill (the chassis feet-down support still
-  holds the bike), a foot dab in slides, crashes as a ragdoll, standing wheelie control; hang-off
-  is slow to build (she reaches ~half of the planned 9 cm on the 60 m radius).
+* **Not yet**: walking the bike (paddling), a foot dab in slides, crashes as a ragdoll, standing
+  wheelie control; hang-off builds slowly (lift-and-shift across the seat).
+* Auto rider: hangs off with 1.2 s-filtered lateral g from the heading rate (style 0.9), tucks
+  from 33 m/s, sits up braking hard at speed; `radius60` holds 38° of lean at 0.68 g.
 
 ## Legacy rider (`40_rider_body.js`, `?rider=legacy`)
 

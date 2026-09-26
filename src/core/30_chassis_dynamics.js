@@ -310,11 +310,12 @@
     if (SD?.enabled) Q[6] -= SD.cNmsPerRad * (F.steerRate || 0);
     if (!C.enabled) return;
     const speed = Math.hypot(F.v[0], F.v[1]);
-    const w = 1 - smooth01((speed - C.fullBelowMps) / Math.max(1e-3, C.noneAboveMps - C.fullBelowMps));
+    // (scale: the physical rider's legs take over from this virtual support when her feet are down)
+    const w = (1 - smooth01((speed - C.fullBelowMps) / Math.max(1e-3, C.noneAboveMps - C.fullBelowMps))) * (C.scale ?? 1);
     if (w <= 0) return;
     const fw = v5qrot(F.q, V5_Y), h = v5norm([fw[0], fw[1], 0]);
     const roll = v5bodyAngles(F.q).rollRad, rollRate = v5dot(v5qrot(F.q, F.w), h);
-    const tau = clamp(-(C.kNmPerRad * roll + C.cNmsPerRad * rollRate) * w, -C.maxNm, C.maxNm);
+    const tau = clamp(-(C.kNmPerRad * (roll - (C.targetRollRad || 0)) + C.cNmsPerRad * rollRate) * w, -C.maxNm, C.maxNm);
     addBodyMoment(F, Q, v5mul(h, tau));
     Object.assign(out, { active: true, weight: w, torqueNm: tau });
   }
