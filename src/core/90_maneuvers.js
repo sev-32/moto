@@ -342,6 +342,8 @@
     toggle() { return RIG.active ? this.stop() : this.start(); },
     control: rigControl,
   };
+  // a reset that leaves the bike rolling (ride sessions, R key) ends the burnout
+  CORE.chassis.onReset?.push((F) => { if (RIG.active && Math.hypot(F.v[0], F.v[1]) > 1.5) burnoutRig.stop(); });
   // live ride: the rig takes over the controls after the ride input pre-step each frame
   const basePre = global.__LUCID_RIDE_PRESTEP__;
   let lastPre = performance.now();

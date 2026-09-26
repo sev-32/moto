@@ -114,10 +114,33 @@
     const r = prevReset.apply(this, args);
     rlm.factor = 1;
     rlm.nrStatic = Math.max(800, this.tr?.loadN || 1500); // settled static rear load
+    CH.chock.anchor = null; // a chocked bike is re-chocked where it now stands
+    for (const fn of CH.onReset) try { fn(this, args); } catch (e) { console.warn("LUCID chassis reset hook", e); }
     return r;
   };
+  // V1.21 drives its final-drive damper with |omegaR| (the driveline state cannot turn
+  // backwards), so a rear wheel turning backwards (rolling back, airborne after an endo) is
+  // pushed further backwards: a runaway to thousands of rad/s whose reaction torque flips the
+  // bike, and the "forward" driveline drags the engine far past the limiter. A connected
+  // driveline can only resist reverse rotation (engine compression through the engaged clutch);
+  // with the clutch out the wheel turns back freely. Replace the wrong push accordingly.
+  function reverseSpinGuard(F, omegaR0, dt, Ie) {
+    const Td = F.wheelDyn?.driveTorqueRearNm || 0;
+    if (!(omegaR0 < 0) || !(Td < 0)) return;
+    F.omegaR -= (Td * dt) / Ie;
+    const clutch = clamp(+(global.DUCATI_ADVANCED_POWERTRAIN?.states?.free?.command?.clutch ?? 1), 0, 1);
+    const resist = Math.min(-Td, (-omegaR0 * Ie) / dt) * clutch;
+    F.omegaR += (resist * dt) / Ie;
+    if (F.wheelDyn) F.wheelDyn.driveTorqueRearNm = resist;
+    CH.last.reverseSpinGuard = { t: F.time, omegaR0, pushNm: Td, resistNm: resist };
+  }
   FP._integrateWheels = function (dt) {
-    if (!CH.enabled || !CH.implicitWheelSpin || RT?.tireModel !== "REALTIME") return withRearLiftMitigation(this, dt, () => prevWheels.call(this, dt));
+    const w0 = this.omegaR;
+    if (!CH.enabled || !CH.implicitWheelSpin || RT?.tireModel !== "REALTIME") {
+      const r0 = withRearLiftMitigation(this, dt, () => prevWheels.call(this, dt));
+      reverseSpinGuard(this, w0, dt, this.S.IwR);
+      return r0;
+    }
     const S = this.S, IF = S.IwF, IR = S.IwR, tires = CORE.tires;
     const kf = spinStiffness(this, this.tf, this.FK, tires.front), kr = spinStiffness(this, this.tr, this.RK, tires.rear);
     let r;
@@ -125,6 +148,7 @@
     S.IwR = IR + dt * kr;
     try {
       r = withRearLiftMitigation(this, dt, () => prevWheels.call(this, dt));
+      reverseSpinGuard(this, w0, dt, S.IwR);
     } finally {
       S.IwF = IF;
       S.IwR = IR;
@@ -197,7 +221,9 @@
 
   // ------------------------------------------------------------------ 3. chain force routing
   function chainWrench(F, Q) {
-    const Td = F.controls?.rearDriveTorqueNm || 0, out = { active: false };
+    // the drive torque the wheel integrator applied this step (V1.21 sets controls.rearDriveTorqueNm
+    // only inside its wheel step and restores it afterwards, so read it from wheelDyn)
+    const Td = F.wheelDyn?.driveTorqueRearNm ?? F.controls?.rearDriveTorqueNm ?? 0, out = { active: false };
     CH.last.chain = out;
     if (!CH.chain.enabled || Math.abs(Td) < 1e-6 || typeof dyn === "undefined") return;
     const DS = dyn.S, RK = F.RK, x = typeof chainX === "number" ? chainX : 0;
@@ -277,7 +303,11 @@
     const C = CH.chock;
     if (!C.active || !F.FK) return;
     if (!C.anchor) C.anchor = F.FK.hubW.slice();
-    const d = v5sub(F.FK.hubW, C.anchor), v = F.FK.hubV;
+    let d = v5sub(F.FK.hubW, C.anchor);
+    // a real chock holds millimetres, never metres: a large stretch means the bike was moved
+    // (teleport / session reset) - re-chock where the axle is instead of dragging it back
+    if (Math.hypot(d[0], d[1]) > 0.25) { C.anchor = F.FK.hubW.slice(); d = [0, 0, 0]; }
+    const v = F.FK.hubV;
     let f = [-C.k * d[0] - C.c * v[0], -C.k * d[1] - C.c * v[1], 0];
     const m = Math.hypot(f[0], f[1]);
     if (m > C.maxN) f = v5mul(f, C.maxN / m);
@@ -285,6 +315,7 @@
     CH.last.chock = { forceN: f };
   }
   CH.wrenches = [chainWrench, rotorSwingarmShare, aeroWrench, feetDownWrench, chockWrench];
+  CH.onReset = []; // callbacks (free, resetArgs) after every free-road reset
   // extension points (rider body layer): optional mass-matrix provider, gravity mass of the
   // sprung body, callbacks after the chassis state has been advanced
   CH.massMatrix = null;

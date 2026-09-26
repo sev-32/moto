@@ -60,6 +60,11 @@
       "description": "NIMBUS volumetric rear-tire smoke (from the V85.10 VOLUMETRICS build): Eulerian carrier solver in a worker + raymarched Perlin-Worley smoke, driven by RTT sliding power and V1.26 tread temperature"
     },
     {
+      "id": "audio-env",
+      "file": "68_audio_env.js",
+      "description": "Tire squeal (RTT sliding power / sliding speed, stick-slip), rolling road roar by surface, wind roar by airspeed / tuck / camera, mixed into the V1.22 audio graph"
+    },
+    {
       "id": "maneuvers",
       "file": "90_maneuvers.js",
       "description": "Rider-in-the-loop maneuver library (brake, stoppie, wheelie, launch, lean, slalom) for tests and console"
