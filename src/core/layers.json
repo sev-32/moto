@@ -37,6 +37,19 @@
       "description": "Proving ground: 3 km circuit + test apron; shared height/signed-distance fields for tire physics and GPU terrain; sky, fog, soft bike shadow, minimap, lap timer"
     },
     {
+      "id": "fx",
+      "file": "60_fx.js",
+      "description": "In-frame volumetric effects: physics-driven tire smoke, exhaust heat/vapour, afterfire flames, brake heat haze, grass/dirt"
+    },
+    {
+      "id": "nimbus",
+      "file": "65_nimbus_tire_smoke.js",
+      "inlineString": {
+        "/*@@NIMBUS_WORKER@@*/": "nimbus/nimbus_worker.js"
+      },
+      "description": "NIMBUS volumetric rear-tire smoke (from the V85.10 VOLUMETRICS build): Eulerian carrier solver in a worker + raymarched Perlin-Worley smoke, driven by RTT sliding power and V1.26 tread temperature"
+    },
+    {
       "id": "maneuvers",
       "file": "90_maneuvers.js",
       "description": "Rider-in-the-loop maneuver library (brake, stoppie, wheelie, launch, lean, slalom) for tests and console"

@@ -8,7 +8,7 @@ const { browser, page, logs } = await openBuild(path.join(ROOT, "dist/LucidMoto_
 await page.waitForFunction(() => window.__LUCID_CORE_WORLD_READY__, null, { timeout: 120000 }).catch(() => {});
 const click = process.env.CLICK ?? "START ROLLING RIDE";
 if (click) {
-  const btn = page.locator("button", { hasText: click }).first();
+  const btn = page.locator("button:visible", { hasText: click }).first();
   if (await btn.count()) await btn.click().catch(() => {});
 }
 if (js) await page.evaluate(js);

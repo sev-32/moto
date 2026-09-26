@@ -682,8 +682,8 @@ void main(){vec4 a=uInvVP*vec4(vN,1.,1.);vec3 d=normalize(a.xyz/a.w-uEye);o=vec4
   // The studio build overlays its development panels (chain HUD, simulation overlay, rider
   // studio/operations panels) on the ride view. Clean view hides them in FREE RIDE only;
   // backquote (\`) or the DEV chip toggles; the choice is remembered.
-  const DEV_PANELS = ["v57ChainHUD", "simOverlayCanvas", "simOverlayHUD", "v12854Labels", "v1300OpsPanel", "v1310Panel", "v1310Overlay"];
-  let clean = true;
+  const DEV_PANELS = ["v57ChainHUD", "simOverlayCanvas", "simOverlayHUD", "v12854Labels", "v1310Panel", "v1310Overlay"];
+  let clean = true, opsClosedByClean = false;
   try { clean = global.localStorage?.getItem("lucid.cleanRide") !== "0"; } catch (_) {}
   let chip = null;
   function applyClean() {
@@ -696,6 +696,14 @@ void main(){vec4 a=uInvVP*vec4(vN,1.,1.);vec3 d=normalize(a.xyz/a.w-uEye);o=vec4
       if (ride && clean) {
         if (el.dataset.lucidHidden !== "1") { el.dataset.lucidDisplay = el.style.display; el.style.display = "none"; el.dataset.lucidHidden = "1"; }
       } else if (el.dataset.lucidHidden === "1") { el.style.display = el.dataset.lucidDisplay || ""; el.dataset.lucidHidden = "0"; }
+    }
+    // the V1.30 rider-ops panel re-applies its own display on every render (open by default):
+    // close it once through its RIDER OPS toggle, so the rider can still open it on purpose
+    const ops = D.getElementById("v1300OpsPanel"), opsToggle = D.getElementById("v1300OpsToggle");
+    if (ops && opsToggle) {
+      const open = ops.style.display !== "none";
+      if (ride && clean && open && !opsClosedByClean) { opsToggle.click(); opsClosedByClean = true; }
+      else if (!clean && opsClosedByClean) { if (!open) opsToggle.click(); opsClosedByClean = false; }
     }
     if (!chip) {
       const host = D.getElementById("gl")?.parentElement;

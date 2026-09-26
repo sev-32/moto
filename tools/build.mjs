@@ -60,6 +60,11 @@ function coreLayers() {
       if (!code.includes(token)) throw Error(`layer ${l.id}: inline token ${token} not found`);
       code = code.split(token).join(read("src/core/" + file).trim());
     }
+    // "inlineString": { "TOKEN": "path" } substitutes a file as a JS string literal (worker sources)
+    for (const [token, file] of Object.entries(l.inlineString || {})) {
+      if (!code.includes(token)) throw Error(`layer ${l.id}: inline token ${token} not found`);
+      code = code.split(token).join(JSON.stringify(read("src/core/" + file)).replace(/<\/script/gi, "<\\/script"));
+    }
     return { ...l, code };
   });
 }

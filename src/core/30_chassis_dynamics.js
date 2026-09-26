@@ -68,6 +68,8 @@
     // the 916 carries a frame-mounted hydraulic steering damper; the legacy model only had head
     // bearing damping (1.2 N m s/rad), which leaves the wobble mode lightly damped
     steeringDamper: { enabled: true, cNmsPerRad: 7 },
+    // burnout pit wheel chock: horizontal spring-damper holding the front axle in place
+    chock: { active: false, anchor: null, k: 3.0e5, c: 8000, maxN: 12000 },
     // rear-lift mitigation for the V1.21 ABS (slip-only ABS lets a full-lever stop flip the bike
     // once the front tire can exceed the stoppie threshold): trims the front pressure command
     // while the rear wheel is unloaded, like production IMU-less RLM
@@ -271,7 +273,18 @@
     Object.assign(out, { active: true, weight: w, torqueNm: tau });
   }
 
-  CH.wrenches = [chainWrench, rotorSwingarmShare, aeroWrench, feetDownWrench];
+  function chockWrench(F, Q) {
+    const C = CH.chock;
+    if (!C.active || !F.FK) return;
+    if (!C.anchor) C.anchor = F.FK.hubW.slice();
+    const d = v5sub(F.FK.hubW, C.anchor), v = F.FK.hubV;
+    let f = [-C.k * d[0] - C.c * v[0], -C.k * d[1] - C.c * v[1], 0];
+    const m = Math.hypot(f[0], f[1]);
+    if (m > C.maxN) f = v5mul(f, C.maxN / m);
+    F._addExternalForce(Q, f, F.FK.hubW, F.FK, "front");
+    CH.last.chock = { forceN: f };
+  }
+  CH.wrenches = [chainWrench, rotorSwingarmShare, aeroWrench, feetDownWrench, chockWrench];
   // extension points (rider body layer): optional mass-matrix provider, gravity mass of the
   // sprung body, callbacks after the chassis state has been advanced
   CH.massMatrix = null;

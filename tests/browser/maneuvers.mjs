@@ -24,6 +24,7 @@ const EXPECT = {
   lean35: { noCrash: 1, maxAbsRollDeg: [33, 38] },
   slalom: { noCrash: 1, maxAbsRollDeg: [12, 26] },
   radius60: { noCrash: 1, maxAbsRollDeg: [25, 42] },
+  burnout: { noCrash: 1, maxAbsRollDeg: [0, 6], distanceM: [0, 0.6] },
 };
 function check(name, m) {
   const e = EXPECT[name] || {}, fails = [];

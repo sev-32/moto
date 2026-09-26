@@ -183,6 +183,12 @@
         c.steer = m.lean(c.s, lean, c.dt);
       },
     },
+    burnout: {
+      speed: 0, T: 5, gear: 1, clutch: 0, about: "burnout pit: front axle chocked, front brake on, rev, feed the clutch, hold ~9000 rpm with the rear spinning",
+      setup() { burnoutRig.start(); },
+      teardown() { burnoutRig.stop(); },
+      control(c) { burnoutRig.control(c.cmd, c.dt); },
+    },
     slalom: {
       speed: 18, T: 8, gear: 3, about: "lean-to-lean slalom +/-22 deg every 1.2 s",
       control(c) {
@@ -215,6 +221,7 @@
     F.reset(d.speed ?? 20, d.roll ?? 0);
     const cmd = pt ? pt.states.free.command : {};
     Object.assign(cmd, setup);
+    if (d.setup) d.setup();
     F.controls.userSteerTorqueNm = 0;
     const rider = riderCom(F);
     const dt = F.S.dt, T = opts.T ?? d.T ?? 5, n = Math.round(T / dt), every = Math.max(1, Math.round((opts.traceHz ? 1 / opts.traceHz : 0.05) / dt));
@@ -265,6 +272,7 @@
       }
       if (Math.abs(v5bodyAngles(F.q).rollRad) > 1.45) { M.crashT = M.crashT ?? +t.toFixed(3); break; }
     }
+    if (d.teardown) d.teardown();
     if (RB && riderSave) {
       RB.setAuto(riderSave.auto);
       RB.setPosture(riderSave.manual);
@@ -281,5 +289,92 @@
     return { name, about: d.about || "", metrics: M, trace };
   }
 
-  CORE.maneuvers = { defs: DEFS, names: () => Object.keys(DEFS), simulate, controllers: { leanController, headingController }, state };
+  // ------------------------------------------------------------------ burnout rig
+  // Burnout-pit procedure: front axle chocked, front brake on, rider's weight over the bars,
+  // rev on the clutch, feed it in until the rear breaks loose, then hold the revs. Physically
+  // the pair of ground forces cancels (no load transfer) and the sliding rear (mu_k at ~25 m/s
+  // slip) stays below what the anchored front resists, so the spin sustains itself.
+  const RIG = { active: false, phase: "idle", t: 0, targetRpm: 9000 };
+  function rigControl(cmd, dt) {
+    const pt = PT(), rpm = pt?.states?.free?.engine?.rpm || 0;
+    RIG.t += dt;
+    cmd.gear = 1;
+    cmd.frontBrakeBar = 55;
+    cmd.rearBrakeBar = 0;
+    cmd.absEnabled = false;
+    cmd.tcEnabled = false;
+    if (RIG.phase === "rev") {
+      cmd.clutch = 0;
+      cmd.throttle = rpm < 6200 ? 0.9 : 0.35;
+      if (RIG.t > 0.6 && rpm > 5800) { RIG.phase = "bite"; RIG.t = 0; }
+    } else if (RIG.phase === "bite") {
+      cmd.clutch = clamp(RIG.t / 0.35, 0, 1);
+      cmd.throttle = 0.85;
+      if (RIG.t > 0.35) { RIG.phase = "spin"; RIG.t = 0; }
+    } else if (RIG.phase === "spin") {
+      cmd.clutch = 1;
+      cmd.throttle = clamp(0.62 + 0.00018 * (RIG.targetRpm - rpm), 0.15, 1);
+      if (rpm < 2500) { RIG.phase = "rev"; RIG.t = 0; } // bogged: pull the clutch and go again
+    }
+  }
+  const burnoutRig = {
+    get active() { return RIG.active; },
+    get phase() { return RIG.phase; },
+    start() {
+      const F = free;
+      if (Math.hypot(F.v[0], F.v[1]) > 1.5) return { ok: false, reason: "stop the bike first" };
+      CORE.chassis.chock.anchor = null;
+      CORE.chassis.chock.active = true;
+      CORE.rider?.setPosture({ foreAft: 1, tuck: 0.6 });
+      const cmd = PT()?.states?.free?.command;
+      if (cmd) Object.assign(cmd, { mode: "ENGINE", gear: 1, clutch: 0, throttle: 0, frontBrakeBar: 55 });
+      Object.assign(RIG, { active: true, phase: "rev", t: 0 });
+      return { ok: true };
+    },
+    stop() {
+      CORE.chassis.chock.active = false;
+      CORE.rider?.setPosture({ foreAft: null, tuck: null });
+      Object.assign(RIG, { active: false, phase: "idle", t: 0 });
+      const cmd = PT()?.states?.free?.command;
+      if (cmd) Object.assign(cmd, { throttle: 0, clutch: 1 });
+      return { ok: true };
+    },
+    toggle() { return RIG.active ? this.stop() : this.start(); },
+    control: rigControl,
+  };
+  // live ride: the rig takes over the controls after the ride input pre-step each frame
+  const basePre = global.__LUCID_RIDE_PRESTEP__;
+  let lastPre = performance.now();
+  global.__LUCID_RIDE_PRESTEP__ = function (...a) {
+    const r = typeof basePre === "function" ? basePre.apply(this, a) : undefined;
+    const now = performance.now(), dt = Math.min(0.05, (now - lastPre) / 1000);
+    lastPre = now;
+    if (RIG.active) {
+      const cmd = PT()?.states?.free?.command;
+      if (cmd) rigControl(cmd, dt * (CORE.realtime?.timeScale ?? 1));
+    }
+    return r;
+  };
+  let rigChip = null;
+  function rigUi() {
+    const D = global.document;
+    if (!D) return;
+    const ride = String(global.__LUCID_ACTIVE_PAGE__ || "RIDE").toUpperCase() === "RIDE";
+    if (!rigChip) {
+      const host = D.getElementById("gl")?.parentElement;
+      if (!host) return;
+      rigChip = D.createElement("button");
+      rigChip.id = "lucidBurnoutChip";
+      rigChip.style.cssText = "position:absolute;left:150px;bottom:12px;z-index:130;font:10px ui-monospace,monospace;color:#ffd7a8;background:rgba(20,10,5,.72);border:1px solid #6b4a2e;border-radius:5px;padding:4px 8px;cursor:pointer";
+      rigChip.onclick = () => burnoutRig.toggle();
+      host.appendChild(rigChip);
+    }
+    rigChip.style.display = ride ? "block" : "none";
+    rigChip.textContent = RIG.active ? `BURNOUT: ${RIG.phase.toUpperCase()}` : "BURNOUT RIG";
+  }
+  let uiAcc = 0;
+  (CORE.renderHooks = CORE.renderHooks || []).push({ id: "burnoutRig", draw: () => { if (++uiAcc % 10 === 0) rigUi(); } });
+
+  CORE.maneuvers = { defs: DEFS, names: () => Object.keys(DEFS), simulate, controllers: { leanController, headingController }, state, burnoutRig };
+  CORE.burnoutRig = burnoutRig;
 })(typeof window !== "undefined" ? window : globalThis);
