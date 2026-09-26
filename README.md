@@ -32,6 +32,7 @@ FREE RIDE → START ROLLING RIDE (or STANDING START). Enable audio with the AUDI
 | I (hold) | tuck behind the screen |
 | K (hold) | sit up, weight back |
 | U (hold) | stand on the pegs |
+| G / B (hold) | walk the bike forward / back with her foot (stopped or at walking pace; clutch in) |
 | O | auto rider posture on / off (she hangs off with lateral g, tucks with speed, sits up braking) |
 | 1-7 | cameras: chase, side, front, tail, high, cinema, helmet |
 | T | feel HUD (friction circles, loads, slip, suspension, posture, inputs) |
@@ -39,7 +40,8 @@ FREE RIDE → START ROLLING RIDE (or STANDING START). Enable audio with the AUDI
 | P / R / H | pause / reset / help |
 
 Gamepad (V1.24): triggers throttle / front brake, B rear brake, A clutch, bumpers gears, left
-stick steering; d-pad left/right hang-off, up/down tuck / sit up.
+stick steering; d-pad left/right hang-off, up/down tuck / sit up; left stick up/down walks the bike
+when stopped.
 
 **BURNOUT RIG** (chip bottom-left, stationary bike): chocks the front axle, holds the front brake,
 revs, feeds the clutch and holds ~9000 rpm with the rear spinning — NIMBUS volumetric smoke,
@@ -65,6 +67,8 @@ rubber laid on the road, tire scream.
 LUCID_CORE.maneuvers.simulate("stoppie")           // run a maneuver, returns metrics + trace
 LUCID_CORE.burnoutRig.toggle()                     // burnout pit on / off
 LUCID_CORE.riderBio.setPosture({ hang: 1, tuck: 1 }) // physical rider: manual posture (null = auto)
+LUCID_CORE.riderBio.setPosture({ walk: 1 })        // stopped: she walks the bike forward (-1 back)
+LUCID_CORE.riderBio.rider.plan.dabEnabled = false  // A/B her foot-dab reflex in slides
 LUCID_CORE.riderBio.setActive(false)               // back to the legacy two-mass rider
 LUCID_CORE.realtime.timeScale = 0.25               // slow motion (everything stays in sync)
 LUCID_CORE.exhaust.snapshot()                      // EGT, flow, misfires, bangs, flames

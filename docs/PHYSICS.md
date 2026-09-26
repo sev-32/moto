@@ -86,27 +86,75 @@ canonical skin path (nothing writes bones or skin).
   0.54 m arm: seated, her elbows stay nearly straight). A quiet-hands loop keeps her own torque
   about the steering axis near zero: the steering intent reaches the bars through the chassis
   steer input.
-* **Stopped** (below 1.2 m/s, back on the pegs above 2.2 m/s or as soon as she pulls away): one
-  foot goes down on the side the bike leans to (left if upright); the 916 is tall for her (both
-  feet would not reach; on one she is on the ball of the foot), so she slides and rolls her pelvis
-  towards it and rests the bike about a degree onto that leg, the other foot resting just above
-  its peg. She holds the lean through the seat (pelvis kept over the upright bike while seated),
-  the planted leg's knee against the bike and a sideways push on the bars, on a spring-damper plus
-  the bike's own weight moment; a tip the other way brings the other foot down. The chassis'
-  virtual standstill roll support is kept at 40 % while her foot is down (`riderBio.config.
-  balanceAssist`, declared): her own contacts alone hold it only when it already leans onto her
-  foot. Pulling away she pushes the bike upright and lifts the foot.
+* **Stopped** (below 1.2 m/s; back on the pegs above 2.2 m/s or as she pulls away): one foot goes
+  down on the side the bike leans to (left if upright). The 916 is tall for her (both feet would
+  not reach; on one she is on the ball of the foot at the end of her reach), so she slides and
+  rolls her pelvis towards it and the bike rests about 1.5° onto that leg; the other foot hovers
+  just above its peg. She holds the lean through the seat (pelvis kept over the upright bike),
+  the planted leg's knee against the bike and a sideways push on the bars, on a spring-damper
+  plus the bike's weight moment, and she stands on the planted foot with the load that balances
+  her and the bike about the tyre contact line (at most 350 N). A tip the other way brings the
+  other foot down. Pulling away she first pushes the bike upright with that foot (push-off), then
+  lifts it, bringing it up in front of the peg.
+* **Creeping, walking the bike**: below 0.6 m/s (or while she walks it) the foot on the ground is
+  planted — it stays where it is while the bike rolls on (its leg's joint targets move at the
+  rates that cancel the seat's motion at the ball of the foot) — and steps: before the shin would
+  wrap behind the peg, or if it has not found the ground within 0.25 s, she unweights it, lifts it
+  and sets it down ahead by the bike's travel. Faster, the foot skims just above the ground on a
+  compliant leg and comes down onto it as the bike leans onto that side. Walking the bike (G / B
+  keys, left stick): standing on the planted foot (≥ 250 N) she pushes her pelvis 180 N forward or
+  back through it, easing off at 0.35 m/s; only stopped or the way it already rolls.
+* **Foot dab** (a reflex): the bike going down under her at speed — a tyre sliding (rear slip angle
+  over 6°, front over 8°, fed from the tyre model: what she feels through the seat) while the bike
+  rolls further into its lean faster than 30°/s — puts the inside foot out after a 0.15 s reaction
+  time, 0.4 m ahead of the peg (flat-track style), pressed into the ground with up to 400 N while
+  she pushes the bars towards upright; the boot slides with the sole's friction. The foot comes
+  back when the cue has been gone 0.3 s, or at once if the bike snaps back up (a foot left down
+  would lever it over the other way). A slide the bike rides through (its lean held) leaves her
+  feet on the pegs: put out on the slide alone, her leg swinging out upset the recovery when the
+  tyre gripped again (see below). Reaction time, reach and push are declared priors.
+* **Support**: the chassis' virtual standstill roll support (below 0.8 m/s, fading out by 2 m/s)
+  gives way to her down to a 40 % share (`riderBio.config.balanceAssist`, declared) only as far as
+  her foot on the ground actually carries load (150 N, filtered over 0.3 s), aimed at the lean onto
+  her foot; stepping, skimming or with the foot still coming down it stays at full strength.
+* Servo saturation: a joint at its torque limit keeps its implicit damping (a saturated muscle
+  still resists fast stretch; without it a foot held at its limit against a stiff contact rang
+  step to step). Leg IK starts from at least 10° of knee bend (a knee locked straight is the
+  leg's singularity: the foot would never be brought back up).
 * **Coupling**: her contact forces enter the V5 generalized forces (the grips also load the
   steering axis), her body integrates after the bike with the same forces (momentum exchanged
   exactly); the V5 mass matrix and gravity become bike-only (the V5 values lump a 75.337 kg rider).
-* **Checks** (`tests/rider_biomech.test.mjs`, stub bike): weight on the bike within 2 %, static
-  drift < 5 mm, trunk and head nearer the vertical than a bike rocking ±8° at 0.5 Hz, seated
-  through a 1 g stop (< 8 cm forward, < 5 cm up, back in place after), 0.8 g drive, 0.8 g turn,
-  stopped on a bike free to fall (foot down on the right side, bike held within 6°);
-  plus the 14 maneuvers in the coupled simulation. Cost: ~0.45 ms per 540 Hz step (forces,
-  integration, amortized IK) and ~2 ms per frame for skinning (headless CPU).
-* **Not yet**: walking the bike (paddling), a foot dab in slides, crashes as a ragdoll, standing
-  wheelie control; hang-off builds slowly (lift-and-shift across the seat).
+* **Checks** (`tests/rider_biomech.test.mjs`, stub bike; the falling-bike rig mirrors the browser
+  support coupling): weight on the bike within 2 %, static drift < 5 mm, trunk and head nearer the
+  vertical than a bike rocking ±8° at 0.5 Hz, seated through a 1 g stop (< 8 cm forward, < 5 cm
+  up, back in place after), 0.8 g drive, 0.8 g turn; stopped on a bike free to fall (foot down on
+  the side it leans to, bike within 6°, measured 2.6-2.7°; her foot carries 93 N on the left,
+  30 N on the right, averaged over the last second — the virtual support the rest); creeping at
+  0.3 m/s (9 steps in 6 s, the planted foot moving at 0.018 m/s on the ground); a low-side at
+  8 m/s with the rear sliding (the bike let go at 25° and falling under gravity: her foot is on
+  the ground 0.37 s later, past 45°, and takes up to ~0.9 kN; 60° is reached in 0.450 s with the
+  dab, 0.448 s without — her leg cannot hold a falling 211 kg bike at that lean, and from 10-20°
+  it also lands past 45°); the same slide with the lean held leaves her feet on the pegs — plus
+  the 14 maneuvers in the coupled simulation. Cost: ~0.45 ms
+  per 540 Hz step (forces, integration, amortized IK) and ~2 ms per frame for skinning (headless
+  CPU).
+* **Measured in the browser** (V5 bike, flat road): stopped she holds it at ~3° with her foot on
+  the ground most of the time (~130 N mean on the left); rolling at 0.3-1 m/s with the clutch in
+  and no walking the bike stays up (≤ 5.4° of lean over 6 s); walking it from rest reaches
+  0.31 m/s in 4.8 s. The dab reflex does not fire in any of the 14 maneuvers (in `brakeGrab` the
+  front-lock low-side is over before her reaction time). Rear tyre over a low-grip patch at
+  12 m/s and 25° of lean (the maneuver lean controller steering), dab on vs off: patches of
+  μ 0.3-0.35 for 0.35-0.5 s — 4 of 8 ridden through, the same 4 with and without the dab, crash
+  times within 0.01 s (with the foot put out on the slide alone it was 5 crashes vs 4: none
+  prevented, one caused); μ 0.2-0.25 for 0.5-0.7 s — all 5 crash either way, her foot takes
+  1.6-2.3 kN and the crash comes later in 2 (3.50 vs 3.15 s, 3.56 vs 3.40 s); in one of those,
+  held up on her foot, the bike was flicked over the other way when the rear gripped again.
+* **Not yet / known**: crashes as a ragdoll; standing wheelie control; hang-off builds slowly
+  (lift-and-shift across the seat). After she has walked the bike, her planted leg can keep
+  nudging it along (0.35 → 0.47 m/s over 2 s): the leg's posture targets assume the planned
+  pelvis orientation, and re-orienting the pelvis through a planted foot pushes the ground back
+  (measured: the servo part of the leg's torques is equivalent to a 300-400 N backward push).
+  The dab takes a share of a fall, it does not save one (measured above).
 * Auto rider: hangs off with 1.2 s-filtered lateral g from the heading rate (style 0.9), tucks
   from 33 m/s, sits up braking hard at speed; `radius60` holds 38° of lean at 0.68 g.
 
