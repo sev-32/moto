@@ -29,6 +29,14 @@
       "description": "Physical rider: segment masses, pelvis/torso posture servos with reactions at seat/pegs/bars, hang-off, tuck, weight shift, stand; drives legacy rider pose and aero posture"
     },
     {
+      "id": "lucid-character",
+      "file": "44_lucid_character.js",
+      "inline": {
+        "/*@@LUCID_ASSET@@*/ null": "/assets/character/lucid_female_v4_2.json"
+      },
+      "description": "LUCID canonical female-skin-v4.2: Semantic51 compiler, canonical helper-cluster rules and Skin78 LBS in float64 (parity with the R1.5 Python reference), declared hand layer + grip synergies, 17-segment 75 kg physical profile"
+    },
+    {
       "id": "world",
       "file": "50_world.js",
       "inline": {

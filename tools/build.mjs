@@ -58,7 +58,7 @@ function coreLayers() {
     // "inline": { "TOKEN": "relative/path.json" } substitutes data files into the layer source
     for (const [token, file] of Object.entries(l.inline || {})) {
       if (!code.includes(token)) throw Error(`layer ${l.id}: inline token ${token} not found`);
-      code = code.split(token).join(read("src/core/" + file).trim());
+      code = code.split(token).join(read(file.startsWith("/") ? file.slice(1) : "src/core/" + file).trim()); // "/x" = repo-root path
     }
     // "inlineString": { "TOKEN": "path" } substitutes a file as a JS string literal (worker sources)
     for (const [token, file] of Object.entries(l.inlineString || {})) {
