@@ -65,6 +65,11 @@
       "description": "Tire squeal (RTT sliding power / sliding speed, stick-slip), rolling road roar by surface, wind roar by airspeed / tuck / camera, mixed into the V1.22 audio graph"
     },
     {
+      "id": "feel-hud",
+      "file": "70_feel_hud.js",
+      "description": "Feel HUD (T): per-tire friction circles with trail, loads and load transfer, slip, fork/rear travel with end-stop zones, attitude, rider posture, inputs"
+    },
+    {
       "id": "maneuvers",
       "file": "90_maneuvers.js",
       "description": "Rider-in-the-loop maneuver library (brake, stoppie, wheelie, launch, lean, slalom) for tests and console"
