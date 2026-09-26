@@ -73,7 +73,7 @@
       copUprightBody: [0, -0.1, 0.38], copTuckBody: [0, 0.0, 0.26], copHangLateralM: 0.14,
       posture: { tuck: 0.3, hang: 0 }, // written by the rider layer
     },
-    feetDown: { enabled: true, fullBelowMps: 0.8, noneAboveMps: 2.0, kNmPerRad: 4000, cNmsPerRad: 900, maxNm: 450 },
+    feetDown: { enabled: true, fullBelowMps: 0.8, noneAboveMps: 2.0, kNmPerRad: 4000, cNmsPerRad: 900, maxNm: 450, fullBelowLeanDeg: 25, noneAboveLeanDeg: 40 },
     // the 916 carries a frame-mounted hydraulic steering damper; the legacy model only had head
     // bearing damping (1.2 N m s/rad), which leaves the wobble mode lightly damped
     steeringDamper: { enabled: true, cNmsPerRad: 7 },
@@ -315,9 +315,13 @@
     if (w <= 0) return;
     const fw = v5qrot(F.q, V5_Y), h = v5norm([fw[0], fw[1], 0]);
     const roll = v5bodyAngles(F.q).rollRad, rollRate = v5dot(v5qrot(F.q, F.w), h);
-    const tau = clamp(-(C.kNmPerRad * (roll - (C.targetRollRad || 0)) + C.cNmsPerRad * rollRate) * w, -C.maxNm, C.maxNm);
+    // (a rider's legs hold a bike near upright; one leaning far over - fallen on its side - they
+    // do not lever back up)
+    const wl = w * (1 - smooth01((Math.abs(roll) * (180 / Math.PI) - C.fullBelowLeanDeg) / Math.max(1e-3, C.noneAboveLeanDeg - C.fullBelowLeanDeg)));
+    if (wl <= 0) return;
+    const tau = clamp(-(C.kNmPerRad * (roll - (C.targetRollRad || 0)) + C.cNmsPerRad * rollRate) * wl, -C.maxNm, C.maxNm);
     addBodyMoment(F, Q, v5mul(h, tau));
-    Object.assign(out, { active: true, weight: w, torqueNm: tau });
+    Object.assign(out, { active: true, weight: wl, torqueNm: tau });
   }
 
   function chockWrench(F, Q) {

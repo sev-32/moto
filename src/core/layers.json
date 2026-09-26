@@ -55,6 +55,11 @@
       "description": "The physical rider drawn through the canonical skin path (compile -> helper clusters -> Skin78 LBS) every frame from her body's Semantic51 commands + placement; hands closed on the grips with the declared bottle grip synergy; legacy mannequins hidden while she is active"
     },
     {
+      "id": "rider-onfoot",
+      "file": "48_rider_onfoot.js",
+      "description": "The physical rider off the bike: on her feet (stand, walk, run, step-turn: capture-point stepping, centre-of-pressure control through compliant ankles, virtual-model support, a declared capped pelvis balance assist), getting up after a fall, lifting the bike and getting on / off (F / pad X); third-person camera and controls while she is off the bike"
+    },
+    {
       "id": "world",
       "file": "50_world.js",
       "inline": {

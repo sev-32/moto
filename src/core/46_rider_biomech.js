@@ -315,6 +315,17 @@
       foot[S] = { link: M.linkOf[S + "_Foot"], ball: sub(ball, an), heel: sub(heel, an), toe: sub(toe, an), forward: unit(sub(ball, heel)) };
       const row = [["heel", heel], ["mid", add(scl(heel, 0.45), scl(ball, 0.55))], ["ball", ball], ["toe", toe]];
       for (const [at, pt] of row) spheres.push({ link: M.linkOf[S + "_Foot"], seg: S + "_Foot", c: sub(add(pt, [0, rs, 0]), an), r: rs, kind: "sole", at });
+      // the sole's width: inner and outer edge spheres at the heel and the ball, inside the skin's
+      // extent there. They touch the ground only when she is off the bike (standing on her feet she
+      // balances on their width); riding, the centre row is her contact with pegs and ground.
+      const nearX = (z0) => fp.filter((p) => p[1] < soleY + 0.03 && Math.abs(p[2] - z0) < 0.02).map((p) => p[0]);
+      for (const [at, pt] of [["heel", heel], ["ball", ball]]) {
+        const xs = nearX(pt[2]);
+        if (xs.length < 4) continue;
+        const lo = Math.min(...xs) + rs, hi = Math.max(...xs) - rs;
+        if (hi - lo < 0.01) continue;
+        for (const [e, x] of [["A", lo], ["B", hi]]) spheres.push({ link: M.linkOf[S + "_Foot"], seg: S + "_Foot", c: sub([x, soleY + rs, pt[2]], an), r: rs, kind: "sole", at: at + e, edge: true });
+      }
     }
     function mkSphere(s) {
       s.k = s.kind === "sole" ? PRIORS.pegK : PRIORS.tissueK * s.r * (s.at === "front" ? PRIORS.softTissueScale : 1);
@@ -791,7 +802,7 @@
           st.on = true; st.F = F; st.x = x; st.pen = pen; st.where = cb[1] < -0.2 ? "seat" : cb[1] < 0.36 ? "tank" : "front";
         } else if (st.on) { st.on = false; st.anchor = null; st.F = [0, 0, 0]; st.pen = 0; }
         // --- footpegs (sole points and any leg sphere): capsule of the peg radius
-        if (s.kind === "sole" || s.seg.endsWith("Foot") || s.seg.endsWith("Calf")) {
+        if (!s.edge && (s.kind === "sole" || s.seg.endsWith("Foot") || s.seg.endsWith("Calf"))) {
           const ps = s.peg;
           let hit = null;
           for (const side of ["left", "right"]) {
@@ -813,7 +824,7 @@
           } else if (ps.on) { ps.on = false; ps.anchor = null; ps.F = [0, 0, 0]; }
         }
         // --- ground
-        if (ground) {
+        if (ground && !(s.edge && !PL.fallen)) {
           const gs = s.ground, gz = ground.height(cw[0], cw[1]), gn = ground.normal ? ground.normal(cw[0], cw[1]) : [0, 0, 1];
           const dz = dot(sub(cw, [cw[0], cw[1], gz]), gn), pen = s.r - dz;
           if (pen > 0) {
@@ -932,6 +943,17 @@
       dabFallRateDeg: 30, dabRecoverRateDeg: 30, dabDelayS: 0.15, dabHoldS: 0.3, dabRates: [6, 3], dabOutM: 0.34, dabFwdM: 0.4, dabPressM: 0.02, dabPushN: 400, dabEnabled: true,
       // (and the bars: dabHoldGrav of the bike's weight moment, dabHoldC N m s/rad on its roll rate)
       dabHoldGrav: 0.5, dabHoldC: 300,
+      // coming off (a crash): the bike going down under her - leaning past fallLeanDeg, or past
+      // fallTouchLeanDeg with its bodywork on the ground - or both her grips torn open: she lets go
+      // of the bars and her muscles drop to fallTone of their riding gains, holding the posture she
+      // was in, without the feed-forward that held her limbs up against gravity (on the ground they
+      // lie where they fall), until the reset; the tone fades to fallRestTone (time constant
+      // fallRelaxS): come to rest, she lies limp. Declared priors.
+      fallen: false, fallenS: 0, fallCause: "", fallLeanDeg: 70, fallTouchLeanDeg: 45, fallTone: 0.25, fallRestTone: 0.03, fallRelaxS: 1,
+      // (off the bike, PL.fallen stays set and PL.mode says what she is doing: "fallen", or a mode
+      // of the off-the-bike layer; ff: the gravity feed-forward that mode uses; holdingBike: she
+      // holds the bike up - the chassis' virtual standstill support is hers again)
+      mode: "ride", modeS: 0, ff: "rnea", holdingBike: false, noFall: false, sideStand: false,
       // holding the bike's lean (roll moment on the lean error; share through the bars, declared priors)
       holdK: 2500, holdC: 500, holdHandShare: 0.35, holdHandMaxN: 180, holdKneeShare: 0.35, holdMdes: 0,
       // the bike she holds: V5 sprung mass less the lumped rider plus both unsprung masses (239.3 -
@@ -1389,6 +1411,18 @@
     R.reach = reach;
     R.planner = function (R_, bk, dt) {
       PL.lastDt = dt;
+      if (!PL.fallen && R.lastGround && !PL.noFall) {
+        const lean = Math.abs(uprightFrame(bk, 0).roll);
+        const cause = lean > PL.fallLeanDeg * DEG ? "lean" : bk.bodyworkDown && lean > PL.fallTouchLeanDeg * DEG ? "bodywork" : !R.grips.L.held && !R.grips.R.held ? "grips" : null;
+        if (cause) R.fall(cause);
+      }
+      // off the bike: her current mode (fallen = the ragdoll below; the others come from the
+      // off-the-bike layer, 48_rider_onfoot.js)
+      if (PL.fallen) {
+        PL.fallenS += dt; PL.modeS += dt;
+        (R.modes[PL.mode] || R.modes.fallen)(bk, dt);
+        return;
+      }
       // acceleration the rider's pelvis sustains (world), from its own velocity: the feed-forward
       // braces the body against sustained loads (braking, drive, cornering); transients such as
       // the bike rocking under her are left to the servos and her own inertia
@@ -1578,10 +1612,28 @@
       }
     }
     R.steerNeutralState = SN;
+    // coming off the bike (see PL.fallen): hands open, low tone on the posture she was in
+    R.fall = (cause = "") => {
+      if (PL.fallen) return;
+      PL.fallen = true; PL.fallenS = 0; PL.fallCause = cause; PL.mode = "fallen"; PL.modeS = 0; PL.ff = "none"; PL.holdingBike = false;
+      for (const S of ["L", "R"]) { const g = R.grips[S]; g.held = false; g.F = [0, 0, 0]; g.T = [0, 0, 0]; }
+      PL.handPlan.L = PL.handPlan.R = null;
+      Object.assign(PL, { feetDownWant: 0, feetDown: 0, dab: 0, dabWant: 0, walk: 0, pushOff: false });
+      for (let i = 0; i < L.length; i++) { R.qT[i] = body.q[i]; R.qdT[i] = 0; }
+      R.tauVF.fill(0);
+      R.activation = 0.5;
+      R.servoScale.fill(PL.fallTone);
+    };
+    // off-the-bike modes (planner hooks, run instead of the riding planner): fallen = limp, the
+    // tone fading from fallTone to fallRestTone
+    R.modes = {
+      fallen: () => { R.servoScale.fill(PL.fallRestTone + (PL.fallTone - PL.fallRestTone) * Math.exp(-PL.modeS / PL.fallRelaxS)); },
+    };
+    R.postContacts = null;
     // controller memory back to rest (a placement or reset starts her fresh)
     R.resetControl = () => {
       SN.tauF = 0; SN.trim = 0;
-      Object.assign(PL, { shift: 0, shake: 0, shakeRate: 0, brace: 0, braceDir: 0, targets: null, targetsB: null, lastV: null, aFilt: [0, 0, 0], acc: 0, feetDown: 0, feetDownWant: 0, accelF: 0, lastVh: null, walk: 0, dab: 0, dabWant: 0, dabCueS: 0, dabOffS: 0, pushOff: false });
+      Object.assign(PL, { shift: 0, shake: 0, shakeRate: 0, brace: 0, braceDir: 0, targets: null, targetsB: null, lastV: null, aFilt: [0, 0, 0], acc: 0, feetDown: 0, feetDownWant: 0, accelF: 0, lastVh: null, walk: 0, dab: 0, dabWant: 0, dabCueS: 0, dabOffS: 0, pushOff: false, fallen: false, fallenS: 0, mode: "ride", modeS: 0, ff: "rnea", holdingBike: false, sideStand: false });
       Object.assign(PL.step, { phase: "none", s: 0, fromW: null, plantW: null }); PL.footMode = "none";
       PL.reachLean = R.calibration?.reachLean ?? PL.reachLean;
       PL.handPlan.L = PL.handPlan.R = null;
@@ -1597,11 +1649,14 @@
       R.lastGround = ground || null;
       b.kinematics();
       if (R.planner) R.planner(R, bk, dt);
-      feedForward(R.gApp || b.gravity);
+      // (off the bike the mode chooses: none - limp - or its own, computed in the planner)
+      if (!PL.fallen) feedForward(R.gApp || b.gravity);
+      else if (PL.ff !== "custom") R.tauFF.fill(0);
       b.clearForces();
       b.applyGravity();
       const reactions = contacts(bk, ground);
       steerNeutral(bk, dt);
+      if (PL.fallen && R.postContacts) R.postContacts(bk, dt, reactions);
       servoTorques(dt);
       R.last.reactions = reactions;
       return reactions;
@@ -1637,6 +1692,8 @@
     R.seedIK();
     R.calibrateSeat = calibrateSeat;
     R.calibration = calibrateSeat();
+    // the machinery the off-the-bike layer (48_rider_onfoot.js) builds on
+    R.internal = { ikb, ikSolve, solveClear, prefMap, hingeIndex, hingeOfLink, H, L, Jcol, comWorld, riderMassKg, bodyWeightN, upperKg, feedForward, uprightFrame, isAncestor, kneeLink, KNEE_SEED, footOnGroundN, PRIORS, SURF, toBikeFrame, bikeToWorld, bikePointVel };
     return R;
   }
 
@@ -1706,6 +1763,7 @@
         legacyRiderKg: 75.337, // V1.28.5.2 mass authority: the rider lumped into the V5 sprung mass
         balanceAssist: 0.4, // share of the chassis' virtual standstill roll support kept while her foot holds the bike
         footContactN: 150, footContactS: 0.3, // (her foot "holds" it once it carries this load, filtered)
+        sideStandDeg: 10, // parked on its side stand (off the bike): the virtual support holds it leaning this far left (declared)
         subtractRiderInertia: true, // the V5 inertiaBody is not bike-only (V1.28.5.2 note); remove her intrinsic inertia
         auto: { style: 0.9, hangStartG: 0.2, hangFullG: 0.95, filterS: 1.2, minLeanDeg: 4, tuckStartMps: 33, tuckFullMps: 55, sitUpDecelG: 0.55, sitUpMinMps: 30 },
       },
@@ -1719,6 +1777,8 @@
       bk.steer = F.steer || 0; bk.steerRate = F.steerRate || 0;
       // (the tyres' slip angles: the rear stepping out is felt through the seat - her dab reflex)
       bk.slip = { rearDeg: F.tr?.alphaDeg || 0, frontDeg: F.tf?.alphaDeg || 0 };
+      // (its bodywork - fairing, bars, frame, tail, belly - on the ground: the bike is going down)
+      bk.bodyworkDown = (F.collisions?.contacts?.length || 0) > 0;
       bk.pivot = F.geom.steerPivotBody; bk.axis = F.geom.forkAxisBody;
       return bk;
     }
@@ -1740,6 +1800,7 @@
       BIO.placed = true;
     }
     BIO.place = () => place(free);
+    BIO.bikeAdapter = () => adapt(free); // (the bike as she sees it, now)
     const apply = (F, Q, rs) => {
       const axisW = v5qrot(F.q, bk.axis), pivotW = v5add(F.p, v5qrot(F.q, bk.pivot));
       let steer = 0;
@@ -1785,9 +1846,12 @@
         if (on && R.plan.feetDown > 0) for (const s of R.spheres) if (s.ground.on && s.link === R.foot[R.plan.footSide].link) load += s.ground.F[2];
         filt.footContact += (clamp(load / BIO.config.footContactN, 0, 1) - filt.footContact) * Math.min(1, dt / BIO.config.footContactS);
         const f = on ? smooth01(R.plan.feetDown) * filt.footContact : 0;
-        CH.feetDown.scale = 1 - (1 - BIO.config.balanceAssist) * f;
+        // (off the bike she is not holding it up - unless it stands on its side stand, leaning
+        // sideStandDeg to the left, or she holds it)
+        const off = on && R.plan.fallen, stand = off && (R.plan.sideStand || R.plan.holdingBike);
+        CH.feetDown.scale = off ? (stand ? 1 : 0) : 1 - (1 - BIO.config.balanceAssist) * f;
         // (aimed at the lean onto her foot as soon as it goes down: upright, she could not reach the ground)
-        CH.feetDown.targetRollRad = on && R.plan.feetDownWant && !R.plan.pushOff ? smooth01(R.plan.feetDown) * (R.plan.footSide === "R" ? 1 : -1) * R.plan.footLeanDeg * (Math.PI / 180) : 0;
+        CH.feetDown.targetRollRad = stand ? (R.plan.sideStand ? -BIO.config.sideStandDeg * (Math.PI / 180) : 0) : on && !off && R.plan.feetDownWant && !R.plan.pushOff ? smooth01(R.plan.feetDown) * (R.plan.footSide === "R" ? 1 : -1) * R.plan.footLeanDeg * (Math.PI / 180) : 0;
       }
       if (!BIO.active) return;
       if (BIO.skipIntegrate) { place(F); return; } // held/settling bike moved: she moves with it
@@ -1795,8 +1859,9 @@
       R.integrate(dt);
       BIO.stats.steps++;
       BIO.stats.integrateMs = (BIO.stats.integrateMs || 0) + (performance.now() - t0 - (BIO.stats.integrateMs || 0)) * 0.02;
-      // a body that left the machine far behind (crash, teleport) is put back at the next reset
-      if (!Number.isFinite(R.body.p[0]) || h.len(h.sub(R.body.p, F.p)) > 30) { BIO.placed = false; }
+      // a body that left the machine far behind (a teleport) is put back on it; come off in a crash
+      // she lies where she came to rest until the reset
+      if (!Number.isFinite(R.body.p[0]) || (!R.plan.fallen && h.len(h.sub(R.body.p, F.p)) > 30)) { BIO.placed = false; }
       intent(F, dt);
     }
     CH.wrenches.push(riderWrench);
@@ -1917,6 +1982,7 @@
           schema: "lucid.core.rider-biomech.v1", massKg: tot.mass, posture: { ...R.plan.posture }, intent: { ...R.intent }, auto: BIO.auto,
           contactsN: sum, grips: { L: R.grips.L.held, R: R.grips.R.held }, comBodyM: comB, brace: R.plan.brace, steerNm: BIO.stats.steerNm || 0, stepMs: BIO.stats.stepMs, integrateMs: BIO.stats.integrateMs,
           feet: { down: R.plan.feetDown, side: R.plan.footSide, mode: R.plan.footMode, steps: R.plan.step.steps, walk: R.plan.walk, dab: R.plan.dab, dabSide: R.plan.dabSide },
+          fallen: R.plan.fallen, fallenS: R.plan.fallenS, fallCause: R.plan.fallCause,
         };
       }
       return M;

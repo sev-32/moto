@@ -33,6 +33,8 @@ FREE RIDE → START ROLLING RIDE (or STANDING START). Enable audio with the AUDI
 | K (hold) | sit up, weight back |
 | U (hold) | stand on the pegs |
 | G / B (hold) | walk the bike forward / back with her foot (stopped or at walking pace; clutch in) |
+| F | stopped: get off (side stand down); on foot by the bike: lift it if it is down, get on if it is up |
+| WASD / arrows, Shift | on foot (after getting off or a crash): walk relative to the camera, run; drag / wheel orbit and zoom the camera that follows her |
 | O | auto rider posture on / off (she hangs off with lateral g, tucks with speed, sits up braking) |
 | 1-7 | cameras: chase, side, front, tail, high, cinema, helmet |
 | T | feel HUD (friction circles, loads, slip, suspension, posture, inputs) |
@@ -41,7 +43,9 @@ FREE RIDE → START ROLLING RIDE (or STANDING START). Enable audio with the AUDI
 
 Gamepad (V1.24): triggers throttle / front brake, B rear brake, A clutch, bumpers gears, left
 stick steering; d-pad left/right hang-off, up/down tuck / sit up; left stick up/down walks the bike
-when stopped.
+when stopped. On foot: left stick moves her, right stick orbits the camera, right trigger runs, X
+gets off / lifts / gets on. After a crash she lies still, gets up and is yours to walk back to the
+bike (R resets everything).
 
 **BURNOUT RIG** (chip bottom-left, stationary bike): chocks the front axle, holds the front brake,
 revs, feeds the clutch and holds ~9000 rpm with the rear spinning — NIMBUS volumetric smoke,

@@ -49,6 +49,7 @@ wrapped original.
 | 45 rider-multibody | – (`LUCID_MULTIBODY`) | articulated-body engine: floating base + revolute hinges, Featherstone ABA, RNEA, stable-PD armature (allocation-free) |
 | 46 rider-biomech | `riderBio` | the physical rider: the LUCID character as an articulated body (46 Semantic51 hinges + floating pelvis) on the 916's contact surfaces; torque-limited servos, IK planner, virtual-model lower body, contacts; coupled into the V5 multibody (bike-only mass matrix) |
 | 47 rider-render | `riderRender` | draws her every frame through the canonical skin path from her body's commands + placement; hides the legacy mannequin while she is active |
+| 48 rider-onfoot | `riderBio.rider.onFoot` | the same body off the bike: standing, walking and step-turning (capture-point stepping, centre-of-pressure control, declared balance assists), getting up after a fall, getting on / off and lifting the bike (F / pad X); the third-person camera and controls while she is off it |
 | 50 world | `world` | proving ground: shared height / signed-distance / grip fields for physics and GPU, terrain + sky, shadows, minimap, lap timer, clean ride view |
 | 55 skidmarks | `skid` | toroidal rubber-deposit map stamped from tire frictional energy, sampled by the terrain |
 | 60 fx | `fx` | GPU particles (smoke, vapour, flames, heat haze with refraction, dirt), external emitters |

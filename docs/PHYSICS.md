@@ -38,7 +38,7 @@ at a fixed 540 Hz.
 | Reverse-spin guard | the V1.21 driveline feeds its final-drive damper with \|ω_rear\|; for a wheel turning backwards that torque is replaced by a resisting one scaled by clutch engagement |
 | Aero | CdA 0.46 upright → 0.30 tucked, lift 0.05 / 0.03 m², centre of pressure moving with posture and hang-off |
 | Steering damper | 7 N m s/rad (the 916 carries a hydraulic damper; the legacy had head-bearing damping only) |
-| Feet down | below 0.8 m/s the rider's feet hold roll (4000 N m/rad, 900 N m s/rad, ≤ 450 N m), fading out by 2 m/s |
+| Feet down | below 0.8 m/s the rider's feet hold roll (4000 N m/rad, 900 N m s/rad, ≤ 450 N m), fading out by 2 m/s, and only near upright (full to 25° of lean, none past 40°: a bike lying on its side is not levered back up). With the physical rider off the bike it holds the bike only parked on its side stand (leaning 10° left, declared) or while she holds it |
 | Rear-lift mitigation | with ABS on, trims the front pressure while the rear is unloaded (IMU-less RLM) |
 | Chock | burnout-pit front-axle restraint (3 × 10⁵ N/m, 8000 N s/m, ≤ 12 kN), re-anchored on reset |
 
@@ -149,7 +149,15 @@ canonical skin path (nothing writes bones or skin).
   prevented, one caused); μ 0.2-0.25 for 0.5-0.7 s — all 5 crash either way, her foot takes
   1.6-2.3 kN and the crash comes later in 2 (3.50 vs 3.15 s, 3.56 vs 3.40 s); in one of those,
   held up on her foot, the bike was flicked over the other way when the rear gripped again.
-* **Not yet / known**: crashes as a ragdoll; standing wheelie control; hang-off builds slowly
+* **Coming off** (a crash): the bike leaning past 70°, past 45° with its bodywork (fairing, bars,
+  frame, tail, belly) on the ground, or both her grips torn open: she lets go of the bars and her
+  muscles drop to a quarter of their riding gains on the posture she was in, with no gravity
+  feed-forward (her limbs lie where they fall), fading to 3 % over 1 s; she slides, tumbles and
+  comes to rest on her own contacts (ground friction 0.55 × the surface grip - 0.5 on grass). What
+  she does next is the off-the-bike layer (below). Rear-patch low-side at 12 m/s: she comes off at
+  56° as the fairing touches down and stops 2.5 m from the bike; a flick when the rear grips
+  again tears her grips open and throws her over it.
+* **Not yet / known**: standing wheelie control; hang-off builds slowly
   (lift-and-shift across the seat). After she has walked the bike, her planted leg can keep
   nudging it along (0.35 → 0.47 m/s over 2 s): the leg's posture targets assume the planned
   pelvis orientation, and re-orienting the pelvis through a planted foot pushes the ground back
@@ -157,6 +165,65 @@ canonical skin path (nothing writes bones or skin).
   The dab takes a share of a fall, it does not save one (measured above).
 * Auto rider: hangs off with 1.2 s-filtered lateral g from the heading rate (style 0.9), tucks
   from 33 m/s, sits up braking hard at speed; `radius60` holds 38° of lean at 0.68 g.
+
+## Off the bike (`48_rider_onfoot.js`)
+
+The same body, contacts and joint-torque servos (motor-driven, not muscle-driven); this layer
+plans for them while she is off the bike. Everything here is CANDIDATE: gains and timings are
+declared priors, and three declared assists (below) carry part of her balance - measured and
+reported, not hidden.
+
+* **Standing**: her centre of mass over the middle of her feet (she leans a few degrees at the
+  ankles, as people do); the legs carry her weight as forces through the feet (τ = Jᵀ F), each
+  foot pushing at a centre of pressure under the controller's choice and the ground's push
+  pointing at her centre of mass (an inverted pendulum: no moment about it); the capture point
+  is steered to the middle of the feet. Stance ankles are soft (12 % of their servo gain): their
+  torque is what places the centre of pressure. Soles have width off the bike (inner/outer edge
+  spheres at heel and ball; riding, the centre row is her contact as before).
+* **Walking / turning**: she lifts a foot once her capture point is just inside the other one,
+  and sets it down where the capture point will be at touchdown, less the steady-gait offset for
+  the speed she is told (l / (e^ωT − 1)), out to its side (W / (e^ωT + 1)), with speed feedback
+  along her heading; the swinging foot follows its path through the joint servos fed with the
+  planned joint rates. Turning is stepping: the pelvis faces at most 40° from the foot it stands
+  on, each step turns the foot at most 70°, her velocity turns no faster than 2 m/s² sideways
+  allows, reversals slow down first, and on the spot she turns at 1 rad/s.
+* **Declared assists**: (1) a pelvis torque towards upright and her heading (≤ 120 N m);
+  (2) a catch: once her capture point is further from the foot she stands on than
+  0.3 m + 0.12 s × her speed, a force through her centre of mass holds it there (m ω² per metre,
+  ≤ 500 N) - a spotter's hand; (3) getting up, a force (≤ 150 N) and torque (≤ 200 N m) on the
+  pelvis towards each phase's pose.
+* **Getting up**: at rest on the ground (her centre of mass < 0.25 m/s for 0.6 s, then 1.5 s
+  more) she rolls face down, pushes up onto hands and knees (hands under the shoulders, knees
+  under the hips, pelvis at 0.5 m), plants her toes and lifts her knees so the hips go back and
+  up over her feet with the hands still down (a deep squat), then rises over 1.2 s, trunk and
+  pelvis pitching back to upright, arms forward, the on-foot balance holding her.
+* **Bike** (F / pad X): stopped, F gets her off to the bike's left with the side stand down; by a
+  fallen bike F lifts it onto its stand; by an upright one F gets her on (the bike rocked upright
+  off its stand). First versions: these three move her or the bike straight to the end state -
+  the stepping-off, lifting and leg-over motions are not built yet. Off the bike its throttle is
+  shut, clutch in, steering free, front brake held while it stands.
+* **Camera and controls**: off the bike the camera follows her (drag or right stick to orbit,
+  wheel to zoom; walking she draws it round behind her); WASD / arrows / left stick move her
+  relative to the camera, Shift / right trigger run.
+* **Checks** (`tests/rider_onfoot.test.mjs`, flat ground): standing 5 s without a step, trunk
+  within 2.5°, balance torque under 15 N m rms; told 1 m/s ahead, 8 s and over 3.5 m without a
+  fall; turning on the spot to face the other way; a seeded 30 s random-stick player without a
+  fall; down on her back, front and side she is standing again within 12 s, the get-up assist's
+  mean force under a quarter of her weight.
+* **Measured** (Node, flat ground): told 0.6 / 1.0 / 1.4 m/s she walks at 0.44 / 0.72 / 0.96 m/s
+  (balance torque 32-52 N m rms); 12 of 13 scripted scenarios pass (stop and go, curve, sidestep,
+  spin on the spot, about-turn, walking away backwards, stopping from speed, two pushes, a 2 m/s
+  run at 1.40 m/s); random stick input, 8 × 30 s walking: 1 fall (0.25 per minute), the catch
+  acting 24 % of the time at 95 N rms; with running mixed in, 6 × 30 s: 4 falls (2.6 per minute).
+  (These counts move with small changes to the controller - a fall is chaotic - so they are
+  re-measured with every change.) Getting up after a push from 5 directions: 3.3-3.7 s from rest to the squat, the
+  get-up assist averaging 140 N (19 % of her weight) and 150-165 N m. Browser: after the
+  rear-patch crash she lies 2 s, gets up, walks back to the bike, lifts it and rides on.
+* **Not yet / known**: running is a fast walk (no flight phase) - told 3 m/s she falls; the
+  swinging foot lands 5-8 cm from its aim; protective reactions in a fall (arms out, tucking,
+  rolling) are not built - she is limp until she comes to rest; lifting, getting on and off are
+  placements, not motions; the catch assist does real work (above) and is the first thing to
+  reduce.
 
 ## Legacy rider (`40_rider_body.js`, `?rider=legacy`)
 
