@@ -28,10 +28,17 @@ function build(entry) {
   const man = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
   let html = fs.readFileSync(path.join(dir, "shell.html"), "utf8");
   for (const s of man.scripts) {
-    let body = fs.readFileSync(path.join(dir, s.file), "utf8");
+    const raw = fs.readFileSync(path.join(dir, s.file));
+    let body = (s.gzip ? zlib.gunzipSync(raw) : raw).toString("utf8");
     if (sha(body) !== s.sha256) throw Error(`${entry.id}/${s.file} modified`);
     for (const t of ["@@GLB_B64@@", "@@FRONT_ASSET@@", "@@REAR_ASSET@@", "@@TIRE_DATA@@"])
       if (body.includes(t)) body = body.replace(t, () => asset(t));
+    for (const v of man.vfs || []) {
+      if (!body.includes(v.token)) continue;
+      const bytes = zlib.gunzipSync(fs.readFileSync(path.join(dir, v.file)));
+      if (sha(bytes) !== v.sha256) throw Error(`${entry.id}/${v.file} modified`);
+      body = body.replace(v.token, () => bytes.toString("base64"));
+    }
     html = html.replace(`@@SCRIPT_${String(s.index).padStart(2, "0")}@@`, () => body);
   }
   const out = path.join(ROOT, "dist/reference", entry.file);

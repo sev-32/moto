@@ -1,0 +1,2 @@
+
+(()=>{function syncSkid(){const b=document.getElementById('skidQuick'),a=window.DUCATI916_SKID_DEV;if(!b)return;const on=!!a?.active;b.classList.toggle('on',on);b.textContent=on?'SKID: ON':'SKID TEST';}function bind(){const b=document.getElementById('skidQuick');if(!b||b.__bound)return;b.__bound=true;b.onclick=()=>{const a=window.DUCATI916_SKID_DEV;if(!a)return;if(a.active)a.stop();else a.start(14);syncSkid();};setInterval(syncSkid,150);syncSkid();}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();})();

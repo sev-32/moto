@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<script>@@SCRIPT_00@@</script>
+
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Ducati 916 V85.10 — Burnout + Rider Contact</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#05070a;
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#e8eef5;
+  -webkit-user-select:none;user-select:none;touch-action:none}
+#gl,#hud{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{pointer-events:none}
+.panel{position:fixed;background:rgba(9,12,16,.80);border:1px solid rgba(255,255,255,.10);
+  border-radius:10px;backdrop-filter:blur(9px);font-size:12px;line-height:1.55}
+#help{left:14px;top:14px;padding:12px 14px;max-width:290px;display:none}
+#help.on{display:block}
+#help h3{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#7fe3ff;margin-bottom:8px;font-weight:600}
+#help table{border-collapse:collapse;width:100%}
+#help td{padding:1px 0;vertical-align:top}
+#help td:first-child{color:#9fb3c6;font-family:ui-monospace,monospace;padding-right:12px;white-space:nowrap}
+#tele{right:14px;top:226px;padding:11px 13px;width:298px;display:none;max-height:calc(76vh - 210px);overflow:auto}
+#miniMapWrap{position:fixed;right:14px;top:14px;width:298px;height:198px;padding:8px;z-index:11;pointer-events:auto;overflow:hidden}
+#miniMap{width:100%;height:100%;display:block;border-radius:7px;background:#202329}
+#miniMapLabel{position:absolute;left:13px;top:11px;font:700 8px ui-monospace,monospace;letter-spacing:.13em;color:#d6e7f4;text-shadow:0 1px 2px #000}
+#miniMapZone{position:absolute;left:13px;bottom:10px;font:8px ui-monospace,monospace;color:#9fc4d7;text-shadow:0 1px 2px #000}
+#tele.on{display:block}
+#tele h3{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#7fe3ff;margin-bottom:7px;font-weight:600}
+#teleBody div{display:flex;justify-content:space-between;gap:10px;font-family:ui-monospace,monospace;font-size:11px;padding:1px 0}
+#teleBody span{color:#8ea3b6}
+#teleBody b{color:#eaf3fb;font-weight:500}
+#opts{left:14px;bottom:14px;padding:9px 12px;display:grid;grid-template-columns:1fr;gap:5px;pointer-events:auto;width:244px;max-height:58vh;overflow:auto}
+#opts .row{display:flex;align-items:center;gap:7px;min-height:20px}
+#opts .row.range{display:grid;grid-template-columns:82px 1fr 36px;gap:5px}
+#opts .section{font-size:8px;letter-spacing:.17em;text-transform:uppercase;color:#6d91a8;border-top:1px solid rgba(255,255,255,.09);padding-top:5px;margin-top:2px}
+#opts label{color:#c3d2df;font-size:10.5px;cursor:pointer}
+#opts input[type=checkbox]{accent-color:#7fe3ff;cursor:pointer}
+#opts input[type=range]{width:100%;accent-color:#7fe3ff;cursor:pointer}
+#opts output{font:9px ui-monospace,monospace;color:#7fe3ff;text-align:right}
+#steerPad{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);width:min(360px,34vw);height:68px;z-index:9;pointer-events:auto;touch-action:none;cursor:ew-resize;overflow:hidden}
+#steerPad .title{position:absolute;left:8px;top:5px;font:700 8px ui-monospace,monospace;letter-spacing:.13em;color:#91a8ba}
+#steerPad .hint{position:absolute;right:8px;top:5px;font:8px ui-monospace,monospace;color:#607889}
+#steerPad .axis{position:absolute;left:9px;right:9px;top:35px;height:2px;background:rgba(255,255,255,.13)}
+#steerPad .axis:after{content:'';position:absolute;left:50%;top:-13px;width:1px;height:28px;background:rgba(255,255,255,.28)}
+#steerPad .target,#steerPad .actual{position:absolute;top:26px;width:3px;height:20px;border-radius:2px;pointer-events:none}
+#steerPad .target{background:#ffb33c;box-shadow:0 0 8px rgba(255,179,60,.65)}
+#steerPad .actual{background:#7fe3ff;box-shadow:0 0 8px rgba(127,227,255,.65);width:2px}
+#steerPad.off{opacity:.35;pointer-events:none}
+#steerPad .read{position:absolute;left:8px;bottom:4px;font:8px ui-monospace,monospace;color:#71899a}
+#cams{position:fixed;top:14px;left:50%;transform:translateX(-50%);display:flex;gap:5px;pointer-events:auto}
+#cams button{background:rgba(9,12,16,.8);border:1px solid rgba(255,255,255,.12);color:#c9d8e6;
+  padding:6px 11px;border-radius:7px;font-size:11px;cursor:pointer;backdrop-filter:blur(9px)}
+#cams button:hover{background:rgba(30,42,54,.9);color:#fff}
+#cams #burnoutQuick{border-color:rgba(255,125,72,.62);color:#ffd3bc;font-weight:700;letter-spacing:.04em}
+#cams #burnoutQuick.on{background:rgba(183,54,28,.92);border-color:#ff9b68;color:#fff;box-shadow:0 0 18px rgba(255,92,46,.42)}
+#cams #skidQuick{border-color:rgba(100,190,255,.55);color:#cfeeff;font-weight:700}#cams #skidQuick.on{background:rgba(25,96,145,.92);border-color:#7fd1ff;color:#fff;box-shadow:0 0 16px rgba(80,180,255,.35)}
+#splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 50% 45%,rgba(18,24,32,.86),rgba(3,5,8,.97));z-index:20;text-align:center;padding:20px}
+#splash h1{font-size:clamp(26px,5.6vw,54px);font-weight:200;letter-spacing:.22em;margin-bottom:6px}
+#splash h1 b{font-weight:700;color:#e8402e}
+#splash p{color:#93a7b9;font-size:13px;max-width:520px;line-height:1.7;margin-bottom:22px}
+#startBtn{background:#e8402e;border:0;color:#fff;padding:13px 34px;border-radius:9px;font-size:14px;
+  letter-spacing:.12em;font-weight:600;cursor:pointer}
+#startBtn:hover{background:#ff5540}
+#touch{display:none;position:fixed;inset:0;pointer-events:none;z-index:8}
+#touch .b{position:absolute;pointer-events:auto;background:rgba(14,19,25,.72);border:1px solid rgba(255,255,255,.16);
+  border-radius:50%;width:70px;height:70px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#cfe0ee}
+#touch .b.dn{background:rgba(232,64,46,.72)}
+#tThr{right:16px;bottom:150px}#tBF{right:100px;bottom:96px}#tBR{right:16px;bottom:66px}
+#tCl{left:16px;bottom:150px}#tL{left:16px;bottom:66px}#tR{left:100px;bottom:66px}
+#tUp{right:100px;bottom:206px}#tDn{right:16px;bottom:236px}
+
+/* V66 Physics Observatory / autonomous test laboratory */
+#devPanel{position:fixed;right:326px;top:14px;width:min(520px,calc(100vw - 660px));min-width:430px;max-height:calc(100vh - 28px);overflow:hidden;z-index:12;display:none;background:rgba(5,9,13,.94);border:1px solid rgba(127,227,255,.24);border-radius:10px;backdrop-filter:blur(12px);box-shadow:0 14px 44px rgba(0,0,0,.32);pointer-events:auto}
+#devPanel.on{display:block}#devPanel .devHead{display:flex;align-items:center;gap:7px;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.1)}
+#devPanel .devHead strong{font:700 10px ui-monospace,monospace;letter-spacing:.14em;color:#7fe3ff;margin-right:auto}
+#devPanel button,#devPanel select{background:#101820;color:#d9e8f3;border:1px solid rgba(255,255,255,.14);border-radius:5px;font:9px ui-monospace,monospace;padding:5px 7px;cursor:pointer}
+#devPanel button.on{border-color:#7fe3ff;color:#7fe3ff;background:#10212b}#devPanel button.warn{border-color:#ffb45b;color:#ffd19a}
+#devPages{display:flex;gap:4px;padding:7px 8px 0;flex-wrap:wrap}#devPages button{padding:4px 7px}
+#devViz{display:block;width:calc(100% - 16px);height:230px;margin:8px;border:1px solid rgba(255,255,255,.09);border-radius:7px;background:rgba(2,5,8,.76)}
+#devRows{padding:0 9px 8px;max-height:32vh;overflow:auto}#devRows .r{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.035);font:9px ui-monospace,monospace}#devRows .r span{color:#7f97a8}#devRows .r b{font-weight:500;color:#edf7ff;text-align:right;word-break:break-word}
+#devPilot{display:grid;grid-template-columns:1fr auto auto auto;gap:5px;padding:7px 8px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
+#devStatus{padding:6px 9px;font:9px ui-monospace,monospace;color:#9bb3c3;white-space:pre-wrap;max-height:70px;overflow:auto}
+#devScore{font:700 10px ui-monospace,monospace;color:#7fe3ff;padding:0 9px 7px}
+@media(max-width:1100px){#devPanel{right:14px;width:min(520px,calc(100vw - 28px));min-width:0}#tele.on{display:none}}
+</style></head><body>
+<canvas id="gl"></canvas><canvas id="hud"></canvas>
+<div class="panel" id="miniMapWrap"><canvas id="miniMap" width="564" height="364"></canvas><div id="miniMapLabel">V80 PAVEMENT TEST WORLD</div><div id="miniMapZone">INFINITE PAVEMENT</div></div>
+
+<div id="cams">
+  <button data-cam="0">Chase</button><button data-cam="1">Orbit</button>
+  <button data-cam="2">Rider</button><button data-cam="3">Side</button><button data-cam="4">Drivetrain</button><button data-cam="5">Upper</button><button data-cam="6">Feet</button><button id="burnoutQuick" title="Start/stop the stabilized stationary burnout developer rig">BURNOUT RIG</button><button id="skidQuick" title="Developer moving rear-wheel skid smoke test">SKID TEST</button><button id="devToggle" title="Physics observatory / autonomous test lab">DEV</button>
+</div>
+
+<div class="panel" id="help"><h3>Controls</h3><table>
+<tr><td>RT</td><td>throttle</td></tr>
+<tr><td>LT</td><td>combined brakes · assisted front/rear balance</td></tr>
+<tr><td>LB / RB</td><td>shift up / down</td></tr>
+<tr><td>Left stick X</td><td>rider steering effort / handlebar pressure</td></tr>
+<tr><td>Left stick Y</td><td>forward = tuck · rearward = sit up / aero brake</td></tr>
+<tr><td>L3</td><td>toggle persistent tuck</td></tr>
+<tr><td>Right stick</td><td>rider body left/right + forward/rear</td></tr>
+<tr><td>R3</td><td>toggle seated / standing</td></tr>
+<tr><td>W / &uarr;</td><td>throttle</td></tr>
+<tr><td>S / &darr;</td><td>front brake (right lever)</td></tr>
+<tr><td>Space</td><td>rear brake (right pedal)</td></tr>
+<tr><td>Shift / C</td><td>clutch (left lever)</td></tr>
+<tr><td>A D / &larr;&rarr;</td><td>rider steering effort</td></tr>
+<tr><td>Mouse pad</td><td>continuous steering effort</td></tr>
+<tr><td>F</td><td>release steering effort</td></tr>
+<tr><td>J / L</td><td>rider shift left / right</td></tr>
+<tr><td>I / K</td><td>rider forward / rearward</td></tr>
+<tr><td>B / V</td><td>stand toggle / rider neutral</td></tr>
+<tr><td>E / Q</td><td>shift up / down</td></tr>
+<tr><td>R</td><td>starter / kill</td></tr>
+<tr><td>Ctrl</td><td>tuck behind the screen</td></tr>
+<tr><td>X</td><td>side stand</td></tr>
+<tr><td>1&ndash;7</td><td>cameras (drag to orbit, scroll to zoom)</td></tr>
+<tr><td>T / H</td><td>telemetry / this panel</td></tr>
+<tr><td>M / P</td><td>mute / pause</td></tr>
+<tr><td>G</td><td>developer stationary burnout hold (toggle)</td></tr>
+<tr><td>Enter</td><td>reset</td></tr>
+</table></div>
+
+<div class="panel" id="tele"><h3>Telemetry</h3><div id="teleBody"></div></div>
+<div id="devPanel">
+  <div class="devHead"><strong>V68 PARAMETER IDENTIFICATION LAB</strong><button id="devRec">REC</button><button id="devClear">CLEAR</button><button id="devJSON">JSON</button><button id="devCSV">CSV</button></div>
+  <div id="devPages"><button data-devpage="system" class="on">SYSTEM</button><button data-devpage="tyres">TYRES</button><button data-devpage="powertrain">ENGINE/DRIVE</button><button data-devpage="chassis">CHASSIS</button><button data-devpage="suspension">SUSPENSION</button><button data-devpage="contacts">CONTACTS</button><button data-devpage="stability">STABILITY</button><button data-devpage="rider">RIDER</button><button data-devpage="tests">EVALUATOR</button><button data-devpage="identify">IDENTIFY</button></div>
+  <canvas id="devViz" width="980" height="460"></canvas>
+  <div id="devPilot"><select id="devPilotMode">
+    <option value="observe">observe only</option><option value="burnoutHold">stationary burnout · DEV balance rig</option><option value="walk">walk / paddle balance</option><option value="figure8">walking figure-8</option><option value="accel">1→6 acceleration</option><option value="brake">ABS acceleration + stop</option><option value="slalom">medium-speed slalom</option><option value="skidpadL">left skidpad</option><option value="skidpadR">right skidpad</option><option value="trailBrake">trail-brake corner</option><option value="powerCorner">power-corner boundary</option><option value="stepSteer">step-steer response</option><option value="wobble">steering wobble impulse</option><option value="rough">rough-road suspension</option><option value="radiusLimit">constant-radius grip search</option><option value="adhesionSearch">progressive adhesion-limit search</option><option value="stabilitySuite">stability / suspension suite</option><option value="quarterMile">quarter-mile · standard assisted rider</option><option value="quarterExpert">quarter-mile · expert test rider</option><option value="roll60_80">top-gear roll-on · 60→80 mph</option><option value="roll80_100">top-gear roll-on · 80→100 mph</option><option value="topSpeed">top-speed equilibrium validation</option><option value="coastdown">coastdown aero/rolling audit</option><option value="suspSettle">suspension settle identification</option><option value="suite">autonomous test suite</option>
+  </select><button id="devStart">START</button><button id="devBurnout">BURNOUT RIG</button><button id="devStop">STOP</button><button id="devReset">RESET</button></div>
+  <div id="devScore">REALISM EVALUATOR: awaiting data</div><div id="devStatus">The evaluator distinguishes internal solver invariants from historical calibration. It cannot certify real-world fidelity without measured reference data.</div><div id="devRows"></div>
+</div>
+
+
+<div class="panel" id="opts">
+  <div class="section">Powertrain</div>
+  <div class="row"><input type="checkbox" id="aClutch" checked><label for="aClutch">auto clutch</label></div>
+  <div class="row"><input type="checkbox" id="aShift"><label for="aShift">shift assist</label></div>
+  <div class="row"><input type="checkbox" id="aTermi"><label for="aTermi">Termignoni cans</label></div>
+  <div class="row range"><label for="vol">volume</label><input type="range" id="vol" min="0" max="100" value="85"><output id="volV">85</output></div>
+  <div class="section">Causal sound calibration</div>
+  <div class="row range"><label for="sndExh">exhaust</label><input type="range" id="sndExh" min="0" max="160" value="100"><output id="sndExhV">1.00</output></div>
+  <div class="row range"><label for="sndInt">intake</label><input type="range" id="sndInt" min="0" max="160" value="100"><output id="sndIntV">1.00</output></div>
+  <div class="row range"><label for="sndMech">mechanical</label><input type="range" id="sndMech" min="0" max="180" value="100"><output id="sndMechV">1.00</output></div>
+  <div class="row range"><label for="sndPop">afterfire</label><input type="range" id="sndPop" min="0" max="140" value="35"><output id="sndPopV">0.35</output></div>
+  <div class="row range"><label for="sndDyn">RPM dynamics</label><input type="range" id="sndDyn" min="0" max="160" value="100"><output id="sndDynV">1.00</output></div>
+  <div class="row range"><label for="sndIntPres">intake presence</label><input type="range" id="sndIntPres" min="0" max="180" value="100"><output id="sndIntPresV">1.00</output></div>
+  <div class="section">V74 spatial acoustics</div>
+  <div class="row"><label for="sndEnv" style="width:82px">environment</label><select id="sndEnv"><option value="0" selected>open tarmac</option><option value="1">race circuit</option><option value="2">roadside</option><option value="3">urban canyon</option><option value="4">tunnel</option></select></div>
+  <div class="row range"><label for="sndWind">world wind</label><input type="range" id="sndWind" min="0" max="300" value="0"><output id="sndWindV">0.0</output></div>
+  <div class="row range"><label for="sndWindDir">wind bearing</label><input type="range" id="sndWindDir" min="-180" max="180" value="0"><output id="sndWindDirV">0°</output></div>
+  <div class="row range"><label for="sndGust">turbulence</label><input type="range" id="sndGust" min="0" max="100" value="32"><output id="sndGustV">0.32</output></div>
+  <div class="row range"><label for="sndShield">rider shielding</label><input type="range" id="sndShield" min="0" max="100" value="68"><output id="sndShieldV">0.68</output></div>
+  <div class="section">Controller</div>
+  <div class="row"><span id="gpStatus" style="font:9px ui-monospace,monospace;color:#8ea3b6">gamepad: not connected</span></div>
+  <div class="row"><input type="checkbox" id="gpBrakeAssist" checked><label for="gpBrakeAssist">LT dynamic brake balance</label></div>
+  <div class="row"><input type="checkbox" id="aABS" checked><label for="aABS">ABS assist (default · non-period)</label></div>
+  <div class="row range"><label for="gpDeadzone">stick deadzone</label><input type="range" id="gpDeadzone" min="4" max="24" value="10"><output id="gpDeadzoneV">0.10</output></div>
+  <div class="section">Tyres / contact patch</div>
+  <div class="row range"><label for="psiF">front cold PSI</label><input type="range" id="psiF" min="24" max="42" value="32" step="0.5"><output id="psiFV">32.0</output></div>
+  <div class="row range"><label for="psiR">rear cold PSI</label><input type="range" id="psiR" min="24" max="46" value="36" step="0.5"><output id="psiRV">36.0</output></div>
+  <div class="section">Steering effort input</div>
+  <div class="row"><input type="checkbox" id="aMouse" checked><label for="aMouse">mouse steering pressure</label></div>
+  <div class="row"><input type="checkbox" id="aLeanHold" checked><label for="aLeanHold">hold keyboard pressure</label></div>
+  <div class="row range"><label for="leanRate">pressure rate</label><input type="range" id="leanRate" min="20" max="180" value="82"><output id="leanRateV">0.82</output></div>
+  <div class="row range"><label for="ctrlDamp">hand response</label><input type="range" id="ctrlDamp" min="0" max="100" value="62"><output id="ctrlDampV">0.62</output></div>
+  <div class="row range"><label for="ctrlPress">arm damping</label><input type="range" id="ctrlPress" min="0" max="100" value="66"><output id="ctrlPressV">0.66</output></div>
+  <div class="section">Rider / CoG</div>
+  <div class="row"><input type="checkbox" id="aRider" checked><label for="aRider">rider mass (75 kg)</label></div>
+  <div class="row"><input type="checkbox" id="aRiderAuto" checked><label for="aRiderAuto">auto body English</label></div>
+  <div class="row"><input type="checkbox" id="aRiderVisual" checked><label for="aRiderVisual">causal skinned rider biomechanics</label></div>
+  <div class="row range"><label for="riderSide">seat side</label><input type="range" id="riderSide" min="-100" max="100" value="0"><output id="riderSideV">0.00</output></div>
+  <div class="row range"><label for="riderFore">fore / aft</label><input type="range" id="riderFore" min="-100" max="100" value="0"><output id="riderForeV">0.00</output></div>
+  <div class="row range"><label for="riderStand">stand / unweight</label><input type="range" id="riderStand" min="0" max="100" value="0"><output id="riderStandV">0.00</output></div>
+  <div class="row range"><label for="riderSeatH">seat height</label><input type="range" id="riderSeatH" min="-35" max="85" value="0"><output id="riderSeatHV">0 mm</output></div>
+  <div class="row range"><label for="riderTuck">tuck trim</label><input type="range" id="riderTuck" min="0" max="100" value="0"><output id="riderTuckV">0.00</output></div>
+  <div class="row range"><label for="riderBalance">balance assist</label><input type="range" id="riderBalance" min="0" max="150" value="88"><output id="riderBalanceV">0.88</output></div>
+  <div class="row range"><label for="riderHang">hang-off gain</label><input type="range" id="riderHang" min="0" max="150" value="92"><output id="riderHangV">0.92</output></div>
+  <div class="row range"><label for="riderTorso">torso pitch trim</label><input type="range" id="riderTorso" min="-100" max="100" value="0"><output id="riderTorsoV">0.00</output></div>
+  <div class="row range"><label for="riderHead">head stabilization</label><input type="range" id="riderHead" min="0" max="100" value="80"><output id="riderHeadV">0.80</output></div>
+  <div class="section">Chase camera</div>
+  <div class="row range"><label for="camElastic">elasticity</label><input type="range" id="camElastic" min="0" max="100" value="52"><output id="camElasticV">0.52</output></div>
+  <div class="row range"><label for="camG">G reveal</label><input type="range" id="camG" min="0" max="24" value="12"><output id="camGV">0.12</output></div>
+  <div class="row range"><label for="camRoll">lean follow</label><input type="range" id="camRoll" min="0" max="80" value="40"><output id="camRollV">0.40</output></div>
+  <div class="row range"><label for="camDist">distance</label><input type="range" id="camDist" min="250" max="600" value="355"><output id="camDistV">3.55</output></div>
+</div>
+
+<div class="panel" id="steerPad">
+  <div class="title">STEERING EFFORT · MOUSE</div><div class="hint">double-click = centre</div>
+  <div class="axis"></div><div class="target" id="steerTarget"></div><div class="actual" id="steerActual"></div>
+  <div class="read" id="steerRead">pressure 0.00 · effort 0.00</div>
+</div>
+
+<div id="touch">
+  <div class="b" id="tThr">THR</div><div class="b" id="tBF">F.BR</div><div class="b" id="tBR">R.BR</div>
+  <div class="b" id="tCl">CLU</div><div class="b" id="tL">&larr;</div><div class="b" id="tR">&rarr;</div>
+  <div class="b" id="tUp">UP</div><div class="b" id="tDn">DN</div>
+</div>
+
+<div id="splash">
+  <h1>DUCATI <b>916</b></h1>
+  <p>Fully rigged 1997 mesh on a pressure-coupled distributed-brush motorcycle tyre model.
+     90&deg; L&#8209;twin with true 270&deg;/450&deg; firing &middot; six&#8209;speed dog box &middot; dry clutch &middot;
+     telescoping fork &middot; single&#8209;sided swingarm &middot; live chain &middot; steering damper.<br>
+     Countersteer, articulated rider CoG, pressure-driven contact patches, progressive grip saturation, wheel-hop and tyre thermal state are simulated.
+     A switchable simulation ABS assist is enabled by default for controllability; it is explicitly not presented as original 1997 equipment.
+     V68 adds provenance-tagged parameter identification, disjoint calibration/holdout targets, power-plane accounting, pitch/load-transfer observability and historical performance profiles on top of the V67 physics observatory. Every sound is synthesized causally &mdash; hot-gas bidirectional exhaust waves, intake tract, desmodromic mechanicals, dry-clutch backlash and camera-space propagation. Nothing is sampled.</p>
+  <button id="startBtn">START ENGINE</button>
+</div>
+
+<script>@@SCRIPT_01@@</script>
+<script>@@SCRIPT_02@@</script>
+<script>@@SCRIPT_03@@</script>
+<script>@@SCRIPT_04@@</script>
+<script>@@SCRIPT_05@@</script>
+<script>@@SCRIPT_06@@</script>
+<script>@@SCRIPT_07@@</script>
+
+<!-- v2.3 additive shadow-only multi-tire / MotoGP / benchmark lab -->
+<script type="module">@@SCRIPT_08@@</script>
+
+<!-- v2.4 additive shadow-only evidence / independent-model disagreement lab -->
+<!-- v2.5 additive read-only bridge: exposes exact V84 suspension state without writes -->
+<script>@@SCRIPT_09@@</script>
+
+<!-- v2.5 additive shadow-only nonlinear fork / linkage / hydraulic suspension twin -->
+<!-- v2.6 additive read-only evidence-constrained suspension reconstruction -->
+<script type="module">@@SCRIPT_10@@</script>
+
+<script>@@SCRIPT_11@@</script>
+<script>@@SCRIPT_12@@</script>
+<script>@@SCRIPT_13@@</script>
+<script>@@SCRIPT_14@@</script>
+</body></html>

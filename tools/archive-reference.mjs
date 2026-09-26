@@ -9,6 +9,9 @@
 //   @@FRONT_ASSET@@  -> assets/tires/front_asset.json          (verbatim JSON text)
 //   @@REAR_ASSET@@   -> assets/tires/rear_asset.json
 //   @@TIRE_DATA@@    -> reference/data/tire_layered_reference_v633.json.gz (verbatim JSON text, gzip)
+// Builds with a virtual file system (window.__DUC_VFS__ = {"path": {"t": "b", "d": "<base64>"}},
+// the V84/V85 VOLUMETRICS lineage) keep each file decoded and gzipped under vfs/ (the shared GLB
+// becomes @@GLB_B64@@); scripts over 256 KB are stored gzipped (NN.js.gz).
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -45,6 +48,33 @@ function jsonEnd(s, i) {
     }
   }
   throw Error("unterminated JSON literal");
+}
+
+// Virtual file system entries -> @@GLB_B64@@ or @@VFS_nn@@ + vfs/nn.gz (decoded bytes).
+function tokenizeVfs(body, stats, dir, vfs) {
+  const mk = "window.__DUC_VFS__=", i = body.indexOf(mk);
+  if (i < 0) return body;
+  const a = i + mk.length, b = jsonEnd(body, a), re = /"([^"]+)":\{"t":"(\w)","d":"/g;
+  let lit = body.slice(a, b), out = "", last = 0, m;
+  while ((m = re.exec(lit))) {
+    const st = re.lastIndex, en = lit.indexOf('"', st), b64 = lit.slice(st, en), bytes = Buffer.from(b64, "base64");
+    if (bytes.toString("base64") !== b64) throw Error(`VFS ${m[1]}: base64 does not round-trip`);
+    let token;
+    if (b64 === GLB_B64) token = "@@GLB_B64@@";
+    else {
+      const n = String(vfs.length).padStart(2, "0");
+      token = `@@VFS_${n}@@`;
+      fs.mkdirSync(path.join(dir, "vfs"), { recursive: true });
+      fs.writeFileSync(path.join(dir, "vfs", `${n}.gz`), zlib.gzipSync(bytes, { level: 9 }));
+      vfs.push({ token, path: m[1], file: `vfs/${n}.gz`, bytes: bytes.length, sha256: sha(bytes) });
+    }
+    out += lit.slice(last, st) + token;
+    last = en;
+    re.lastIndex = en;
+  }
+  out += lit.slice(last);
+  stats.push("VFS");
+  return body.slice(0, a) + out + body.slice(b);
 }
 
 function tokenize(body, stats) {
@@ -101,21 +131,22 @@ for (const f of files) {
   const dir = path.join(ROOT, "reference/builds", id);
   fs.mkdirSync(dir, { recursive: true });
   let shell = "", last = 0, n = 0;
-  const re = /<script([^>]*)>/g, scripts = [];
+  const re = /<script([^>]*)>/g, scripts = [], vfs = [];
   let m;
   while ((m = re.exec(html))) {
     const a = m.index + m[0].length, b = html.indexOf("</script>", a);
     shell += html.slice(last, a) + `@@SCRIPT_${String(n).padStart(2, "0")}@@`;
-    const stats = [], body = tokenize(html.slice(a, b), stats), file = `${String(n).padStart(2, "0")}.js`;
-    fs.writeFileSync(path.join(dir, file), body);
-    scripts.push({ index: n, file, tokens: stats, sha256: sha(body) });
+    const stats = [], body = tokenizeVfs(tokenize(html.slice(a, b), stats), stats, dir, vfs);
+    const gz = Buffer.byteLength(body) > 256 * 1024, file = `${String(n).padStart(2, "0")}.js${gz ? ".gz" : ""}`;
+    fs.writeFileSync(path.join(dir, file), gz ? zlib.gzipSync(Buffer.from(body, "utf8"), { level: 9 }) : body);
+    scripts.push({ index: n, file, tokens: stats, sha256: sha(body), ...(gz ? { gzip: true } : {}) });
     last = b;
     re.lastIndex = b;
     n++;
   }
   shell += html.slice(last);
   fs.writeFileSync(path.join(dir, "shell.html"), shell);
-  const man = { schema: "lucid-moto.reference-build.v1", id, file: name, sha256: digest, bytes: raw.length, scripts };
+  const man = { schema: "lucid-moto.reference-build.v1", id, file: name, sha256: digest, bytes: raw.length, scripts, ...(vfs.length ? { vfs } : {}) };
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(man, null, 2) + "\n");
   index.builds.push({ id, file: name, sha256: digest, bytes: raw.length, aliases: [] });
   console.log(`+ ${id}: ${n} scripts`);

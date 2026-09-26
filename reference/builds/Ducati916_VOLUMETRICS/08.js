@@ -1,0 +1,1 @@
+import(window.__ducBlob("runtime/v2_3/tire_profile_observer_v2_3.mjs"));

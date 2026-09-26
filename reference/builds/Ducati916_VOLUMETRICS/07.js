@@ -1,0 +1,1 @@
+boot().catch(e=>{document.body.innerHTML='<pre style="padding:24px;color:#ff8a72;white-space:pre-wrap">'+e.stack+'</pre>';});

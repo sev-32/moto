@@ -67,6 +67,13 @@
       "aliases": [
         "Ducati916_FULL_MOTORCYCLE_PHYSICS_V5_6_7.html"
       ]
+    },
+    {
+      "id": "Ducati916_VOLUMETRICS",
+      "file": "Ducati916_VOLUMETRICS.html",
+      "sha256": "498a81aed23cd10addb90f39e2c971e3270b7c3a1db6b3a6d0eb6cebd30e0b16",
+      "bytes": 34976303,
+      "aliases": []
     }
   ],
   "studio": {

@@ -1,0 +1,274 @@
+{
+  "schema": "lucid-moto.reference-build.v1",
+  "id": "Ducati916_VOLUMETRICS",
+  "file": "Ducati916_VOLUMETRICS.html",
+  "sha256": "498a81aed23cd10addb90f39e2c971e3270b7c3a1db6b3a6d0eb6cebd30e0b16",
+  "bytes": 34976303,
+  "scripts": [
+    {
+      "index": 0,
+      "file": "00.js",
+      "tokens": [
+        "VFS"
+      ],
+      "sha256": "eacec60e8228139718a5fa3c5142df9a4df4f81a4f3dafdea728a264fb9bb0bc"
+    },
+    {
+      "index": 1,
+      "file": "01.js.gz",
+      "tokens": [],
+      "sha256": "fc791f3f1e3616658231450f75c86efc2df4991080d1f6ab13fa737b4ee21dd4",
+      "gzip": true
+    },
+    {
+      "index": 2,
+      "file": "02.js.gz",
+      "tokens": [],
+      "sha256": "4a47ac64b6558d539d2e4c983551293cb5988c62b3f3a63dd910259a1d5f9c17",
+      "gzip": true
+    },
+    {
+      "index": 3,
+      "file": "03.js",
+      "tokens": [],
+      "sha256": "8d904294604477cc2881cbc2f3a359353abe3aa2a83734726c0b4dd2d6e13baa"
+    },
+    {
+      "index": 4,
+      "file": "04.js",
+      "tokens": [],
+      "sha256": "0c5b9a9636bd0465db0c770c313bd61893963d29d440f3d6dca9ff8b13da8080"
+    },
+    {
+      "index": 5,
+      "file": "05.js.gz",
+      "tokens": [],
+      "sha256": "070e74fce4d408ed3d24a94693d8acf05098fe9277769ebbc4519b1eaf0ba70b",
+      "gzip": true
+    },
+    {
+      "index": 6,
+      "file": "06.js",
+      "tokens": [],
+      "sha256": "676c867eb9f6dd6dd48942a704abfb5606382928b6bb25f5240ef27be2127da6"
+    },
+    {
+      "index": 7,
+      "file": "07.js",
+      "tokens": [],
+      "sha256": "84ab180765c2f0911c61488accc125f9487c8241fa8bf7cf727eef579be18c8e"
+    },
+    {
+      "index": 8,
+      "file": "08.js",
+      "tokens": [],
+      "sha256": "0865df536912a558292b0f9245d66c3dce48e7176682509e9c99e1e935e59d92"
+    },
+    {
+      "index": 9,
+      "file": "09.js",
+      "tokens": [],
+      "sha256": "75a095a63049af7818ea235fd55a3dd4a4eed9d161cbd9eedc5f26880a56f468"
+    },
+    {
+      "index": 10,
+      "file": "10.js",
+      "tokens": [],
+      "sha256": "8ff49efa166a7f55df3432000176d579d569aad0389a9b9e65399163ca0b14fd"
+    },
+    {
+      "index": 11,
+      "file": "11.js",
+      "tokens": [],
+      "sha256": "96cf924e0c0a4eeb5f814f4106bf4a79b500490b0522d8c7251b30d0f10cfa53"
+    },
+    {
+      "index": 12,
+      "file": "12.js",
+      "tokens": [],
+      "sha256": "10af0e69269fcf3866a39a1577c17aee3ea7f237301b5401d573ea11f50f607e"
+    },
+    {
+      "index": 13,
+      "file": "13.js",
+      "tokens": [],
+      "sha256": "931cff0f79e61470e4b8b5d1f01bb4f2123b6164473223b4322b96c8d9815513"
+    },
+    {
+      "index": 14,
+      "file": "14.js",
+      "tokens": [],
+      "sha256": "4548d5f2d7fd2e7f15d375696f54304223fb4acf9cf14c2a412e9917b01668da"
+    }
+  ],
+  "vfs": [
+    {
+      "token": "@@VFS_00@@",
+      "path": "data/v84_highdetail_visual_map.json",
+      "file": "vfs/00.gz",
+      "bytes": 83967,
+      "sha256": "df7ac9c89245aa7e1b0e3576f4bb1d90629fd60f229fefda5eb6ab51d00718d7"
+    },
+    {
+      "token": "@@VFS_01@@",
+      "path": "audio/v74_sound_authority.js",
+      "file": "vfs/01.gz",
+      "bytes": 50091,
+      "sha256": "0fe3b0dc403104ab1fde799cf7dbf56b2207461a8ca54bd26fef65906d0c50aa"
+    },
+    {
+      "token": "@@VFS_02@@",
+      "path": "runtime/v2_3/tire_profile_observer_v2_3.mjs",
+      "file": "vfs/02.gz",
+      "bytes": 19032,
+      "sha256": "a59a2d90097af8bc48d1c3c87354bda3365307d71036a9458221b7835a305bb7"
+    },
+    {
+      "token": "@@VFS_03@@",
+      "path": "runtime/v2_3/tire_profile_lab_v2_3.mjs",
+      "file": "vfs/03.gz",
+      "bytes": 20769,
+      "sha256": "3caa0766ea08890a5e5ddce3ee72c4a96c0dbbe5b4868b743066665b5d19ed19"
+    },
+    {
+      "token": "@@VFS_04@@",
+      "path": "runtime/v2_5/suspension_core_v2_5.mjs",
+      "file": "vfs/04.gz",
+      "bytes": 36066,
+      "sha256": "5023885a432f469f7d9b36ac7a7124f0cf9d4f6539ce9feb6bad3b1929985f5b"
+    },
+    {
+      "token": "@@VFS_05@@",
+      "path": "runtime/v2_6/suspension_reconstruction_constants_v2_6.mjs",
+      "file": "vfs/05.gz",
+      "bytes": 16430,
+      "sha256": "8185dc29e1944395c32d23ba56c4849d9675865dd5f763b954544ab2678bc1fc"
+    },
+    {
+      "token": "@@VFS_06@@",
+      "path": "runtime/v2_6/suspension_reconstruction_core_v2_6.mjs",
+      "file": "vfs/06.gz",
+      "bytes": 13729,
+      "sha256": "99063d3ab2249164184968de7f5d7ccc87f50dbb6e169552c09d198b5097e064"
+    },
+    {
+      "token": "@@VFS_07@@",
+      "path": "runtime/v2_6/suspension_reconstruction_observer_v2_6.mjs",
+      "file": "vfs/07.gz",
+      "bytes": 20745,
+      "sha256": "3cf86de15f2f737fc0161884a80bdf01a8a96083b48c1344ae2e438a37cb7923"
+    },
+    {
+      "token": "@@VFS_08@@",
+      "path": "data/v2_3/tire_profile_registry_v2_3.json",
+      "file": "vfs/08.gz",
+      "bytes": 294223,
+      "sha256": "1e08b2c574d7bcaceeb76f2247b7527a9a297a923e84aa132b0cec35a39df218"
+    },
+    {
+      "token": "@@VFS_09@@",
+      "path": "data/v2_3/tire_benchmark_catalog_v2_3.json",
+      "file": "vfs/09.gz",
+      "bytes": 2606,
+      "sha256": "64a30d4245b8f7310a3ec6cdbaf3e252e9d97a1b8f00d08fd68fa343fe415c5b"
+    },
+    {
+      "token": "@@VFS_10@@",
+      "path": "data/v2_3/tire_data_source_catalog_v2_3.json",
+      "file": "vfs/10.gz",
+      "bytes": 7770,
+      "sha256": "a3e094b30a854471692ecdf7471c94b9165edb9fcb83120df6d19130b89594cd"
+    },
+    {
+      "token": "@@VFS_11@@",
+      "path": "data/v2_3/official_race_tire_operating_envelopes_v2_3.json",
+      "file": "vfs/11.gz",
+      "bytes": 5884,
+      "sha256": "b90e3c3896b30df5cee1ca029bc02494a083fe8bea36ccab746f983e975b9029"
+    },
+    {
+      "token": "@@VFS_12@@",
+      "path": "data/v2_3/benchmarks/mottola_massaro_2022_camber_reduction.json",
+      "file": "vfs/12.gz",
+      "bytes": 2807,
+      "sha256": "2877bd40d884a807e960ec8adc0d4eea61c267d0eaded8da0e6a37c2a193ac9f"
+    },
+    {
+      "token": "@@VFS_13@@",
+      "path": "data/v2_3/benchmarks/massaro_et_al_2023_rigid_ring_modes.json",
+      "file": "vfs/13.gz",
+      "bytes": 3376,
+      "sha256": "4d9c0621d8354c3362591b9e5956cf3bab7b49d6f20ba0263edd110da3e73ce7"
+    },
+    {
+      "token": "@@VFS_14@@",
+      "path": "data/v2_6/suspension_runtime_manifest_v2_6.json",
+      "file": "vfs/14.gz",
+      "bytes": 2854,
+      "sha256": "b2a7ff7280447a18331afc8133f3bd4595f4877b1ee8ebac8844b50a68a51e3f"
+    },
+    {
+      "token": "@@VFS_15@@",
+      "path": "data/v2_6/suspension_profile_registry_v2_6.json",
+      "file": "vfs/15.gz",
+      "bytes": 13977,
+      "sha256": "c6921f168e913af6ca7f3e33492a399ac60a0bc3ffa9a15ac1eacb6f08478050"
+    },
+    {
+      "token": "@@VFS_16@@",
+      "path": "data/v2_6/suspension_geometry_reconstruction_v2_6.json",
+      "file": "vfs/16.gz",
+      "bytes": 10286,
+      "sha256": "eba0e3384af9d3be9c6cb148994284b8de7d2f19efd811493f88ab7374eafb82"
+    },
+    {
+      "token": "@@VFS_17@@",
+      "path": "data/v2_6/validation/suspension_reconstruction_validation_v2_6.json",
+      "file": "vfs/17.gz",
+      "bytes": 80659,
+      "sha256": "82b8162d2aca3771214bf2f576a0ab361ffc78a178a288ff4d2fe4e985917f2a"
+    },
+    {
+      "token": "@@VFS_18@@",
+      "path": "data/v2_6/characterization/suspension_reconstruction_characterization_v2_6.json",
+      "file": "vfs/18.gz",
+      "bytes": 2992441,
+      "sha256": "5ed33c90f947604594bf23cb21b56a33a0bc9f443e0dae1ff442c3277115f148"
+    },
+    {
+      "token": "@@VFS_19@@",
+      "path": "data/v2_6/suspension_parameter_ensemble_v2_6.json",
+      "file": "vfs/19.gz",
+      "bytes": 140187,
+      "sha256": "1257e162d5aaabbadff0efe1ae6435989f7036ad1444ba8dcad1de5bfff14bd3"
+    },
+    {
+      "token": "@@VFS_20@@",
+      "path": "data/v2_6/suspension_evidence_ledger_v2_6.json",
+      "file": "vfs/20.gz",
+      "bytes": 5363,
+      "sha256": "ebdd100b9155eb23c93b9f2fbd4d167c0d73a2f84805b423aab3a1216f238f4e"
+    },
+    {
+      "token": "@@VFS_21@@",
+      "path": "data/v2_6/suspension_mass_reconstruction_v2_6.json",
+      "file": "vfs/21.gz",
+      "bytes": 1793,
+      "sha256": "6ca0809dc549f5957f2da666c94936577959f2ac7ba55c175901f00ca075a353"
+    },
+    {
+      "token": "@@VFS_22@@",
+      "path": "data/v2_6/suspension_reconstruction_build_report_v2_6.json",
+      "file": "vfs/22.gz",
+      "bytes": 1111,
+      "sha256": "840834f3f1d9541b198c25aa7a133e668506d3f475884f5e268a7439e1addf21"
+    },
+    {
+      "token": "@@VFS_23@@",
+      "path": "simulator_v84_highdetail_shadow_v2_6.html",
+      "file": "vfs/23.gz",
+      "bytes": 4269358,
+      "sha256": "dfd647785413cb7949faed4a15f479c10861c436c869d526baacb10ca3d0be2e"
+    }
+  ]
+}

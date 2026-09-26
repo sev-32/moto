@@ -56,6 +56,15 @@
         // bump rubber on the shock shaft, expressed at the wheel (legacy rear force convention)
         bumpStartM: 0.100, bumpLengthM: 0.030, bumpK1: 6.0e4, bumpK3: 7.0e8, bumpDampingNs: 1500,
       },
+      // seal + bushing friction from the V2.6 evidence-constrained reconstruction of the 916's
+      // Showa units (VOLUMETRICS build, suspension_profile_registry_v2_6): fork Coulomb 49 N,
+      // breakaway 76 N, +2 % of the axial load, +1.2 % / 0.75 % of the tire's longitudinal /
+      // lateral force (bushing binding under brakes and in corners); shock 30 / 42 N at the
+      // shaft (/ motion ratio at the wheel). Regularised over 10 mm/s (explicit-step safe).
+      friction: {
+        enabled: true, forkCoulombN: 49, forkStaticN: 76, forkLoadCoeff: 0.02, forkLongCoeff: 0.012, forkLatCoeff: 0.0075,
+        rearCoulombN: 30, rearStaticN: 42, rearMotionRatio: 1.9, v0Mps: 0.01, stribeckMps: 0.025,
+      },
     },
     chain: { enabled: true },
     aero: {
@@ -182,18 +191,29 @@
     const t = P.topOutLengthM - x;
     let top = 0;
     if (t > 0) top = Math.max(0, P.topOutK * Math.min(t, P.topOutLengthM) - P.topOutDampingNs * Math.min(1, t / P.topOutLengthM) * v);
-    const front = su.frontForceN - (su.frontBumpN || 0) + air + lock + stop - top;
     // rear bump rubber (wheel-travel coordinates)
     const xr = su.rearTravelM, vr = su.rearVelMps, er = xr - R.bumpStartM;
     let bump = 0;
     if (er > 0) bump = Math.max(0, R.bumpK1 * er + R.bumpK3 * er * er * er + R.bumpDampingNs * Math.min(1, er / R.bumpLengthM) * vr);
-    const rear = su.rearForceN - (su.rearBumpN || 0) + bump;
+    // seal / bushing friction: Coulomb + breakaway, opposing the stroke velocity
+    const Fq = CH.suspension.friction;
+    let ffr = 0, rfr = 0;
+    if (Fq?.enabled) {
+      const tf = this.tf || {}, bend = Fq.forkLongCoeff * Math.abs(tf.FxN || 0) + Fq.forkLatCoeff * Math.abs(tf.FyN || 0);
+      const fc = Fq.forkCoulombN + Fq.forkLoadCoeff * Math.abs(su.frontSpringN || 0) + bend;
+      ffr = (fc + (Fq.forkStaticN - Fq.forkCoulombN) * Math.exp(-((v / Fq.stribeckMps) ** 2))) * Math.tanh(v / Fq.v0Mps);
+      rfr = ((Fq.rearCoulombN + (Fq.rearStaticN - Fq.rearCoulombN) * Math.exp(-((vr / Fq.stribeckMps) ** 2))) / Fq.rearMotionRatio) * Math.tanh(vr / Fq.v0Mps);
+    }
+    const front = su.frontForceN - (su.frontBumpN || 0) + air + lock + stop - top + ffr;
+    const rear = su.rearForceN - (su.rearBumpN || 0) + bump + rfr;
     su.legacyFrontBumpN = su.frontBumpN;
     su.legacyRearBumpN = su.rearBumpN;
     su.frontAirN = air;
     su.frontLockN = lock;
     su.frontStopN = stop;
     su.frontTopOutN = top;
+    su.frontFrictionN = ffr;
+    su.rearFrictionN = rfr;
     su.frontBumpN = air + lock + stop;
     su.frontForceN = front;
     su.rearBumpN = bump;
