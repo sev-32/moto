@@ -1,5 +1,5 @@
 // Run the rider-in-the-loop maneuver library headless and print metrics (and traces).
-//   node tests/browser/maneuvers.mjs [build.html] [--only a,b] [--trace] [--json out.json]
+//   node tests/browser/maneuvers.mjs [build.html] [--only a,b] [--trace] [--json out.json] [--rider bio|legacy]
 import { openBuild, ROOT } from "./lib.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -40,6 +40,11 @@ function check(name, m) {
 
 const { browser, page, logs } = await openBuild(file, { width: 480, height: 320 });
 await page.waitForFunction(() => window.LUCID_CORE?.maneuvers && window.__LUCID_V1300_READY__, null, { timeout: 120000 }).catch(() => {});
+const rider = args.includes("--rider") ? args[args.indexOf("--rider") + 1] : null;
+if (rider) {
+  const on = await page.evaluate((r) => window.LUCID_CORE.riderBio?.setActive(r === "bio") ?? null, rider);
+  console.log(`rider: ${rider} (physical LUCID rider ${on ? "on" : "off"})`);
+}
 const names = await page.evaluate(() => window.LUCID_CORE.maneuvers.names());
 const results = {};
 for (const name of names) {

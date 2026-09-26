@@ -257,7 +257,9 @@
       // CoG kinematics for honest accelerations (the body origin swings with pitch)
       const cg = systemCog(F, rider).c, vcg = cogPrev ? [(cg[0] - cogPrev[0]) / dt, (cg[1] - cogPrev[1]) / dt, (cg[2] - cogPrev[2]) / dt] : null;
       cogPrev = cg;
-      if (vcg) {
+      // (the first 0.1 s is left out: after a reset the rider settles onto the bike and her
+      // part of the CoG moves by centimetres in a few steps, which is not an acceleration)
+      if (vcg && t >= 0.1) {
         vHist.push(vcg);
         if (vHist.length > Math.round(0.05 / dt)) {
           const va = vHist.shift(), h = s.heading, ax = (v5dot(vcg, h) - v5dot(va, h)) / 0.05;
