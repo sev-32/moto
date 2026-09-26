@@ -696,7 +696,7 @@ void main(){vec4 a=uInvVP*vec4(vN,1.,1.);vec3 d=normalize(a.xyz/a.w-uEye);o=vec4
   // studio/operations panels) on the ride view. Clean view hides them in FREE RIDE only;
   // backquote (\`) or the DEV chip toggles; the choice is remembered.
   const DEV_PANELS = ["v57ChainHUD", "simOverlayCanvas", "simOverlayHUD", "v12854Labels", "v1310Panel", "v1310Overlay"];
-  let clean = true, opsClosedByClean = false;
+  let clean = true, opsClosedByClean = false, studioOverlaysSaved = null;
   try { clean = global.localStorage?.getItem("lucid.cleanRide") !== "0"; } catch (_) {}
   let chip = null;
   function applyClean() {
@@ -709,6 +709,13 @@ void main(){vec4 a=uInvVP*vec4(vN,1.,1.);vec3 d=normalize(a.xyz/a.w-uEye);o=vec4
       if (ride && clean) {
         if (el.dataset.lucidHidden !== "1") { el.dataset.lucidDisplay = el.style.display; el.style.display = "none"; el.dataset.lucidHidden = "1"; }
       } else if (el.dataset.lucidHidden === "1") { el.style.display = el.dataset.lucidDisplay || ""; el.dataset.lucidHidden = "0"; }
+    }
+    // the V1.28.5.5A rider studio draws its focused overlays (gaze ray, skeleton, effector marks)
+    // into every frame: off while riding clean, restored for the studio pages
+    const so = global.LUCID_RIDER_STUDIO_V12855A?.studio?.overlays;
+    if (so) {
+      if (ride && clean && !studioOverlaysSaved) { studioOverlaysSaved = { ...so }; for (const k of Object.keys(so)) so[k] = false; }
+      else if (!(ride && clean) && studioOverlaysSaved) { Object.assign(so, studioOverlaysSaved); studioOverlaysSaved = null; }
     }
     // the V1.30 rider-ops panel re-applies its own display on every render (open by default):
     // close it once through its RIDER OPS toggle, so the rider can still open it on purpose

@@ -47,6 +47,11 @@
       "description": "In-frame volumetric effects: physics-driven tire smoke, exhaust heat/vapour, afterfire flames, brake heat haze, grass/dirt"
     },
     {
+      "id": "exhaust",
+      "file": "62_exhaust.js",
+      "description": "Exhaust gas dynamics: crank-phased pulses, overrun misfire / limiter-cut parcels through the pipes, ignition from V1.25 pulse/wall temperatures, afterfire flames (blackbody) + V1.22 DSP pops from the same bangs, pulsed shimmer and cold-start condensation at the measured silencer tips"
+    },
+    {
       "id": "nimbus",
       "file": "65_nimbus_tire_smoke.js",
       "inlineString": {

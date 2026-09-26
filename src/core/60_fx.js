@@ -45,6 +45,7 @@
     dirt: { enabled: true },
     haze: { enabled: true },
     stats: { alive: 0, emitted: 0, hazeOk: null },
+    emitters: [], // external emitters (dt) run with the built-in ones, on simulation time
   });
 
   // ------------------------------------------------------------------ particle pool
@@ -126,8 +127,10 @@
       }
     }
     // --- exhaust: heat plume, cold vapour, rich overrun haze, afterfire
+    // (superseded by the exhaust gas-dynamics layer when it is loaded: CORE.exhaust)
+    for (const fn of FX.emitters) fn(dt);
     const pt = global.DUCATI_ADVANCED_POWERTRAIN?.states?.free, rpm = pt?.engine?.rpm || 0, thr = pt?.command?.throttle ?? 0;
-    if (FX.exhaust.enabled && rpm > 400) {
+    if (FX.exhaust.enabled && !CORE.exhaust?.enabled && rpm > 400) {
       const tip = FX.exhaust.tipsBody.map((b) => v5add(F.p, v5qrot(q, b))), dir = v5norm(v5qrot(q, FX.exhaust.dirBody));
       const flow = +V.exhaustMassFlowKgS || 0.004 * (rpm / 1000) * (0.3 + thr), tC = +V.tailpipeTempC || 250;
       const gasV = clamp(flow * 350, 2, 28); // ~ exit velocity (m/s) for two 45 mm tips
@@ -272,9 +275,14 @@ void main(){
   float fog=1.-exp(-length(vW-uEye)*uFogDen*1.5);col=mix(col,uSky*1.05,fog*.8);
   o=vec4(col*alpha,alpha);
  } else if(type<2.5){
-  // flame: hot core (yellow-white) to orange rim to blue base, additive
+  // flame: soot incandescence at temperature T = heat x 2500 K (blackbody colour) through a
+  // noisy kernel
   float n=fbm3(vec3(vUV*3.,seed));float d=smoothstep(1.,0.,sqrt(r2))*(.6+.8*n);
-  vec3 col=mix(vec3(1.,.35,.05),vec3(1.,.85,.45),smoothstep(.3,.9,d))*d*a*2.2+vec3(.15,.25,1.)*pow(1.-d,3.)*a*.25;
+  float T=max(heat*2500.,900.),t100=T/100.;
+  vec3 bb=vec3(1.,clamp((99.47*log(t100)-161.12)/255.,0.,1.),T<=1900.?0.:clamp((138.52*log(t100-10.)-305.04)/255.,0.,1.));
+  // radiance ~T^4, compressed (the eye adapts; keeps 1400-2100 K flames all readable)
+  float rad=pow(T/2000.,2.4),core=smoothstep(.25,.95,d);
+  vec3 col=bb*(.4+.6*core)*d*a*2.6*rad;
   o=vec4(col,0.);
  } else if(type<3.5){
   // heat haze: refract the resolved frame (uPass==1) with a noise-gradient offset
