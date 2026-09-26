@@ -37,6 +37,19 @@
       "description": "LUCID canonical female-skin-v4.2: Semantic51 compiler, canonical helper-cluster rules and Skin78 LBS in float64 (parity with the R1.5 Python reference), declared hand layer + grip synergies, 17-segment 75 kg physical profile"
     },
     {
+      "id": "rider-multibody",
+      "file": "45_rider_multibody.js",
+      "description": "Articulated-body dynamics (Featherstone ABA, floating base + revolute hinges, stable-PD armature, RNEA) for the physical rider"
+    },
+    {
+      "id": "rider-biomech",
+      "file": "46_rider_biomech.js",
+      "inline": {
+        "/*@@RIDER_SURFACES@@*/ null": "/assets/bike/ducati916_rider_surfaces.json"
+      },
+      "description": "Physical rider: the LUCID character as an articulated body (Semantic51 hinges, R1.5 17-body profile, skin-fitted contact spheres) on the 916's contact surfaces (envelope SDF, pegs, grips, ground); torque-limited servos, IK planner (world-referenced trunk/head, hang-off/tuck/stand, braking brace), coupled into the V5 multibody"
+    },
+    {
       "id": "world",
       "file": "50_world.js",
       "inline": {

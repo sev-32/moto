@@ -137,9 +137,13 @@
   // spec.links[i] = { name, parent (-1 for the base = link 0), axis (hinge, unit, link frame),
   //                   offset (joint origin in the parent link frame), mass, com, inertia (3x3 at com),
   //                   lo, hi (rad, optional), dof (id, optional) }
+  // Hot paths (kinematics, ABA, RNEA) work on preallocated typed arrays: no allocation per step.
   function createArticulatedBody(spec) {
     const L = spec.links, n = L.length;
     const I = L.map((l) => rigidInertia(l.mass || 0, l.com || [0, 0, 0], l.inertia || [0, 0, 0, 0, 0, 0, 0, 0, 0]));
+    const AX = L.map((l) => Float64Array.from(l.axis || [0, 0, 0])), OFF = L.map((l) => Float64Array.from(l.offset || [0, 0, 0]));
+    const PAR = Int32Array.from(L.map((l) => (l.parent == null ? -1 : l.parent)));
+    const f9 = () => Float64Array.of(1, 0, 0, 0, 1, 0, 0, 0, 1), f6 = () => new Float64Array(6), f3 = () => new Float64Array(3);
     const S = {
       n, links: L,
       // base (link 0): world position of its origin, orientation (world <- link), spatial velocity in link coords
@@ -147,79 +151,173 @@
       q: new Float64Array(n), qd: new Float64Array(n), qdd: new Float64Array(n), ab: [0, 0, 0, 0, 0, 0],
       tau: new Float64Array(n), armature: new Float64Array(n),
       // per-link world state (updated by kinematics())
-      Rw: L.map(() => [1, 0, 0, 0, 1, 0, 0, 0, 1]), ow: L.map(() => [0, 0, 0]), v: L.map(() => [0, 0, 0, 0, 0, 0]),
-      E: L.map(() => [1, 0, 0, 0, 1, 0, 0, 0, 1]), fext: L.map(() => [0, 0, 0, 0, 0, 0]),
+      Rw: L.map(f9), ow: L.map(f3), v: L.map(f6), E: L.map(f9), fext: L.map(f6),
       gravity: [0, 0, -9.81],
       fixedBase: !!spec.fixedBase, // base held (tests, kinematically driven bases)
+      limitFailsafe: spec.limitFailsafe ?? 0, // rad beyond lo/hi before positions are clamped (null: never)
     };
+    const Rj = new Float64Array(9);
     // kinematics: link transforms, world poses and spatial velocities (link coords)
     function kinematics() {
-      for (let i = 0; i < n; i++) {
-        const l = L[i];
-        if (i === 0) { S.Rw[0] = S.R; S.ow[0] = S.p; S.v[0] = S.vb; S.E[0] = [1, 0, 0, 0, 1, 0, 0, 0, 1]; continue; }
-        const P = l.parent, Rj = axisAngle(l.axis, S.q[i]); // child axes in parent coords
-        S.E[i] = mt(Rj);
-        S.Rw[i] = mm(S.Rw[P], Rj);
-        const o = mv(S.Rw[P], l.offset);
-        S.ow[i] = [S.ow[P][0] + o[0], S.ow[P][1] + o[1], S.ow[P][2] + o[2]];
-        const vp = xMotion(S.E[i], l.offset, S.v[P]), qd = S.qd[i];
-        S.v[i] = [vp[0] + l.axis[0] * qd, vp[1] + l.axis[1] * qd, vp[2] + l.axis[2] * qd, vp[3], vp[4], vp[5]];
+      const R0 = S.R, p0 = S.p, vb = S.vb, Rw0 = S.Rw[0], ow0 = S.ow[0], v0 = S.v[0];
+      for (let k = 0; k < 9; k++) Rw0[k] = R0[k];
+      ow0[0] = p0[0]; ow0[1] = p0[1]; ow0[2] = p0[2];
+      for (let k = 0; k < 6; k++) v0[k] = vb[k];
+      for (let i = 1; i < n; i++) {
+        const P = PAR[i], a = AX[i], r = OFF[i], th = S.q[i];
+        // Rj: child axes in parent coords (axis-angle), E = Rj^T
+        const cth = Math.cos(th), sth = Math.sin(th), t = 1 - cth, x = a[0], y = a[1], z = a[2];
+        Rj[0] = t * x * x + cth; Rj[1] = t * x * y - sth * z; Rj[2] = t * x * z + sth * y;
+        Rj[3] = t * x * y + sth * z; Rj[4] = t * y * y + cth; Rj[5] = t * y * z - sth * x;
+        Rj[6] = t * x * z - sth * y; Rj[7] = t * y * z + sth * x; Rj[8] = t * z * z + cth;
+        const E = S.E[i];
+        E[0] = Rj[0]; E[1] = Rj[3]; E[2] = Rj[6]; E[3] = Rj[1]; E[4] = Rj[4]; E[5] = Rj[7]; E[6] = Rj[2]; E[7] = Rj[5]; E[8] = Rj[8];
+        const RP = S.Rw[P], RW = S.Rw[i];
+        for (let r0 = 0; r0 < 3; r0++) {
+          const a0 = RP[3 * r0], a1 = RP[3 * r0 + 1], a2 = RP[3 * r0 + 2];
+          RW[3 * r0] = a0 * Rj[0] + a1 * Rj[3] + a2 * Rj[6];
+          RW[3 * r0 + 1] = a0 * Rj[1] + a1 * Rj[4] + a2 * Rj[7];
+          RW[3 * r0 + 2] = a0 * Rj[2] + a1 * Rj[5] + a2 * Rj[8];
+        }
+        const oP = S.ow[P], oI = S.ow[i];
+        oI[0] = oP[0] + RP[0] * r[0] + RP[1] * r[1] + RP[2] * r[2];
+        oI[1] = oP[1] + RP[3] * r[0] + RP[4] * r[1] + RP[5] * r[2];
+        oI[2] = oP[2] + RP[6] * r[0] + RP[7] * r[1] + RP[8] * r[2];
+        // v_i = X v_P + S qd with X v = [E w; E (v - r x w)]
+        const vP = S.v[P], vI = S.v[i], wx = vP[0], wy = vP[1], wz = vP[2];
+        const tx = vP[3] - (r[1] * wz - r[2] * wy), ty = vP[4] - (r[2] * wx - r[0] * wz), tz = vP[5] - (r[0] * wy - r[1] * wx), qd = S.qd[i];
+        vI[0] = E[0] * wx + E[1] * wy + E[2] * wz + a[0] * qd;
+        vI[1] = E[3] * wx + E[4] * wy + E[5] * wz + a[1] * qd;
+        vI[2] = E[6] * wx + E[7] * wy + E[8] * wz + a[2] * qd;
+        vI[3] = E[0] * tx + E[1] * ty + E[2] * tz;
+        vI[4] = E[3] * tx + E[4] * ty + E[5] * tz;
+        vI[5] = E[6] * tx + E[7] * ty + E[8] * tz;
       }
     }
     // world velocity of a point given in link-local coordinates
     function pointVelocity(i, xl) {
-      const v = S.v[i], w = [v[0], v[1], v[2]], c = cross(w, xl);
+      const v = S.v[i], c = cross([v[0], v[1], v[2]], xl);
       return mv(S.Rw[i], [v[3] + c[0], v[4] + c[1], v[5] + c[2]]);
     }
-    const toWorld = (i, xl) => { const r = mv(S.Rw[i], xl); return [S.ow[i][0] + r[0], S.ow[i][1] + r[1], S.ow[i][2] + r[2]]; };
+    const toWorld = (i, xl) => { const R = S.Rw[i], o = S.ow[i]; return [o[0] + R[0] * xl[0] + R[1] * xl[1] + R[2] * xl[2], o[1] + R[3] * xl[0] + R[4] * xl[1] + R[5] * xl[2], o[2] + R[6] * xl[0] + R[7] * xl[1] + R[8] * xl[2]]; };
     const toLocal = (i, xw) => mtv(S.Rw[i], [xw[0] - S.ow[i][0], xw[1] - S.ow[i][1], xw[2] - S.ow[i][2]]);
     function clearForces() { for (const f of S.fext) f.fill(0); }
     // world force F at world point x on link i (accumulated in link coords, about the link origin)
     function applyForce(i, F, x) {
-      const Fl = mtv(S.Rw[i], F), xl = toLocal(i, x), nl = cross(xl, Fl), f = S.fext[i];
-      f[0] += nl[0]; f[1] += nl[1]; f[2] += nl[2]; f[3] += Fl[0]; f[4] += Fl[1]; f[5] += Fl[2];
+      const R = S.Rw[i], o = S.ow[i];
+      const Fx = R[0] * F[0] + R[3] * F[1] + R[6] * F[2], Fy = R[1] * F[0] + R[4] * F[1] + R[7] * F[2], Fz = R[2] * F[0] + R[5] * F[1] + R[8] * F[2];
+      const dx = x[0] - o[0], dy = x[1] - o[1], dz = x[2] - o[2];
+      const lx = R[0] * dx + R[3] * dy + R[6] * dz, ly = R[1] * dx + R[4] * dy + R[7] * dz, lz = R[2] * dx + R[5] * dy + R[8] * dz;
+      const f = S.fext[i];
+      f[0] += ly * Fz - lz * Fy; f[1] += lz * Fx - lx * Fz; f[2] += lx * Fy - ly * Fx; f[3] += Fx; f[4] += Fy; f[5] += Fz;
     }
     function applyGravity() {
-      for (let i = 0; i < n; i++) if (L[i].mass) applyForce(i, [L[i].mass * S.gravity[0], L[i].mass * S.gravity[1], L[i].mass * S.gravity[2]], toWorld(i, L[i].com));
+      const g = S.gravity;
+      for (let i = 0; i < n; i++) { const m = L[i].mass; if (m) applyForce(i, [m * g[0], m * g[1], m * g[2]], toWorld(i, L[i].com)); }
+    }
+    // ---- allocation-free spatial kernels
+    const IA = L.map(() => new Float64Array(36)), pA = L.map(f6), U = L.map(f6), c = L.map(f6), acc = L.map(f6);
+    const D = new Float64Array(n), u = new Float64Array(n), Iaa = new Float64Array(36), pa = f6(), t6 = f6();
+    const bA = new Float64Array(9), bB = new Float64Array(9), bC = new Float64Array(9), t9 = new Float64Array(9), t9b = new Float64Array(9);
+    // v x* (I v) - fext  -> out (bias force of link i)
+    function biasForce(i, out) {
+      const Ii = I[i], v = S.v[i], fe = S.fext[i];
+      for (let r = 0; r < 6; r++) { let s = 0; for (let k = 0; k < 6; k++) s += Ii[6 * r + k] * v[k]; t6[r] = s; }
+      const wx = v[0], wy = v[1], wz = v[2], vx = v[3], vy = v[4], vz = v[5];
+      const nx = t6[0], ny = t6[1], nz = t6[2], fx = t6[3], fy = t6[4], fz = t6[5];
+      out[0] = wy * nz - wz * ny + vy * fz - vz * fy - fe[0];
+      out[1] = wz * nx - wx * nz + vz * fx - vx * fz - fe[1];
+      out[2] = wx * ny - wy * nx + vx * fy - vy * fx - fe[2];
+      out[3] = wy * fz - wz * fy - fe[3];
+      out[4] = wz * fx - wx * fz - fe[4];
+      out[5] = wx * fy - wy * fx - fe[5];
+    }
+    // Ip += X^T Ic X, X = rot(E) * trans(r) (child <- parent)
+    function addXtIX(Ip, Ic, E, r) {
+      // rotate blocks: A' = E^T A E etc.
+      const rotBlock = (ro, co, out) => {
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { let s = 0; for (let k = 0; k < 3; k++) s += Ic[6 * (ro + i) + co + k] * E[3 * k + j]; t9[3 * i + j] = s; }
+        for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { let s = 0; for (let k = 0; k < 3; k++) s += E[3 * k + i] * t9[3 * k + j]; out[3 * i + j] = s; }
+      };
+      rotBlock(0, 0, bA); rotBlock(0, 3, bB); rotBlock(3, 3, bC);
+      const r0 = r[0], r1 = r[1], r2 = r[2];
+      // rx*B^T, B*rx, rx*C, rx*C*rx, C*rx with rx = skew(r)
+      for (let i = 0; i < 3; i++)
+        for (let j = 0; j < 3; j++) {
+          // rx row i: [0,-r2,r1],[r2,0,-r0],[-r1,r0,0]
+          const rxi0 = i === 0 ? 0 : i === 1 ? r2 : -r1, rxi1 = i === 0 ? -r2 : i === 1 ? 0 : r0, rxi2 = i === 0 ? r1 : i === 1 ? -r0 : 0;
+          const rxj0 = j === 0 ? 0 : j === 1 ? r2 : -r1, rxj1 = j === 0 ? -r2 : j === 1 ? 0 : r0, rxj2 = j === 0 ? r1 : j === 1 ? -r0 : 0; // row j of rx
+          // (rx B^T)_ij = sum_k rx_ik B_jk
+          const rxBt = rxi0 * bB[3 * j] + rxi1 * bB[3 * j + 1] + rxi2 * bB[3 * j + 2];
+          // (B rx)_ij = sum_k B_ik rx_kj ; rx_kj = -rx_jk
+          const Brx = -(bB[3 * i] * rxj0 + bB[3 * i + 1] * rxj1 + bB[3 * i + 2] * rxj2);
+          const rxC = rxi0 * bC[j] + rxi1 * bC[3 + j] + rxi2 * bC[6 + j];
+          const Crx = -(bC[3 * i] * rxj0 + bC[3 * i + 1] * rxj1 + bC[3 * i + 2] * rxj2);
+          t9b[3 * i + j] = rxC; // keep rx*C for rx*C*rx
+          Ip[6 * i + j] += bA[3 * i + j] + rxBt - Brx;
+          Ip[6 * i + 3 + j] += bB[3 * i + j] + rxC;
+          Ip[6 * (3 + i) + j] += bB[3 * j + i] - Crx;
+          Ip[6 * (3 + i) + 3 + j] += bC[3 * i + j];
+        }
+      // - rx*C*rx term of the angular block
+      for (let i = 0; i < 3; i++)
+        for (let j = 0; j < 3; j++) {
+          const rxj0 = j === 0 ? 0 : j === 1 ? r2 : -r1, rxj1 = j === 0 ? -r2 : j === 1 ? 0 : r0, rxj2 = j === 0 ? r1 : j === 1 ? -r0 : 0;
+          const v = -(t9b[3 * i] * rxj0 + t9b[3 * i + 1] * rxj1 + t9b[3 * i + 2] * rxj2); // (rxC rx)_ij
+          Ip[6 * i + j] -= v;
+        }
+    }
+    // f_parent += X^T f  = [E^T n + r x E^T f; E^T f]
+    function addXtF(fp, E, r, f) {
+      const nx = E[0] * f[0] + E[3] * f[1] + E[6] * f[2], ny = E[1] * f[0] + E[4] * f[1] + E[7] * f[2], nz = E[2] * f[0] + E[5] * f[1] + E[8] * f[2];
+      const fx = E[0] * f[3] + E[3] * f[4] + E[6] * f[5], fy = E[1] * f[3] + E[4] * f[4] + E[7] * f[5], fz = E[2] * f[3] + E[5] * f[4] + E[8] * f[5];
+      fp[0] += nx + r[1] * fz - r[2] * fy; fp[1] += ny + r[2] * fx - r[0] * fz; fp[2] += nz + r[0] * fy - r[1] * fx;
+      fp[3] += fx; fp[4] += fy; fp[5] += fz;
+    }
+    // out = X m (parent motion -> child) = [E w; E (v - r x w)]
+    function xMot(E, r, m, out) {
+      const wx = m[0], wy = m[1], wz = m[2], tx = m[3] - (r[1] * wz - r[2] * wy), ty = m[4] - (r[2] * wx - r[0] * wz), tz = m[5] - (r[0] * wy - r[1] * wx);
+      out[0] = E[0] * wx + E[1] * wy + E[2] * wz; out[1] = E[3] * wx + E[4] * wy + E[5] * wz; out[2] = E[6] * wx + E[7] * wy + E[8] * wz;
+      out[3] = E[0] * tx + E[1] * ty + E[2] * tz; out[4] = E[3] * tx + E[4] * ty + E[5] * tz; out[5] = E[6] * tx + E[7] * ty + E[8] * tz;
     }
     // articulated-body algorithm: base acceleration + qdd from tau, fext, armature
-    const IA = L.map(() => new Float64Array(36)), pA = L.map(() => [0, 0, 0, 0, 0, 0]), U = L.map(() => [0, 0, 0, 0, 0, 0]);
-    const D = new Float64Array(n), u = new Float64Array(n), c = L.map(() => [0, 0, 0, 0, 0, 0]);
     function aba() {
       for (let i = 0; i < n; i++) {
         IA[i].set(I[i]);
-        const vi = S.v[i], Iv = I6v(I[i], vi), b = crossF(vi, Iv), fe = S.fext[i];
-        pA[i] = [b[0] - fe[0], b[1] - fe[1], b[2] - fe[2], b[3] - fe[3], b[4] - fe[4], b[5] - fe[5]];
-        if (i > 0) { const a = L[i].axis, qd = S.qd[i]; c[i] = crossM(vi, [a[0] * qd, a[1] * qd, a[2] * qd, 0, 0, 0]); }
+        biasForce(i, pA[i]);
+        if (i > 0) {
+          const v = S.v[i], a = AX[i], qd = S.qd[i], mx = a[0] * qd, my = a[1] * qd, mz = a[2] * qd, ci = c[i];
+          ci[0] = v[1] * mz - v[2] * my; ci[1] = v[2] * mx - v[0] * mz; ci[2] = v[0] * my - v[1] * mx;
+          ci[3] = v[4] * mz - v[5] * my; ci[4] = v[5] * mx - v[3] * mz; ci[5] = v[3] * my - v[4] * mx;
+        }
       }
       for (let i = n - 1; i >= 1; i--) {
-        const a = L[i].axis, Ia = IA[i];
-        const Ui = U[i];
+        const a = AX[i], Ia = IA[i], Ui = U[i], pAi = pA[i], ci = c[i];
         for (let r = 0; r < 6; r++) Ui[r] = Ia[6 * r] * a[0] + Ia[6 * r + 1] * a[1] + Ia[6 * r + 2] * a[2];
-        D[i] = a[0] * Ui[0] + a[1] * Ui[1] + a[2] * Ui[2] + S.armature[i];
-        u[i] = S.tau[i] - (a[0] * pA[i][0] + a[1] * pA[i][1] + a[2] * pA[i][2]);
-        const Iaa = new Float64Array(36);
-        for (let r = 0; r < 6; r++) for (let k = 0; k < 6; k++) Iaa[6 * r + k] = Ia[6 * r + k] - (Ui[r] * Ui[k]) / D[i];
-        const Ic = I6v(Iaa, c[i]), pa = pA[i].map((x, k) => x + Ic[k] + (Ui[k] * u[i]) / D[i]);
-        const P = L[i].parent;
-        addTransformedInertia(IA[P], Iaa, S.E[i], L[i].offset);
-        const pp = xForceT(S.E[i], L[i].offset, pa);
-        for (let k = 0; k < 6; k++) pA[P][k] += pp[k];
+        const Di = a[0] * Ui[0] + a[1] * Ui[1] + a[2] * Ui[2] + S.armature[i];
+        D[i] = Di;
+        const ui = S.tau[i] - (a[0] * pAi[0] + a[1] * pAi[1] + a[2] * pAi[2]);
+        u[i] = ui;
+        const inv = 1 / Di;
+        for (let r = 0; r < 6; r++) { const ur = Ui[r] * inv; for (let k = 0; k < 6; k++) Iaa[6 * r + k] = Ia[6 * r + k] - ur * Ui[k]; }
+        for (let r = 0; r < 6; r++) { let s = pAi[r] + Ui[r] * ui * inv; for (let k = 0; k < 6; k++) s += Iaa[6 * r + k] * ci[k]; pa[r] = s; }
+        const P = PAR[i];
+        addXtIX(IA[P], Iaa, S.E[i], OFF[i]);
+        addXtF(pA[P], S.E[i], OFF[i], pa);
       }
-      const a0 = S.fixedBase ? [0, 0, 0, 0, 0, 0] : solve6(IA[0], pA[0].map((x) => -x));
-      S.ab = a0;
-      const acc = L.map(() => null);
-      acc[0] = a0;
+      const a0 = acc[0];
+      if (S.fixedBase) a0.fill(0);
+      else { const x = solve6(IA[0], [-pA[0][0], -pA[0][1], -pA[0][2], -pA[0][3], -pA[0][4], -pA[0][5]]); for (let k = 0; k < 6; k++) a0[k] = x[k]; }
+      S.ab = Array.from(a0);
       for (let i = 1; i < n; i++) {
-        const P = L[i].parent, a = L[i].axis, ap = xMotion(S.E[i], L[i].offset, acc[P]);
-        const ai = [ap[0] + c[i][0], ap[1] + c[i][1], ap[2] + c[i][2], ap[3] + c[i][3], ap[4] + c[i][4], ap[5] + c[i][5]];
-        const Ui = U[i];
+        const P = PAR[i], a = AX[i], ai = acc[i], Ui = U[i], ci = c[i];
+        xMot(S.E[i], OFF[i], acc[P], ai);
+        for (let k = 0; k < 6; k++) ai[k] += ci[k];
         let s = 0;
         for (let k = 0; k < 6; k++) s += Ui[k] * ai[k];
         const qdd = (u[i] - s) / D[i];
         S.qdd[i] = qdd;
         ai[0] += a[0] * qdd; ai[1] += a[1] * qdd; ai[2] += a[2] * qdd;
-        acc[i] = ai;
       }
       S.acc = acc;
     }
@@ -230,30 +328,33 @@
       const w = [S.vb[0], S.vb[1], S.vb[2]], vl = [S.vb[3], S.vb[4], S.vb[5]], vw = mv(S.R, vl);
       S.p = [S.p[0] + dt * vw[0], S.p[1] + dt * vw[1], S.p[2] + dt * vw[2]];
       S.R = orthonormalize(mm(S.R, expSO3(w, dt)));
+      // hinge ranges are the caller's business (limit torques inside the dynamics); a position
+      // clamp here would remove motion without its constraint force. Only a wide failsafe stays.
+      const fs = S.limitFailsafe;
       for (let i = 1; i < n; i++) {
         S.q[i] += dt * S.qd[i];
         const l = L[i];
-        if (l.lo != null && S.q[i] < l.lo) { S.q[i] = l.lo; if (S.qd[i] < 0) S.qd[i] = 0; }
-        if (l.hi != null && S.q[i] > l.hi) { S.q[i] = l.hi; if (S.qd[i] > 0) S.qd[i] = 0; }
+        if (fs == null) continue;
+        if (l.lo != null && S.q[i] < l.lo - fs) { S.q[i] = l.lo - fs; if (S.qd[i] < 0) S.qd[i] = 0; }
+        if (l.hi != null && S.q[i] > l.hi + fs) { S.q[i] = l.hi + fs; if (S.qd[i] > 0) S.qd[i] = 0; }
       }
     }
     // RNEA with the base held (a0 = 0), qdd = 0: joint torques that balance gravity (if applied)
     // and the current external forces at the current configuration and velocities
+    const fR = L.map(f6), tauOut = new Float64Array(n);
     function inverseDynamicsStatic(withVelocity = false) {
-      const f = L.map(() => null), out = new Float64Array(n);
       for (let i = 0; i < n; i++) {
-        const vi = withVelocity ? S.v[i] : [0, 0, 0, 0, 0, 0];
-        const b = withVelocity ? crossF(vi, I6v(I[i], vi)) : [0, 0, 0, 0, 0, 0], fe = S.fext[i];
-        f[i] = [b[0] - fe[0], b[1] - fe[1], b[2] - fe[2], b[3] - fe[3], b[4] - fe[4], b[5] - fe[5]];
+        const f = fR[i], fe = S.fext[i];
+        if (withVelocity) biasForce(i, f);
+        else for (let k = 0; k < 6; k++) f[k] = -fe[k];
       }
       for (let i = n - 1; i >= 1; i--) {
-        const a = L[i].axis;
-        out[i] = a[0] * f[i][0] + a[1] * f[i][1] + a[2] * f[i][2];
-        const P = L[i].parent, fp = xForceT(S.E[i], L[i].offset, f[i]);
-        for (let k = 0; k < 6; k++) f[P][k] += fp[k];
+        const a = AX[i], f = fR[i];
+        tauOut[i] = a[0] * f[0] + a[1] * f[1] + a[2] * f[2];
+        addXtF(fR[PAR[i]], S.E[i], OFF[i], f);
       }
-      S.baseResidual = f[0]; // what the base would have to receive to stay put
-      return out;
+      S.baseResidual = Array.from(fR[0]); // what the base would have to receive to stay put
+      return tauOut;
     }
     // totals for checks: linear/angular momentum about the world origin, kinetic energy, COM
     function totals() {

@@ -26,6 +26,14 @@
   }
   function systemCog(F, rider) {
     const S = F.S, mF = S.mUnsprungF, mR = S.mUnsprungR, FK = F._frontKinematics(), RK = F._rearKinematics();
+    const BIO = CORE.riderBio;
+    if (BIO?.active && BIO.placed) {
+      // articulated rider: her own body's centre of mass
+      const tot = BIO.rider.body.totals(), mb = S.mSprung - BIO.config.legacyRiderKg;
+      const pts = [[mb, F.p], [mF, FK.hubW], [mR, RK.hubW], [tot.mass, tot.com]];
+      const M = pts.reduce((a, x) => a + x[0], 0), c = [0, 1, 2].map((i) => pts.reduce((a, x) => a + x[0] * x[1][i], 0) / M);
+      return { c, M, FK, RK };
+    }
     const RB = CORE.rider;
     if (RB?.active && RB.initialized) {
       // physical rider body: rigid parts on the bike + sprung pelvis/torso masses
@@ -208,10 +216,17 @@
     // chassis tests run on the flat, uniform-grip reference road unless the maneuver asks for the world
     const worldWas = WORLD ? WORLD.enabled : null, useWorld = !!(opts.world ?? d.world);
     if (WORLD && !useWorld && worldWas) WORLD.setEnabled(false);
-    const riderSave = RB ? { auto: RB.config.auto.enabled, manual: { ...RB.manual } } : null;
-    if (RB && d.rider) {
-      if ("auto" in d.rider) RB.setAuto(d.rider.auto);
-      RB.setPosture(d.rider);
+    const BIO = CORE.riderBio?.active ? CORE.riderBio : null;
+    const riderSave = BIO ? { auto: BIO.auto, manual: { ...(BIO.manual || {}) } } : RB ? { auto: RB.config.auto.enabled, manual: { ...RB.manual } } : null;
+    if (d.rider) {
+      const { auto, ...posture } = d.rider;
+      if (BIO) {
+        if (auto !== undefined) BIO.auto = auto;
+        BIO.setPosture(posture);
+      } else if (RB) {
+        if (auto !== undefined) RB.setAuto(auto);
+        RB.setPosture(d.rider);
+      }
     }
     API.setDomain?.("FREE_ROAD");
     API.pause?.();
@@ -273,7 +288,10 @@
       if (Math.abs(v5bodyAngles(F.q).rollRad) > 1.45) { M.crashT = M.crashT ?? +t.toFixed(3); break; }
     }
     if (d.teardown) d.teardown();
-    if (RB && riderSave) {
+    if (BIO && riderSave) {
+      BIO.auto = riderSave.auto;
+      BIO.manual = riderSave.manual;
+    } else if (RB && riderSave) {
       RB.setAuto(riderSave.auto);
       RB.setPosture(riderSave.manual);
     }
@@ -325,7 +343,7 @@
       if (Math.hypot(F.v[0], F.v[1]) > 1.5) return { ok: false, reason: "stop the bike first" };
       CORE.chassis.chock.anchor = null;
       CORE.chassis.chock.active = true;
-      CORE.rider?.setPosture({ foreAft: 1, tuck: 0.6 });
+      (CORE.riderBio?.active ? CORE.riderBio : CORE.rider)?.setPosture({ foreAft: 1, tuck: 0.6 });
       const cmd = PT()?.states?.free?.command;
       if (cmd) Object.assign(cmd, { mode: "ENGINE", gear: 1, clutch: 0, throttle: 0, frontBrakeBar: 55 });
       Object.assign(RIG, { active: true, phase: "rev", t: 0 });
@@ -333,7 +351,7 @@
     },
     stop() {
       CORE.chassis.chock.active = false;
-      CORE.rider?.setPosture({ foreAft: null, tuck: null });
+      (CORE.riderBio?.active ? CORE.riderBio : CORE.rider)?.setPosture({ foreAft: null, tuck: null });
       Object.assign(RIG, { active: false, phase: "idle", t: 0 });
       const cmd = PT()?.states?.free?.command;
       if (cmd) Object.assign(cmd, { throttle: 0, clutch: 1 });
