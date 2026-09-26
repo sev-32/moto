@@ -53,7 +53,15 @@ export function assembleLegacy(afterScript = {}) {
 
 function coreLayers() {
   const spec = JSON.parse(read("src/core/layers.json"));
-  return spec.layers.map((l) => ({ ...l, code: read("src/core/" + l.file) }));
+  return spec.layers.map((l) => {
+    let code = read("src/core/" + l.file);
+    // "inline": { "TOKEN": "relative/path.json" } substitutes data files into the layer source
+    for (const [token, file] of Object.entries(l.inline || {})) {
+      if (!code.includes(token)) throw Error(`layer ${l.id}: inline token ${token} not found`);
+      code = code.split(token).join(read("src/core/" + file).trim());
+    }
+    return { ...l, code };
+  });
 }
 
 const layerTag = (l) => `<script data-lucid-layer="${l.id}">\n${l.code.replace(/<\/script/gi, "<\\/script")}\n</script>`;

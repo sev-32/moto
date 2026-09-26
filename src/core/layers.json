@@ -29,6 +29,14 @@
       "description": "Physical rider: segment masses, pelvis/torso posture servos with reactions at seat/pegs/bars, hang-off, tuck, weight shift, stand; drives legacy rider pose and aero posture"
     },
     {
+      "id": "world",
+      "file": "50_world.js",
+      "inline": {
+        "/*@@TRACK_JSON@@*/": "world/track.json"
+      },
+      "description": "Proving ground: 3 km circuit + test apron; shared height/signed-distance fields for tire physics and GPU terrain; sky, fog, soft bike shadow, minimap, lap timer"
+    },
+    {
       "id": "maneuvers",
       "file": "90_maneuvers.js",
       "description": "Rider-in-the-loop maneuver library (brake, stoppie, wheelie, launch, lean, slalom) for tests and console"

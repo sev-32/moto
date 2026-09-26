@@ -197,8 +197,11 @@
   function simulate(name, opts = {}) {
     const d = DEFS[name];
     if (!d) throw Error("unknown maneuver " + name);
-    const F = free, pt = PT(), RB = CORE.rider;
+    const F = free, pt = PT(), RB = CORE.rider, WORLD = CORE.world;
     const wasPaused = API.isPaused?.();
+    // chassis tests run on the flat, uniform-grip reference road unless the maneuver asks for the world
+    const worldWas = WORLD ? WORLD.enabled : null, useWorld = !!(opts.world ?? d.world);
+    if (WORLD && !useWorld && worldWas) WORLD.setEnabled(false);
     const riderSave = RB ? { auto: RB.config.auto.enabled, manual: { ...RB.manual } } : null;
     if (RB && d.rider) {
       if ("auto" in d.rider) RB.setAuto(d.rider.auto);
@@ -266,6 +269,7 @@
       RB.setAuto(riderSave.auto);
       RB.setPosture(riderSave.manual);
     }
+    if (WORLD && worldWas !== null && WORLD.enabled !== worldWas) WORLD.setEnabled(worldWas);
     const tail = trace.filter((x) => x.t > (trace.length ? trace[trace.length - 1].t : 0) - 2);
     M.steadyRollDeg = tail.length ? tail.reduce((a, x) => a + x.roll, 0) / tail.length : null;
     M.steadyYawRateDeg = tail.length ? tail.reduce((a, x) => a + x.yawRate, 0) / tail.length : null;

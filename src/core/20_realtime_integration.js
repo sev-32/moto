@@ -39,6 +39,7 @@
     stats: { frameMs: 0, physicsMs: 0, stepsLastFrame: 0, stepMsAvg: 0, realtimeFactor: 0, droppedS: 0, frames: 0 },
     road: {
       // flat reference road; the world layer replaces these with terrain queries
+      flat: true,
       height: () => 0,
       normal: () => [0, 0, 1],
       mu: () => 1,
@@ -85,7 +86,7 @@
     const F = this._wheelRoadFrame(K);
     const up = F.up, fwd = F.fwd, right = F.right;
     const roadZ = RT.road.height(K.hubW[0], K.hubW[1]);
-    const h = K.hubW[2] - roadZ;
+    const h = (K.hubW[2] - roadZ) * up[2]; // hub distance from the local road plane (along its normal)
     // carrier (non-spinning wheel frame) angular velocity in world coordinates
     const wW = v5qrot(this.q, this.w);
     if (which === "front") {
@@ -113,7 +114,7 @@
     sol.p.slipAngleDeg = o.alpha / DEG;
     sol.p.speedMps = Math.abs(Vx);
     const lat = o.contactLateralM;
-    const cp = [K.hubW[0] + right[0] * lat - up[0] * h, K.hubW[1] + right[1] * lat - up[1] * h, roadZ];
+    const cp = [K.hubW[0] + right[0] * lat - up[0] * h, K.hubW[1] + right[1] * lat - up[1] * h, K.hubW[2] + right[2] * lat - up[2] * h];
     const force = [fwd[0] * o.Fx + right[0] * o.Fy + up[0] * o.Fz, fwd[1] * o.Fx + right[1] * o.Fy + up[1] * o.Fz, fwd[2] * o.Fx + right[2] * o.Fy + up[2] * o.Fz];
     const mz = RT.applyAligningMoment ? o.Mz : 0;
     return {
@@ -272,6 +273,25 @@
     return M;
   };
 
+  // ------------------------------------------------------------------ road frame on terrain
+  // Legacy: world-up road frame (flat z = 0). With a terrain the frame follows the local road
+  // normal, so camber and slip are measured relative to the surface. Identical on flat ground.
+  const baseRoadFrame = FP._wheelRoadFrame;
+  FP._wheelRoadFrame = function (K) {
+    if (RT.tireModel !== "REALTIME") return baseRoadFrame.call(this, K);
+    const n = RT.road.normal(K.hubW[0], K.hubW[1]);
+    if (n[2] > 0.99999) return baseRoadFrame.call(this, K);
+    let f = v5sub(K.fwW, v5mul(n, v5dot(K.fwW, n)));
+    if (v5len(f) < 0.08) {
+      const b = v5qrot(this.q, V5_Y);
+      f = v5sub(b, v5mul(n, v5dot(b, n)));
+    }
+    f = v5norm(f);
+    const r = v5norm(v5cross(f, n));
+    const gamma = -Math.asin(v5cl(v5dot(v5norm(K.axleW), n), -1, 1));
+    return { fwd: f, right: r, up: n, camberRad: gamma, camberDeg: gamma / DEG, validity: Math.max(0, 1 - Math.max(0, Math.abs(gamma / DEG) - this.S.tireCamberValidityDeg) / 15) };
+  };
+
   // ------------------------------------------------------------------ collision broad-phase
   const baseCollide = FP._resolveGroundCollisions;
   FP._resolveGroundCollisions = function () {
@@ -286,13 +306,76 @@
         break;
       }
     }
-    if (near) return baseCollide.call(this);
+    if (near) return RT.road.flat ? baseCollide.call(this) : terrainCollide.call(this);
     this.collisions = {
       solver: "coupled_generalized_impulse_v1", contacts: [], maxPenetrationM: 0, impulseNs: 0,
       massMatrixSymmetryError: 0, maxSolveConditionProxy: 0, maxJointVelocityKick: 0, dissipatedKineticJ: 0, biasAddedKineticJ: 0,
     };
     return this.collisions;
   };
+
+  // Terrain version of the legacy coupled generalized-impulse ground collision (same helpers,
+  // same restitution/friction/bookkeeping; ground height and normal from RT.road).
+  function terrainCollide() {
+    const S = this.S, contacts = [];
+    let totalJ = 0, maxPen = 0, maxCond = 0, maxJointKick = 0, dissipated = 0, biasAdded = 0, push = null;
+    this.FK = this._frontKinematics();
+    this.RK = this._rearKinematics();
+    const mb = this._massMatrixAndBias(), M = mb.M;
+    for (let iter = 0; iter < S.collisionIterations; iter++)
+      for (const pr of this.geom.collisionProxies) {
+        const P = this._proxyWorld(pr), gz = RT.road.height(P.cw[0], P.cw[1]), n = RT.road.normal(P.cw[0], P.cw[1]);
+        const pen = pr.r - (P.cw[2] - gz) * n[2];
+        if (pen <= 0) continue;
+        maxPen = Math.max(maxPen, pen);
+        if (!push || pen > push.pen) push = { pen, n };
+        const cp = v5sub(P.cw, v5mul(n, pr.r - pen)), rBody = v5qinvrot(this.q, v5sub(cp, this.p));
+        let vp = this._pointVelocityFromBodyLever(rBody);
+        const vn = v5dot(vp, n), nResp = this._collisionDirectionResponse(M, rBody, n);
+        const bias = Math.min(3, (pen / Math.max(1e-6, S.dt)) * 0.12), targetDv = -(1 + S.collisionRestitution) * Math.min(0, vn) + bias;
+        const jn = Math.max(0, targetDv / nResp.den);
+        let jt = 0;
+        if (jn > 0) {
+          const u0 = this._generalizedVelocity(), ke0 = this._quadraticEnergy(M, u0), u1 = this._applyCollisionImpulseResponse(nResp, jn), ke1 = this._quadraticEnergy(M, u1);
+          if (ke1 > ke0) biasAdded += ke1 - ke0; else dissipated += ke0 - ke1;
+          totalJ += jn;
+          maxCond = Math.max(maxCond, nResp.conditionProxy);
+          maxJointKick = Math.max(maxJointKick, Math.abs(u1[6] - u0[6]), Math.abs(u1[7] - u0[7]), Math.abs(u1[8] - u0[8]));
+          vp = this._pointVelocityFromBodyLever(rBody);
+          const vt = v5sub(vp, v5mul(n, v5dot(vp, n))), vl = v5len(vt);
+          if (vl > 1e-5) {
+            const t = v5mul(vt, 1 / vl), tResp = this._collisionDirectionResponse(M, rBody, t), cap = S.collisionMu * jn;
+            jt = Math.min(cap, vl / tResp.den);
+            if (jt > 0) {
+              const ub = this._generalizedVelocity(), kb = this._quadraticEnergy(M, ub), ua = this._applyCollisionImpulseResponse(tResp, -jt), ka = this._quadraticEnergy(M, ua);
+              if (ka > kb) biasAdded += ka - kb; else dissipated += kb - ka;
+              totalJ += jt;
+              maxCond = Math.max(maxCond, tResp.conditionProxy);
+              maxJointKick = Math.max(maxJointKick, Math.abs(ua[6] - ub[6]), Math.abs(ua[7] - ub[7]), Math.abs(ua[8] - ub[8]));
+            }
+          }
+        }
+        contacts.push({ name: pr.name, penetrationM: pen, normalImpulseNs: jn, tangentImpulseNs: jt, normalEffectiveMassKg: 1 / nResp.den, point: cp });
+      }
+    if (push) this.p = v5add(this.p, v5mul(push.n, Math.min(0.01, push.pen * 0.18)));
+    this.collisions = {
+      solver: "coupled_generalized_impulse_v1+terrain", contacts, maxPenetrationM: maxPen, impulseNs: totalJ, massMatrixSymmetryError: mb.symmetryError,
+      maxSolveConditionProxy: maxCond, maxJointVelocityKick: maxJointKick, dissipatedKineticJ: dissipated, biasAddedKineticJ: biasAdded,
+    };
+    if (contacts.length) {
+      const C = this.crashStats;
+      C.contactEvents += contacts.length;
+      C.maxPenetrationM = Math.max(C.maxPenetrationM, maxPen);
+      C.maxImpulseNs = Math.max(C.maxImpulseNs, totalJ);
+      C.maxJointVelocityKick = Math.max(C.maxJointVelocityKick, maxJointKick);
+      C.maxCollisionConditionProxy = Math.max(C.maxCollisionConditionProxy, maxCond);
+      C.collisionDissipatedJ += dissipated;
+      C.collisionBiasAddedJ += biasAdded;
+    }
+    this.energy.collisionLossJ += Math.max(0, dissipated);
+    this.energy.collisionBiasAddedJ += Math.max(0, biasAdded);
+    return this.collisions;
+  }
 
   // ------------------------------------------------------------------ recomposed step (throttled rider bridge)
   const protoStep = FP.step;

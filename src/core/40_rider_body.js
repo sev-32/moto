@@ -343,8 +343,30 @@
         RC.controls.seatForeAft = clamp(R.posture.foreAft, -1, 1);
         RC.controls.posture = clamp(-R.posture.tuck, -1, 1);
       }
+      operationalState(F);
     } catch (_) {}
   }
+  // V1.30 operational pose: hands on the grips while riding, a foot down (on the side the bike
+  // leans) when stopped - the same moments the feet-down support acts in the physics
+  let opState = null, opT = 0;
+  function operationalState(F) {
+    const OPS = global.LUCID_RIDER_OPERATIONS_V1300;
+    if (!OPS?.setState || !global.__LUCID_V1300_READY__ || String(global.__LUCID_ACTIVE_PAGE__ || "RIDE").toUpperCase() !== "RIDE") return;
+    const v = Math.hypot(F.v[0], F.v[1]), roll = v5bodyAngles(F.q).rollRad, now = performance.now();
+    let want = opState;
+    if (v > 2.2 || opState === null) want = "RIDE_SETTLED";
+    if (v < 0.6) want = roll > 2 * DEGR ? "STOPPED_RIGHT" : "STOPPED_LEFT";
+    if (want !== opState && now - opT > 400) {
+      opT = now;
+      try {
+        const r = OPS.setState(want);
+        opState = r?.ok === false && want !== "RIDE_SETTLED" ? opState : want;
+      } catch (_) {
+        opState = want;
+      }
+    }
+  }
+  R.operationalState = () => opState;
   CH.postIntegrate.push((F, dt) => { if (R.active && !F.__rttLite) driveVisuals(F, dt); else if (R.active) visualAcc += dt; });
 
   // ------------------------------------------------------------------ reset + telemetry + API
