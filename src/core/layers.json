@@ -50,6 +50,11 @@
       "description": "Physical rider: the LUCID character as an articulated body (Semantic51 hinges, R1.5 17-body profile, skin-fitted contact spheres) on the 916's contact surfaces (envelope SDF, pegs, grips, ground); torque-limited servos, IK planner (world-referenced trunk/head, hang-off/tuck/stand, braking brace), coupled into the V5 multibody"
     },
     {
+      "id": "rider-render",
+      "file": "47_rider_render.js",
+      "description": "The physical rider drawn through the canonical skin path (compile -> helper clusters -> Skin78 LBS) every frame from her body's Semantic51 commands + placement; hands closed on the grips with the declared bottle grip synergy; legacy mannequins hidden while she is active"
+    },
+    {
       "id": "world",
       "file": "50_world.js",
       "inline": {

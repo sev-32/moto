@@ -53,7 +53,52 @@ Suspension rates vs the v2.6 reconstruction (VOLUMETRICS build, `data/v2_6`):
 | total mass | 286 kg | 286 kg |
 | damping | linear with high-speed knee | pressure-based shim stacks + bleeds + clickers (not yet ported) |
 
-## Rider (`40_rider_body.js`)
+## Physical rider (`45_rider_multibody.js`, `46_rider_biomech.js`, `47_rider_render.js`)
+
+The default rider is the LUCID character itself as an articulated body: the floating pelvis plus
+46 revolute hinges that are the Semantic51 DOFs of the canonical rig (same joints, axes, order and
+hard ranges; toes not simulated). Mass: the R1.5 17-body profile (75 kg). It is a **joint-torque
+(motor-driven) body, not the R1.5 muscle-driven body**: stable-PD servos with torque limits (lower
+body: the R1.5 capacity ledger; trunk/neck: physbody stance gains; arms and all contact
+parameters: declared engineering priors in `PRIORS`), plus the R1.5 passive tissue priors as soft
+joint stops. Her state is Semantic51 commands + a placement, drawn every frame through the
+canonical skin path (nothing writes bones or skin).
+
+* **Contacts** (soft-tissue spheres fitted inside her skin, anchored Coulomb friction): the 916's
+  envelope (a signed-distance field built from the GLB's visual hull), footpeg cylinders, a
+  strength-limited bilateral grip per hand, the ground. Rider-specific spheres from her rest-pose
+  skin: the sitting band under the pelvis and the pelvis front (lower abdomen / pubic region,
+  softer), which rests against the tank's steep rear face; without it her belly caught the tank's
+  top edge and she climbed over it under braking.
+* **Planner (60 Hz)**: the trunk and head are referenced to the felt vertical (gravity plus the
+  sustained turning acceleration), so the bike rocks under a floating upper body; hang-off, tuck,
+  sit-up, fore/aft and stand intents; the trunk leans until the elbows keep some bend (reach
+  loop); damped-least-squares IK with clearance against the envelope. Per-step controllers keep
+  their targets in the bike frame.
+* **Lower body** (virtual-model control, nothing moves the pelvis directly): the hips hold the
+  pelvis orientation against the thighs; knee flexion and ankle relax when seated (the legs do not
+  prop her off the seat); knee squeeze (adduction), stronger braced and as a clamp reflex when the
+  bike rolls quickly under her; sideways pelvis force by differential knee squeeze, fore/aft
+  within the knees' and pegs' friction; to move over on the seat (hang-off) she unweights it with
+  her legs and slides across, eased in and out so it does not pump the suspension.
+* **Hands**: she leans on the clip-ons (planned bar reaction in the gravity/inertia feed-forward);
+  braced, the arms act as struts along the arm line (a 916's clip-ons are a long reach for her
+  0.54 m arm: seated, her elbows stay nearly straight). A quiet-hands loop keeps her own torque
+  about the steering axis near zero: the steering intent reaches the bars through the chassis
+  steer input.
+* **Coupling**: her contact forces enter the V5 generalized forces (the grips also load the
+  steering axis), her body integrates after the bike with the same forces (momentum exchanged
+  exactly); the V5 mass matrix and gravity become bike-only (the V5 values lump a 75.337 kg rider).
+* **Checks** (`tests/rider_biomech.test.mjs`, stub bike): weight on the bike within 2 %, static
+  drift < 5 mm, trunk and head nearer the vertical than a bike rocking ±8° at 0.5 Hz, seated
+  through a 1 g stop (< 8 cm forward, < 5 cm up, back in place after), 0.8 g drive, 0.8 g turn;
+  plus the 14 maneuvers in the coupled simulation. Cost: ~0.45 ms per 540 Hz step (forces,
+  integration, amortized IK) and ~2 ms per frame for skinning (headless CPU).
+* **Not yet**: feet down / walking the bike at a standstill (the chassis feet-down support still
+  holds the bike), a foot dab in slides, crashes as a ragdoll, standing wheelie control; hang-off
+  is slow to build (she reaches ~half of the planned 9 cm on the 60 m radius).
+
+## Legacy rider (`40_rider_body.js`, `?rider=legacy`)
 
 75.3 kg in four groups: pelvis + thighs 27.3 kg (sprung on the seat), torso + head + upper arms
 34.8 kg (sprung on the spine), feet 9.7 kg and hands 3.5 kg (rigid to pegs / grips). Posture

@@ -32,7 +32,7 @@ FREE RIDE → START ROLLING RIDE (or STANDING START). Enable audio with the AUDI
 | I (hold) | tuck behind the screen |
 | K (hold) | sit up, weight back |
 | U (hold) | stand on the pegs |
-| O | auto rider posture on / off |
+| O | auto rider posture on / off (she hangs off with lateral g, tucks with speed, sits up braking) |
 | 1-7 | cameras: chase, side, front, tail, high, cinema, helmet |
 | T | feel HUD (friction circles, loads, slip, suspension, posture, inputs) |
 | \` | clean ride view (hide / show the studio's developer panels) |
@@ -48,9 +48,10 @@ rubber laid on the road, tire scream.
 ## What is where
 
 * `src/legacy/` — the studio, 39 original scripts, never edited.
-* `src/core/` — the consolidated layers (`layers.json`): tire, real-time loop, chassis, rider,
-  world, rubber marks, particles, exhaust gas dynamics, NIMBUS smoke, tire/wind audio, feel HUD,
-  maneuvers. Console access: `LUCID_CORE`.
+* `src/core/` — the consolidated layers (`layers.json`): tire, real-time loop, chassis, the
+  physical LUCID rider (character, articulated body, controller, rendering; `?rider=legacy` for
+  the previous two-mass rider), world, rubber marks, particles, exhaust gas dynamics, NIMBUS
+  smoke, tire/wind audio, feel HUD, maneuvers. Console access: `LUCID_CORE`.
 * `assets/` — the Ducati 916 GLB and tire profile assets shared by every build.
 * `reference/` — every other uploaded build (vehicle labs V5.0-V5.6.7, tire labs V6.3.5-V8.3,
   VOLUMETRICS V85.10), regenerable byte-for-byte.
@@ -63,7 +64,8 @@ rubber laid on the road, tire scream.
 ```js
 LUCID_CORE.maneuvers.simulate("stoppie")           // run a maneuver, returns metrics + trace
 LUCID_CORE.burnoutRig.toggle()                     // burnout pit on / off
-LUCID_CORE.rider.setPosture({ hang: 1, tuck: 1 })  // manual posture (null = auto)
+LUCID_CORE.riderBio.setPosture({ hang: 1, tuck: 1 }) // physical rider: manual posture (null = auto)
+LUCID_CORE.riderBio.setActive(false)               // back to the legacy two-mass rider
 LUCID_CORE.realtime.timeScale = 0.25               // slow motion (everything stays in sync)
 LUCID_CORE.exhaust.snapshot()                      // EGT, flow, misfires, bangs, flames
 LUCID_CORE.nimbus.diagnose()                       // smoke optical-depth summary

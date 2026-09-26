@@ -233,6 +233,13 @@ void main(){vec3 farW=unproject(vUv,1.),rd=normalize(farW-uCam),mn=vec3(uCenterR
         gl.bindVertexArray(tb.vao);
         gl.drawElements(gl.TRIANGLES, tb.count, gl.UNSIGNED_INT, 0);
       }
+      // the physical LUCID rider (47_rider_render): her posed skin, world coordinates
+      const RR = CORE.riderRender, BIO = CORE.riderBio;
+      if (RR?.gpu && RR.visible && BIO?.active && BIO.placed) {
+        gl.uniformMatrix4fv(uM, false, IDENT);
+        gl.bindVertexArray(RR.gpu.vao);
+        gl.drawElements(gl.TRIANGLES, RR.gpu.count, gl.UNSIGNED_INT, 0);
+      }
       const rt = global.LUCID_RIDER_CONTROL_V12853?.runtime;
       if (rt?.vao && rt.visible !== false && V?.B) {
         gl.bindVertexArray(rt.vao);

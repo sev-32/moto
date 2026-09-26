@@ -44,7 +44,11 @@ wrapped original.
 | 10 rtt-tire | `tires` | real-time pneumatic brush tire (geometric contact, 3×10 brush, carcass, thermal grip ratio) |
 | 20 realtime-integration | `realtime` | RTT inside the V5 free-road step, terrain road frame and collisions, fixed-step real-time loop (540 Hz), lite telemetry, settle |
 | 30 chassis-dynamics | `chassis` | implicit wheel spin, reverse-spin guard, suspension end-of-travel + friction, chain force routing, aero, feet-down support, steering damper, rear-lift mitigation, chock, impulse joint limits |
-| 40 rider-body | `rider` | compliant rider (pelvis/torso servos), reactions at the rider masses, posture (hang-off, fore-aft, tuck, stand), auto rider, drives the legacy rider pose |
+| 40 rider-body | `rider` | legacy two-mass compliant rider (pelvis/torso servos), reactions at the rider masses, posture, auto rider, drives the legacy rider pose; steps aside while the physical rider is active (`?rider=legacy` brings it back) |
+| 44 lucid-character | `character` | canonical LUCID female-skin-v4.2 path: Semantic51 compile, canonical helper clusters, Skin78 LBS (parity-tested against the R1.5 Python reference), hand layer + grip synergies, 75 kg 17-segment profile |
+| 45 rider-multibody | – (`LUCID_MULTIBODY`) | articulated-body engine: floating base + revolute hinges, Featherstone ABA, RNEA, stable-PD armature (allocation-free) |
+| 46 rider-biomech | `riderBio` | the physical rider: the LUCID character as an articulated body (46 Semantic51 hinges + floating pelvis) on the 916's contact surfaces; torque-limited servos, IK planner, virtual-model lower body, contacts; coupled into the V5 multibody (bike-only mass matrix) |
+| 47 rider-render | `riderRender` | draws her every frame through the canonical skin path from her body's commands + placement; hides the legacy mannequin while she is active |
 | 50 world | `world` | proving ground: shared height / signed-distance / grip fields for physics and GPU, terrain + sky, shadows, minimap, lap timer, clean ride view |
 | 55 skidmarks | `skid` | toroidal rubber-deposit map stamped from tire frictional energy, sampled by the terrain |
 | 60 fx | `fx` | GPU particles (smoke, vapour, flames, heat haze with refraction, dirt), external emitters |
@@ -57,13 +61,15 @@ wrapped original.
 ### Extension points
 
 * **Render hooks** (`LUCID_CORE.renderHooks`): the world layer wraps `renderFree`; after the legacy
-  frame each hook's `draw()` runs in order (`skid` → `world` → `nimbus` → `fx` → HUDs). A throwing
+  frame each hook's `draw()` runs in order (`skid` → `world` → `riderBio` → `nimbus` → `fx` →
+  HUDs; opaque before transparent). A throwing
   hook is recorded (`h.err`) and never breaks the frame.
 * **Chassis wrenches** (`chassis.wrenches`): functions `(free, Q)` adding generalized forces in the
   coupled integration (chain, rotor share, aero, feet-down, chock). `chassis.addBodyForce/Moment`
   and `free._addExternalForce` map world forces onto the nine coordinates.
-* **Chassis hooks**: `massMatrix` (rider layer provides the bike-only matrix + rigid rider
-  points), `postIntegrate` callbacks, `onReset` callbacks.
+* **Chassis hooks**: `massMatrix` (the active rider layer provides the bike-only matrix),
+  `sprungGravityMassKg`, `postIntegrate` callbacks (the physical rider integrates her body there,
+  after the bike, with the same contact forces), `onReset` callbacks.
 * **FX emitters** (`fx.emitters`): `(dt)` functions stepped with the particle system.
 * **Audio**: the exhaust layer extends the V1.22 worklet module at `addModule` time (a `pop`
   message and an `extPops` switch); the audio-env layer adds nodes to the existing graph.
@@ -80,9 +86,9 @@ motion (`LUCID_CORE.realtime.timeScale`) and scripted runs therefore stay consis
 
 | Command | What |
 | --- | --- |
-| `npm test` | unit tests: RTT tire regression (16), V1.22 worklet pop patch against the real worklet source (4) |
-| `npm run test:browser` | smoke: boot flags, core APIs, live loop, hooks healthy, finite state, no page errors |
-| `npm run test:maneuvers` | 14 rider-in-the-loop maneuvers with acceptance bands (coast, capsize, standstill, braking, panic grab, ABS, stoppie, launch, wheelie, lean, radius, burnout, slalom) |
+| `npm test` | unit tests: RTT tire regression, V1.22 worklet pop patch, LUCID skin parity with the R1.5 reference, articulated-body engine, physical rider on a stub bike (static, rocking, braking, drive, turn) |
+| `npm run test:browser` | smoke: boot flags, core APIs, live loop, hooks healthy, finite state, physical rider drawn, no page errors |
+| `npm run test:maneuvers [-- --rider bio\|legacy]` | 14 rider-in-the-loop maneuvers with acceptance bands (coast, capsize, standstill, braking, panic grab, ABS, stoppie, launch, wheelie, lean, radius, burnout, slalom); default = the physical rider |
 | `node tests/browser/fx-shot.mjs <burnout\|lockup\|overrun\|limiter> <prefix> <view> <t,...>` | deterministic effects capture with NIMBUS optical-depth and exhaust diagnostics |
 | `node tests/browser/screenshot.mjs out.png [ms] [js]` | live ride screenshot |
 | `node tests/browser/probe-core.mjs` | settle state, per-stage step cost, straight run |

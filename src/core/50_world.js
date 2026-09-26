@@ -482,8 +482,10 @@ void main(){vec4 a=uInvVP*vec4(vN,1.,1.);vec3 d=normalize(a.xyz/a.w-uEye);o=vec4
       seg(B([0, 0.46, 0.18]), B([0, -0.78, 0.16]), 0.17);
       seg(B([0, 0.25, -0.2]), B([0, -0.32, -0.22]), 0.2);
       seg(B([0, 0.46, 0.2]), FK.hubW, 0.06);
-      const Rb = CORE.rider;
-      if (Rb?.active && Rb.initialized) {
+      const Rb = CORE.rider, BIO = CORE.riderBio;
+      if (BIO?.active && BIO.placed && BIO.shadowSegments) {
+        for (const [A, Bp, r] of BIO.shadowSegments()) seg(A, Bp, r); // the physical rider's trunk, head and legs
+      } else if (Rb?.active && Rb.initialized) {
         seg(Rb.pelvis.x, Rb.upper.x, 0.19);
         seg(Rb.upper.x, v5add(Rb.upper.x, v5mul(v5norm(v5sub(Rb.upper.x, Rb.pelvis.x)), 0.28)), 0.14);
         seg(Rb.pelvis.x, B([-0.26, -0.3, -0.24]), 0.08, 0.5);

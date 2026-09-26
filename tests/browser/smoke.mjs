@@ -27,6 +27,7 @@ try {
       layers: ["realtime", "tires", "chassis", "rider", "world", "skid", "fx", "exhaust", "nimbus", "audioEnv", "feelHud", "maneuvers", "burnoutRig"].filter((k) => !C[k]),
       nimbusErr: C.nimbus?.error || null, skidErr: C.skid?.error || null, worldErr: C.world?.render?.err || null,
       maneuvers: C.maneuvers?.names?.().length || 0,
+      rider: { active: !!C.riderBio?.active, placed: !!C.riderBio?.placed, draws: C.riderRender?.draws || 0, err: C.riderRender?.error || null, finite: C.riderBio ? Array.from(C.riderBio.rider.body.q).every(Number.isFinite) : true },
     };
   });
   check(r.page === "RIDE", `ride page active (${r.page})`);
@@ -37,6 +38,7 @@ try {
   check(!bad.length && r.hooks.length >= 8, `render hooks healthy (${r.hooks.map(([id]) => id).join(", ")})${bad.length ? " failing: " + JSON.stringify(bad) : ""}`);
   check(!r.nimbusErr && !r.skidErr && !r.worldErr, "NIMBUS / skid / world renderers without errors");
   check(r.maneuvers >= 14, `maneuver library (${r.maneuvers})`);
+  check(!r.rider.active || (r.rider.placed && r.rider.draws > 0 && !r.rider.err && r.rider.finite), `physical rider ${r.rider.active ? `on the bike, drawn ${r.rider.draws}x${r.rider.err ? ", error " + r.rider.err : ""}` : "off (legacy rider)"}`);
   const errs = logs.filter((l) => /\[pageerror\]|\[error\]/i.test(l));
   check(!errs.length, `no page errors${errs.length ? ": " + errs.slice(0, 3).join(" | ") : ""}`);
 } catch (e) {

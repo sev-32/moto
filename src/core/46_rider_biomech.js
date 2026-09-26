@@ -1329,11 +1329,12 @@
     try { R = createRider(CORE.character, SURF_JSON); } catch (e) { console.error("LUCID rider biomech: build failed", e); return; }
     const SET = presettle(R);
     const h = R.helpers, DEG = Math.PI / 180;
-    let DEFAULT_ON = false;
+    let DEFAULT_ON = true;
     try { const m = /[?&]rider=(bio|legacy)\b/.exec(global.location?.search || ""); if (m) DEFAULT_ON = m[1] === "bio"; } catch (_) {}
     const legacyMass = () => global.LUCID_RIDER_DYNAMICS_V12852?.mass;
     const BIO = (CORE.riderBio = {
-      // off by default until the maneuver suite passes with her on the bike (setActive(true) or ?rider=bio)
+      // on by default (the maneuver suite passes with her); ?rider=legacy or setActive(false)
+      // brings back the two-mass rider
       rider: R, active: DEFAULT_ON, presettle: SET, placed: false, auto: true, keys: {}, pad: { hang: 0, tuck: 0 },
       config: {
         legacyRiderKg: 75.337, // V1.28.5.2 mass authority: the rider lumped into the V5 sprung mass
@@ -1492,6 +1493,12 @@
       const P = R.plan.posture;
       CH.aero.posture = { tuck: clamp(0.35 + 0.65 * P.tuck, 0, 1), hang: P.hang };
     }
+    // soft-shadow capsules for the world renderer (4 segments: trunk, head, legs)
+    BIO.shadowSegments = () => {
+      const b = R.body, LO = R.model.linkOf, J = (j) => b.toWorld(LO[j], [0, 0, 0]);
+      const neck = J("NeckTwist01"), head = J("Head"), top = h.add(head, h.scl(h.unit(h.sub(head, neck)), 0.12));
+      return [[b.p, neck, 0.17], [neck, top, 0.11], [J("L_Thigh"), J("L_Foot"), 0.075], [J("R_Thigh"), J("R_Foot"), 0.075]];
+    };
     BIO.setPosture = (patch = {}) => { BIO.manual = { ...(BIO.manual || {}), ...patch }; for (const k of Object.keys(BIO.manual)) if (BIO.manual[k] === null) delete BIO.manual[k]; return { ...BIO.manual }; };
     BIO.setActive = (on) => {
       BIO.active = !!on;
