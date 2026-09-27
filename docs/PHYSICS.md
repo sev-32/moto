@@ -295,7 +295,14 @@ reported, not hidden.
   legs, carry it with the least joint effort. What her contacts do not give it, a declared
   residual - a roll moment on the bike towards the lean, ≤ 450 N m, reported (`holdNm`) - holds.
   She stands on one foot to swing only once the bike is within 2.5° of that lean and steady
-  (≤ 6°/s); if it tips 8° away during the swing she puts the leg back down. As her weight lands on
+  (≤ 6°/s); if it tips 8° away during the swing she puts the leg back down. Tipping towards her
+  past what her hands hold (3° beyond that lean, fully by 7°), she braces her hip against it: her
+  pelvis goes over into it (up to 0.14 m further) until her hip rests on its flank, and her legs
+  take it through her hip (a measured contact on the load path). Past saving - 20° beyond - she
+  lets it go and steps away from it. (Node, the bike free to roll, shoved towards her for 0.5 s:
+  600 N m - it tipped to 16°, her hip on it with up to 986 N, back to −2° and she got on; without
+  the brace's extra reach, 18.4°. 900 N m - past 20° at some 50°/s, she let it go; braced on it,
+  the falling bike can knock her down.) As her weight lands on
   the seat the riding controller (46) takes her on and balances the bike with her left foot down.
   Stopped and parked, the bars are at full lock with the left grip against the tank: with her hand
   at the grip she turns them straight - rate-controlled against the standing tyre's scrub,
@@ -346,7 +353,9 @@ reported, not hidden.
   within 6° - and nothing but her hands presses it with 300 N or more before she sits; getting off,
   the side stand first and the bike on it, still, at the end, she on her feet and walking away;
   lifting it off either side, onto its stand with her standing, her own mean moment on it while it
-  rises under 120 N m back down, and, off its right side, then getting on.
+  rises under 120 N m back down, and, off its right side, then getting on; shoved towards her
+  (600 N m for 0.5 s) while she holds it up, her hip on it with over 300 N, the tip under 20° and
+  she gets on; shoved harder (900 N m), she lets it go.
 * **Measured** (Node, flat ground). Getting on (from 1.3 m away, the bike on its stand, bars
   straight / at full lock, the kinematic stub): seated after 10.9 s (6.6 s at the bike); getting
   off 5.8-5.9 s; the motion assist 94 N mean (≤ 300 N). Over the leg-over (2.6 s getting on, 2.5 s
@@ -355,8 +364,8 @@ reported, not hidden.
   37-47 %, getting off its ankle 68-76 %; the arms 96-97 % (left, on the bar: its clavicle, the
   arm chain's root, at its declared 40 N m capacity) and 72 % (right, on the tank) getting on,
   76-78 % and 70-71 % getting off. The bike free to roll: getting on, seated after 11.5 s, the lean
-  within 3.0° of −2° (0.4° mean), her own moment on it 20 N m mean against the residual's 59 N m
-  (max 354 N m of its 450). Standing it up off its stand needs 195 N m (mean over that keyframe):
+  within 3.0° of −2° (0.4° mean), her own moment on it 20-27 N m mean against the residual's
+  59-60 N m (max 354-357 N m of its 450). Standing it up off its stand needs 195 N m (mean over that keyframe):
   she gives 33 N m, the residual 144 N m; over the steps and the leg-over (40-55 N m needed) her
   share is −15 … +38 N m. Her contacts hold it by lifting the left grip (about 74 N) and pressing
   the tank (about 105 N), her left clavicle at 94-95 % of its capacity. Getting off, 6.0 s from the
@@ -383,8 +392,8 @@ reported, not hidden.
   swinging foot lands 5-8 cm from its aim. Holding the bike up, the declared residual does about
   three times what her own contacts do (standing it up off its stand, four times), and her left
   arm - its clavicle, at a declared 40 N m - is at its capacity doing it: the load reaches her
-  trunk and legs, but through an arm root far weaker than a real shoulder girdle. Bracing her hip
-  against the bike when it leans too far is not done. In the browser the side stand is the
+  trunk and legs, but through an arm root far weaker than a real shoulder girdle. The hip brace
+  and letting go are measured in Node only. In the browser the side stand is the
   chassis's virtual support aimed at −10° (a spring, 4000 N m/rad, from either side: it sags to
   −12 … −14° under the bike's weight); in Node it is a hard one-sided stop. The lift is the
   declared assist's, not hers: her hands only press (palm contacts), they do not pull. At the end

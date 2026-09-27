@@ -54,7 +54,7 @@
       getUpK: 900, getUpC: 110, getUpMaxNm: 200, getUpKp: 2500, getUpCp: 400, getUpMaxN: 150, // get-up assist (declared): torque and force on the pelvis towards the phase's pose
       // the load path at the bike (on / off): her balance through her contacts (centre of mass 1/s^2, 1/s, at most m/s^2; pelvis orientation kg m^2 x 1/s^2, 1/s); planned every lpEveryS; her lean into what she pushes (1/s, at most m) with lpOuterShare of the pressure towards the outer foot; her own hold on the bike's lean (N m/rad, N m s/rad)
       standDeg: -10, scriptIkHz: 135, clearM: 0.015, swingClearM: 0.03, trunkClearM: 0.012, // motions at the bike: posture solved at this rate; limbs / trunk kept this clear of the bike (m)
-      stepNearBikeM: 0.3, scriptDownM: 0.25, scriptDownS: 0.3, liftLostM: 0.3, liftLostS: 0.5, // walking, a swinging foot this near the bike keeps its leg clear of it (m); a motion is over when her pelvis is this far under its planned height this long (m, s), a lift when a hand is this far from its point of the bike this long
+      braceStartDeg: 3, braceSpanDeg: 4, braceHipM: 0.14, letGoDeg: 20, stepAwayS: 1.2, stepNearBikeM: 0.3, scriptDownM: 0.25, scriptDownS: 0.3, liftLostM: 0.3, liftLostS: 0.5, // holding the bike up, it tipping towards her past braceStartDeg (+ braceSpanDeg to full) of the lean she keeps it at: her hip into it, her pelvis up to braceHipM further over (m); past letGoDeg she lets it go and steps away from it for stepAwayS; walking, a swinging foot this near the bike keeps its leg clear of it (m); a motion is over when her pelvis is this far under its planned height this long (m, s), a lift when a hand is this far from its point of the bike this long
       loadPath: true, lpK: 25, lpC: 10, lpAmax: 2.5, lpKz: 36, lpCz: 12, lpAzMax: 3, lpI: 8, lpKr: 36, lpCr: 12, lpEveryS: 1 / 135, lpLeanRate: 3, lpLeanMaxM: 0.2, lpForeMaxM: 0.15, lpForeDeadM: 0.05, lpOuterShare: 0.7, holdHerK: 3000, holdHerC: 400,
     };
     const G = {
@@ -957,6 +957,17 @@
       // motion is over; she lets go, and gets up once at rest. Lifting the bike: a hand that has
       // lost its point of the bike for a moment - she lets go of it, and it goes back down)
       SC.downS = T.pelvis.p[2] - b.p[2] > P.scriptDownM ? SC.downS + dt : 0;
+      // (the bike past saving, falling towards her: she lets it go and steps away from it)
+      const tipNow = G.hold.active ? G.hold.target - bikeRoll(bk) : 0;
+      if (G.hold.active && tipNow > P.letGoDeg * DEG && !SC.done) {
+        const onFail = SC.onFail, F0 = SC.frame || bikeFrame(bk), away = mv(F0.Ry, [-1, 0, 0]);
+        SC.failed = { name: SC.name, key: SC.i, letGo: true };
+        SC.keys = null; G.hold.active = false; LPS.lean = [0, 0]; LPS.brace = 0;
+        for (const S of ["L", "R"]) R.grips[S].held = false;
+        onFail ? onFail() : G.enterFoot();
+        if (PL.mode === "foot") G.stepAway = { dir: [away[0], away[1]], t: P.stepAwayS };
+        return;
+      }
       SC.lostS = (k.liftTo != null || k.liftRoll != null) && ["L", "R"].some((S) => k.hands?.[S]?.bike && T.hands[S] && len(sub(b.toWorld(hand[S].link, hand[S].p), T.hands[S])) > P.liftLostM) ? SC.lostS + dt : 0;
       if ((SC.downS > P.scriptDownS || SC.lostS > P.liftLostS) && !SC.done) {
         const down = SC.downS > P.scriptDownS, onFail = SC.onFail;
@@ -1077,7 +1088,12 @@
         const toFeet = (v, axis) => { const e = dot(sub(p, cT), axis), eD = e > P.lpForeDeadM ? e - P.lpForeDeadM : e < -P.lpForeDeadM ? e + P.lpForeDeadM : 0; return clamp(v + eD * rate, -P.lpForeMaxM, P.lpForeMaxM); };
         // (reaching for a grip she leans out to it: not pulled back over her feet across the bike)
         const reaching = ["L", "R"].some((S) => k.hands?.[S] === "grip" && !R.grips[S].held);
-        const next = p && G.hold.active ? cur + (clamp(bikeRow.M / (m * g), 0, P.lpLeanMaxM) - cur) * rate : p && !reaching ? toFeet(cur, ax) : cur - cur * rate;
+        // (tipping towards her past what her hands hold - she braces her hip against it: her pelvis
+        // over into it until the hip rests on its flank, and her legs take it through her hip)
+        const tip = G.hold.active ? G.hold.target - phi : 0;
+        LPS.brace = smooth01((tip / DEG - P.braceStartDeg) / P.braceSpanDeg);
+        const want = clamp(bikeRow.M / (m * g), 0, P.lpLeanMaxM) + LPS.brace * P.braceHipM;
+        const next = p && G.hold.active ? cur + (want - cur) * Math.min(1, rate * (1 + 3 * LPS.brace)) : p && !reaching ? toFeet(cur, ax) : cur - cur * rate;
         let fore = dot([LPS.lean[0], LPS.lean[1], 0], fw);
         fore = p ? toFeet(fore, fw) : fore - fore * rate;
         LPS.lean = [ax[0] * next + fw[0] * fore, ax[1] * next + fw[1] * fore];
@@ -1327,6 +1343,8 @@
       }
       measure();
       if (G.rise) { G.rise.t += dt; G.vDes = [0, 0]; if (G.rise.t > G.rise.dur + 0.2) G.rise = null; }
+      // (having let the bike go, she steps away from it as it falls)
+      if (G.stepAway) { G.vDes = scl(G.stepAway.dir, 0.9); G.stepAway.t -= dt; if (G.stepAway.t <= 0) G.stepAway = null; }
       steer(dt);
       gait(dt);
       G.ikAcc += dt;

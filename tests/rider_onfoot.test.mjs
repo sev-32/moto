@@ -110,6 +110,8 @@ function atTheBike({ T, steerDeg = 0, start = [-1.0, -0.8, 0], script, free = fa
     R.integrate(dt);
     if (free) {
       if (o.seatedT == null || (o.off && P.fallen)) {
+        // (a shove on the bike, towards her side, while o.shoveNm is set)
+        if (o.shoveNm) rs.push({ T: [0, -o.shoveNm, 0] });
         rollStub(bk, G, R, dt, hs, rs);
         // (what she presses the bike with, body parts other than her hands, before she sits)
         if (P.mode === "script" && G.script.i < G.script.keys.length - 1) for (const s of R.spheres) if (s.bike.on && s.kind !== "palm" && !/Hand/.test(s.seg)) o.maxPressN = Math.max(o.maxPressN || 0, len3(s.bike.F));
@@ -275,6 +277,42 @@ for (const side of [1, -1]) {
       assert.equal(o.R.plan.mode, "foot");
       assert.ok(o.R.body.p[2] > 0.8, `pelvis at ${o.R.body.p[2].toFixed(2)} m`);
       assert.ok(Math.abs(o.hs.phi / DEG + 10) < 0.5 && Math.abs(o.hs.w) < 0.05, `bike at ${(o.hs.phi / DEG).toFixed(1)} deg`);
+    }
+  });
+}
+
+// ---- the bike shoved towards her while she holds it up (the stub free to roll): past what her hands
+// and the declared residual hold, she braces her hip against it and saves it; past saving (20 deg
+// over) she lets it go - she does not stand holding it on her. (Shoved that hard it falls at some
+// 50 deg/s with her hip braced on it: whether she then keeps her feet is not asserted)
+for (const [Nm, saved] of [[600, true], [900, false]]) {
+  test(`shoved towards her (${Nm} N m for 0.5 s) while she holds the bike up: ${saved ? "she braces her hip against it, it comes back and she gets on" : "past saving - she lets it go"}`, () => {
+    let hip = 0, tip = 0;
+    const o = atTheBike({
+      T: 20, free: true,
+      script(t, R, G, bk, o) {
+        if (t > 0.3 && !o.started) { o.started = true; G.startMount(bk, () => { G.toRide(bk); o.seatedT = o.now; }); }
+        // (0.15 s into the keyframe where she stands on both feet holding it, before she swings)
+        if (o.shoveT == null && R.plan.mode === "script" && G.script.name === "mount" && G.script.i === 6 && G.script.t > 0.15) o.shoveT = t;
+        o.shoveNm = o.shoveT != null && t - o.shoveT < 0.5 ? Nm : 0;
+        if (o.shoveT != null && t - o.shoveT < 3) {
+          for (const s of R.spheres) if (s.bike.on && /Hip|Thigh/.test(s.seg) && s.at !== "sit") hip = Math.max(hip, Math.hypot(...s.bike.F));
+          tip = Math.max(tip, -o.hs.phi / DEG);
+        }
+        if (o.seatedT != null && t > o.seatedT + 1) o.done = true;
+        if (!saved && o.shoveT != null && t > o.shoveT + 4) o.done = true;
+      },
+    });
+    assert.ok(o.shoveT != null, "shoved");
+    assert.ok(o.finite, "finite");
+    if (saved) {
+      assert.ok(o.fell == null, `fell at ${o.fell}`);
+      assert.ok(hip > 300 && tip < 20, `hip on the bike ${hip.toFixed(0)} N, tipped ${tip.toFixed(1)} deg`);
+      assert.ok(o.seatedT != null, "got on");
+    } else {
+      assert.ok(o.G.script.failed?.letGo, `failed ${JSON.stringify(o.G.script.failed)}`);
+      assert.ok(!o.G.hold.active && !o.R.grips.L.held && !o.R.grips.R.held, "let go");
+      assert.ok(tip > 60, `bike down: ${tip.toFixed(0)} deg`);
     }
   });
 }
