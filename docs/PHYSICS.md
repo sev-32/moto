@@ -380,14 +380,17 @@ reported, not hidden.
   directions: 3.3-3.7 s from rest to the squat, the get-up assist averaging 140 N and 150-165 N m.
   Before the hip-driven leg-over (the whole leg solved to a foot target) the swung ankle sat in its
   dorsiflexion end stop 97-100 % of the time at up to its full capacity.
-* **Browser** (the 916's chassis, headless; `node tests/browser/at-the-bike.mjs`): stopped and
-  riding, F: the stand down, off and standing 7.8-8.3 s later; walked away and back, F: walked
-  round and seated 12.9-14.4 s later, riding with both grips and her left foot down, and riding
-  off - the residual 87-104 N m mean, 378-404 N m at most (four runs). After a low-side crash at
-  12 m/s: up, to the bike, F: round to its upper side and the bike lifted onto its stand 16.2 s
-  later (the lift assist 470 N m mean, 1000 N m at most), F: seated 19.7 s later and riding off
-  (one run through; the runs before it found the rear wheel's spin, the hand points and the lift's
-  push in turn). The stand holds the parked bike at −12 … −14°, not −10° (below).
+* **Browser** (the 916's chassis, headless; `node tests/browser/at-the-bike.mjs`; outcomes vary
+  from run to run). Getting off and on (4 runs): every run got her off - the stand down, off and
+  standing 7.8-8.3 s after F - and, walked away and back, on again and riding off, seated
+  12.3-17.7 s after F; in 2 of them she fell once on her feet on the way (once walking into the
+  bike as the test first walked her, once on the way to get on) and got up. The residual 83-117 N m
+  mean, at most 327-450 N m (at its cap once). After a low-side crash at 12 m/s (3 runs with the
+  lift as it now ends): in 2 she got up, walked to the bike, lifted it onto its stand (16.2 / 25.0 s
+  after F; the lift assist 467-470 N m mean, at most 1000-1066 N m) and got on (19.7 / 18.5 s after
+  F) and rode off; in 1 her hands lost the bike while she stepped in with it at 40° - she let go and
+  it fell back. The runs before these found the rear wheel's spin, the hand points and the lift's
+  push. The stand holds the parked bike at −12 … −14°, not −10° (below).
 * **Not yet / known**: running is a fast walk (no flight phase) - told 3 m/s she falls; the
   swinging foot lands 5-8 cm from its aim. Holding the bike up, the declared residual does about
   three times what her own contacts do (standing it up off its stand, four times), and her left
