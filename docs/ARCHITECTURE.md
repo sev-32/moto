@@ -87,7 +87,7 @@ motion (`LUCID_CORE.realtime.timeScale`) and scripted runs therefore stay consis
 
 | Command | What |
 | --- | --- |
-| `npm test` | unit tests: RTT tire regression, V1.22 worklet pop patch, LUCID skin parity with the R1.5 reference, articulated-body engine, physical rider on a stub bike (static, rocking, braking, drive, turn) |
+| `npm test` | unit tests: RTT tire regression, V1.22 worklet pop patch, LUCID skin parity with the R1.5 reference, articulated-body engine, physical rider on a stub bike (static, rocking, braking, drive, turn), off the bike (standing, walking, getting up, getting on and off, lifting the bike - on a stub bike free to roll) |
 | `npm run test:browser` | smoke: boot flags, core APIs, live loop, hooks healthy, finite state, physical rider drawn, no page errors |
 | `npm run test:maneuvers [-- --rider bio\|legacy]` | 14 rider-in-the-loop maneuvers with acceptance bands (coast, capsize, standstill, braking, panic grab, ABS, stoppie, launch, wheelie, lean, radius, burnout, slalom); default = the physical rider |
 | `node tests/browser/fx-shot.mjs <burnout\|lockup\|overrun\|limiter> <prefix> <view> <t,...>` | deterministic effects capture with NIMBUS optical-depth and exhaust diagnostics |
@@ -95,6 +95,7 @@ motion (`LUCID_CORE.realtime.timeScale`) and scripted runs therefore stay consis
 | `node tests/browser/probe-core.mjs` | settle state, per-stage step cost, straight run |
 | `node tools/crop.mjs in.png x y w h scale out.png` | zoom a screenshot region |
 | `node tools/world/preview-track.mjs` | track design checks and preview |
+| `node tools/swing-path.mjs check\|search mount\|dismount` | the rider's leg-over paths (48 `G.swingPaths`): clearance to the 916's envelope, reach, standing leg, balance and grip along them; or a hill-climb for better keys |
 
 Headless Chromium renders with SwiftShader (CPU), so the live loop runs at a few percent of real
 time there; physics-only runs are ~0.6 ms per 540 Hz step. AudioWorklets do not run headless (the

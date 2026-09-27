@@ -212,38 +212,86 @@ reported, not hidden.
   leans with it while the ground stays the ground; frozen once it goes onto its stand or while it
   is lifted) - pelvis position, pitch, side tilt and twist, the chest level across, feet and knees
   through via points, hands on the grips or points of the bike. A keyframe ends when its pose is
-  reached (pelvis and a swung knee or foot within 8-10 cm, a hand sent to a grip holding it, the
+  reached (pelvis and a swung knee or foot within 6-12 cm, a hand sent to a grip holding it, the
   bike steady where it is held); a leg that cannot get over is put back down beside the standing
-  foot, the hands let go and she stands. Legs and arms are solved by IK from the planned pelvis;
-  the feet on the ground carry her share of her weight (Jᵀ F at mid-foot while she holds a bar), a
-  hand at its grip closes on it and turns to it (the bar across the palm), and a declared assist -
-  force ≤ 300 N and torque ≤ 150 N m on the pelvis towards the planned pose - carries the rest.
+  foot (getting off: back onto its peg, and she sits again), the hands let go and she stands. A
+  motion is over when her pelvis stays 0.25 m under its plan for 0.3 s - she has fallen: she lets
+  go, lies, and gets up - or, lifting, when a hand stays 0.3 m off its point of the bike for 0.5 s
+  (she lets go and stands up). The posture is solved by IK from the planned pelvis at 135 Hz
+  (joint targets held between), the trunk from where her pelvis is and the arms from where her
+  trunk is, legs in the air kept 1.5 cm clear of the bike (a swung leg 3 cm, looked for 8 cm
+  deep), the trunk 1.2 cm. A hand that reaches its grip closes on it and turns to it (the bar
+  across the palm); the grip's hold point starts where the hand is and slides to the bar over
+  0.12 s (closing from up to 6 cm away no longer snaps it in: a 1.3 kN spike before). Her weight
+  and the bike are carried through her contacts by the load path (next); a declared assist - force
+  ≤ 300 N and torque ≤ 150 N m at her centre of mass - carries only what the plan could not give
+  her contacts (its shortfall on the net force and moment), reported (`motionN`).
+* **The whole-body load path** (46 `loadPlan` / `loadFeedForward`, 45 `contactForcePlan` /
+  `boundedLSQ`), used in the motions at the bike: the forces at her contacts that give her the
+  net force and moment her balance asks for, with the least joint effort - a bounded least-squares
+  problem over non-negative weights of each contact's force directions (feet: the sole spheres in
+  contact, each a friction pyramid n ± μ′t with μ′ = 0.9 μ/√2; a held grip: six axis directions,
+  each ≤ 0.7 × its strength; a palm on the bike; a foot on its peg). What else rests on the bike
+  or the ground (a hip against the seat, a thigh, the chest) is measured, not chosen: a known load.
+  Rows: the net force and moment about her centre of mass (weight 10⁵ per body weight and per
+  body weight × 0.1 m), what her contacts must do to the bike about its tyre line (below; 25 per
+  20 N m), and each joint's torque as a share of its capacity (squared), with
+  τ = τ₀ − Σ Jᵀ f (τ₀: inverse dynamics with the pelvis held, of gravity and the measured
+  contacts, less the passive tissue torque); a joint over 85 % of its cap is weighted up by its
+  overshoot to the 4th power (two passes). The feed-forward is that inverse dynamics with the
+  planned forces added. Her balance asks for her centre of mass to go to where her planned
+  posture has it (25 1/s², 10 1/s, ≤ 2.5 m/s² across; 36, 12, ≤ 3 m/s² up and down) and for the
+  pelvis's orientation (8 kg m² × (36 e − 12 ω)). The posture follows the load: holding the bike
+  she leans her pelvis into it by what the bike needs over her weight (M / m g, ≤ 0.2 m, 3 1/s)
+  with 70 % of her feet's pressure towards the outer foot; her centre of mass is kept over where
+  her feet press (5 cm dead band, ≤ 0.15 m) - fore and aft, and across the bike when she is not
+  holding it up - except over the leg-over keys, whose paths are balanced as found. Planned at
+  135 Hz; the whole motion step costs 0.35 ms in Node. Joint-servo torques, not muscle forces.
 * **The leg over**: the hip and the pelvis's side tilt do it. The swung leg's three hip joints are
-  solved to point the thigh (at a knee target) and turn it so the lower leg trails towards a foot
+  solved to point the thigh at a knee target and turn it so the lower leg trails towards a foot
   hint; the knee is folded to an easy angle at 35 % of its servo gains, the ankle loose near
-  neutral at 15 %. The path: leaning over the tank, the knee back and up beside the tail, over the
-  seat at 0.97 m, the foot over the tail at 1.1-1.2 m, down the far side as the pelvis moves over
-  the seat.
-* **Holding the bike up** while getting on and off: she keeps it leaning a few degrees onto her
-  side (her standing leg's; -3 to -4°) through the bars - her left hand pushes the bar across,
-  against the lean error and its rate (its target moved up to 8 cm into the bar): her arm's servos
-  make that push within their strength and the grip carries it into the bike, her legs bracing
-  her. What her arm does not, a declared residual - a roll moment on the bike towards the lean,
-  ≤ 450 N m, reported (`holdNm`) - holds. (A force pair on the bar and back on her hand was tried
-  first: through the held grip the two cancel, so it held nothing.) She stands on one foot to
-  swing only once the bike is within 2.5° of that lean and steady; if it tips 8° away during the
-  swing she puts the leg back down. Getting off she first rises onto her left leg, her right hand
-  moving from its grip to the tank (holding the right bar as she rises pulls the bike over onto
-  her); the side stand goes down before her left hand lets go. Getting on, as her weight lands on
+  neutral at 15 %. The paths are data (48: `G.swingPaths` - four keys getting on, three getting
+  off: the pelvis, the swung knee and foot and the chest at each, the pose each starts from and
+  where it ends), found offline by hill-climbing (`node tools/swing-path.mjs search
+  mount|dismount`) with this leg's own hip reach and ranges (hip-only IK, the knee at its easy
+  angle) against the 916's envelope, scored on the swung knee, calf and foot's clearance (to
+  3 cm), the knee reaching its targets, the standing leg reaching its foot, and - getting on -
+  her centre of mass over it and her left hand on its grip. `node tools/swing-path.mjs check`
+  re-measures the paths the game runs (kinematic, standing still: the dynamics add their own
+  error): getting on, the bike at −2°: knee, calf and foot ≥ 2.9 cm clear, the thigh 0.6 cm, the
+  knee within 3.0 cm of its targets, the standing foot within 0.5 cm, her centre of mass at most
+  2.7 cm past its allowance (5 cm either way of a point 5 cm towards the bike from the standing
+  foot's middle), her hand within 0.2 cm of its grip; getting off, over the bike on its stand at
+  −10°: 1.1 cm (where the knee starts, against the tank; her seat stays on the seat's edge), the
+  knee within 3.6 cm. Getting on, the path: leaning over the tank, the knee back and out, up
+  behind her beside the tail, across over the seat's middle as the pelvis tilts right side up,
+  on past its far edge, then down onto the seat.
+* **Holding the bike up** while getting on: she keeps it leaning 2° onto her side (−2°, her
+  standing leg's) - nearly balanced. What it needs about its tyre line - its weight's moment at
+  that lean and her own hold on the lean error (3000 N m/rad, 400 N m s/rad) - is a row of the
+  load path: her hands on the bar and the tank, braced through her arms, trunk and hips into her
+  legs, carry it with the least joint effort. What her contacts do not give it, a declared
+  residual - a roll moment on the bike towards the lean, ≤ 450 N m, reported (`holdNm`) - holds.
+  She stands on one foot to swing only once the bike is within 2.5° of that lean and steady
+  (≤ 6°/s); if it tips 8° away during the swing she puts the leg back down. As her weight lands on
   the seat the riding controller (46) takes her on and balances the bike with her left foot down.
   Stopped and parked, the bars are at full lock with the left grip against the tank: with her hand
   at the grip she turns them straight - rate-controlled against the standing tyre's scrub,
   ≤ 60 N m about the steering axis.
+* **Getting off** (stopped, seated, left foot down): the side stand first - she lets the bike lean
+  over onto it and waits until it rests there (within 2° of −10°, ≤ 6°/s); then her right hand from
+  its grip to the tank, up off the seat onto her left leg as her right leg goes back over the tail
+  and down behind her left foot, her hands off the bike, and the walking controller steps her
+  clear. A leg caught on its way over goes back onto its peg and she sits again.
 * **Lifting it off its side**: she walks round to its upper side and faces it, squats and holds its
-  tank's top edge and the seat's rear edge, rises as it comes up to 35°, steps in twice, pushes it
-  upright and lets it down onto its stand. The bike is raised by a declared lift assist - a force
-  at the points she holds, square to the bike and its tyre line, of the size that turns it about
-  that line towards the roll she asks for (≤ 1200 N m) - not by her hands' own forces.
+  tank's and seat's top edges (on its side away from the ground), rises as it comes up to 35°,
+  steps in twice, pushes it up - past upright if it lay on its right - to lean on its side stand
+  (on its left, at −10°), lets go and stands. The bike is raised by a declared lift assist - a
+  force at the points she holds, square to the bike and its tyre line, of the size that turns it
+  about that line towards the roll she asks for (≤ 1200 N m) - not by her hands' own forces. Off
+  the bike its rear brake is held, standing in for a bike left in gear with its engine stopped:
+  after a crash the rear wheel kept the spin it had (70 rad/s measured), and when she lifted the
+  bike onto its tyres it drove it 1.4 m out of her hands.
 * **Joint effort and range** (telemetry `riderBio.onFoot.effort` / `lastMotion`): per joint group
   (hips, knees, ankles, spine, neck, arms) the servo's active torque as a share of that joint's
   capacity (the R1.5 torque ledger) and whether a joint is in the stiff end of its range (within
@@ -264,30 +312,56 @@ reported, not hidden.
   mean force under a quarter of her weight; getting on the stub bike from its stand (bars straight
   and at full lock) - seated within 16 s, riding with both grips and her left foot down, the motion
   assist's mean under a fifth of her weight, over the leg-over the swung ankle's mean effort under
-  15 % and never in its end stop, the knee under 30 %, no abort; getting off and walking away. (In
-  Node the stub bike is kinematic: it follows the lean she keeps it at - `holdStub` - her arm's push
-  still loading her; the chassis that her push and the residual hold is in the browser.)
-* **Measured** (Node, flat ground): told 0.6 / 1.0 / 1.4 m/s she walks at 0.44 / 0.72 / 0.96 m/s
-  (balance torque 32-52 N m rms); 12 of 13 scripted scenarios pass; random stick input, 8 × 30 s
-  walking: 1 fall, the catch acting 24 % of the time at 95 N rms; with running mixed in, 6 × 30 s:
-  4 falls. (These counts move with small changes to the controller - a fall is chaotic - so they
-  are re-measured with every change.) Getting up after a push from 5 directions: 3.3-3.7 s from
-  rest to the squat, the get-up assist averaging 140 N and 150-165 N m. Getting on (from 1.3 m away,
-  the bike on its stand, bars straight / at full lock): seated after 12.8 / 13.3 s (4.3 s walking
-  round, 8.5 / 9.0 s at the bike); getting off: 9.1-9.8 s. Over the leg-over (2.5 s getting on,
-  3.0 s getting off) the swung leg's mean effort: ankle 1-2 % (never in its end stop), knee 8-16 %,
-  hip 19-32 % - before this rework (the whole leg solved to a foot target) the ankle sat in its
-  dorsiflexion end stop 97-100 % of the time at up to its full capacity and the knee's axial
-  rotation at its limit 50-100 %. The motion assist averages 155-160 N (≤ 300 N). Still high: her
-  standing leg (knee 47 %, ankle 44-54 %), her arms (the right, leaning on the tank getting on,
-  65 %; the left holding the bar getting off, 47-52 %), and the right hip's abduction at its limit
-  2/3 of the leg-over getting off.
+  15 % and never in its end stop, the knee under 30 %, no abort; getting off and walking away
+  (there the stub bike is kinematic: it follows the lean she keeps it at - `holdStub`). With the
+  stub bike free to roll (`rollStub`: its weight, roll inertia and damping about its tyre line,
+  her contacts' reactions on it, a one-sided side stand at −10°, lying on its side at 86°, and the
+  same declared residual and lift assist as the browser): getting on she holds it up - her own
+  mean moment on it over 5 N m, the residual's mean under 120 N m and never at its cap, the lean
+  within 6° - and nothing but her hands presses it with 300 N or more before she sits; getting off,
+  the side stand first and the bike on it, still, at the end, she on her feet and walking away;
+  lifting it off either side, onto its stand with her standing, her own mean moment on it while it
+  rises under 120 N m back down, and, off its right side, then getting on.
+* **Measured** (Node, flat ground). Getting on (from 1.3 m away, the bike on its stand, bars
+  straight / at full lock, the kinematic stub): seated after 10.9 s (6.6 s at the bike); getting
+  off 5.8-5.9 s; the motion assist 94 N mean (≤ 300 N). Over the leg-over (2.6 s getting on, 2.5 s
+  getting off) the swung leg's mean effort: hip 26-28 % / 23-24 %, knee 11 % / 8 %, ankle 5-6 % /
+  1 % (never in its end stop); getting on, the standing leg's hip 36-38 %, knee 40-48 %, ankle
+  37-47 %, getting off its ankle 68-76 %; the arms 96-97 % (left, on the bar: its clavicle, the
+  arm chain's root, at its declared 40 N m capacity) and 72 % (right, on the tank) getting on,
+  76-78 % and 70-71 % getting off. The bike free to roll: getting on, seated after 11.5 s, the lean
+  within 3.0° of −2° (0.4° mean), her own moment on it 20 N m mean against the residual's 59 N m
+  (max 354 N m of its 450). Standing it up off its stand needs 195 N m (mean over that keyframe):
+  she gives 33 N m, the residual 144 N m; over the steps and the leg-over (40-55 N m needed) her
+  share is −15 … +38 N m. Her contacts hold it by lifting the left grip (about 74 N) and pressing
+  the tank (about 105 N), her left clavicle at 94-95 % of its capacity. Getting off, 6.0 s from the
+  stand going down to her on her feet. Lifting it, from 2 m away: on its stand 8.4 s (off its left
+  side) / 9.9 s (right) after she is told, her own mean moment on it while it rises 76 / 85 N m
+  back down (200-450 N m before its hand points were put on its upper side), the lift assist at its
+  1200 N m cap through most of the rise. Walking and getting up (measured at commit 0988565, not
+  since): told 0.6 / 1.0 / 1.4 m/s she walks at 0.44 / 0.72 / 0.96 m/s (balance torque 32-52 N m
+  rms); 12 of 13 scripted scenarios pass; random stick input, 8 × 30 s walking: 1 fall, the catch
+  acting 24 % of the time at 95 N rms; with running mixed in, 6 × 30 s: 4 falls (these counts move
+  with small changes to the controller - a fall is chaotic); getting up after a push from 5
+  directions: 3.3-3.7 s from rest to the squat, the get-up assist averaging 140 N and 150-165 N m.
+  Before the hip-driven leg-over (the whole leg solved to a foot target) the swung ankle sat in its
+  dorsiflexion end stop 97-100 % of the time at up to its full capacity.
+* **Browser** (the 916's chassis, headless; `node tests/browser/at-the-bike.mjs`, three runs):
+  stopped and riding, F: the stand down, off and standing 7.8-8.3 s later; walked away and back, F:
+  walked round and seated 12.9-14.4 s later, riding with both grips and her left foot down, and
+  riding off - the residual 87-102 N m mean, 378-404 N m at most. The stand holds the parked bike
+  at −12 … −14°, not −10° (below).
 * **Not yet / known**: running is a fast walk (no flight phase) - told 3 m/s she falls; the
-  swinging foot lands 5-8 cm from its aim; getting on takes about twice as long as a rider's;
-  her standing leg and arms work hard in the motions at the bike (above); holding the bike up, the
-  declared residual does more than her arm (browser, below); lifting: one hand loses its point of
-  the bike while it rises, and the bike is raised by the declared assist, not by her; the catch
-  assist does real work and is the first thing to reduce.
+  swinging foot lands 5-8 cm from its aim. Holding the bike up, the declared residual does about
+  three times what her own contacts do (standing it up off its stand, four times), and her left
+  arm - its clavicle, at a declared 40 N m - is at its capacity doing it: the load reaches her
+  trunk and legs, but through an arm root far weaker than a real shoulder girdle. Bracing her hip
+  against the bike when it leans too far is not done. In the browser the side stand is the
+  chassis's virtual support aimed at −10° (a spring, 4000 N m/rad, from either side: it sags to
+  −12 … −14° under the bike's weight); in Node it is a hard one-sided stop. The lift is the
+  declared assist's, not hers: her hands only press (palm contacts), they do not pull. At the end
+  of getting off the motion assist is at its cap for 1-2 s as her right foot comes down behind the
+  left. The catch assist does real work and is the first thing to reduce.
 
 ## Legacy rider (`40_rider_body.js`, `?rider=legacy`)
 

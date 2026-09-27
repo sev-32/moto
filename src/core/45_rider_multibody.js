@@ -356,6 +356,97 @@
       S.baseResidual = Array.from(fR[0]); // what the base would have to receive to stay put
       return tauOut;
     }
+    // ---- whole-body contact forces (inverse statics). The forces the contacts should carry so that
+    // (1) together they give the body the net force and moment asked for (its balance), (2) they
+    // meet extra task rows (e.g. the roll moment on a bike held up by a hand), and (3) the joints
+    // need the least effort to carry them from contact to contact:
+    //   minimise  sum_i w_i (tau_i / cap_i)^2,  tau = tau0 - sum_c J_c^T f_c
+    // (tau0: the joint torques with no contact force - holding the limbs up against gravity, base
+    // held; J_c: the point Jacobian at the contact) plus a little of each force. A contact's force is
+    // a nonnegative combination of its directions (a friction pyramid for a contact that can only
+    // push, the six axis directions for a hand that holds on, each capped), so it is a bounded
+    // least-squares problem, solved exactly on its normal equations by a primal active-set method
+    // (Lawson-Hanson), warm-started from the last solution.
+    //   spec: { contacts: [{ link, x: world point, dirs: [unit world vectors], ub?: N per direction }],
+    //           tau0: per link, cap: per link (0 = not a hinge row), wJoint?: per link,
+    //           net: { F, M, about, wF, wM, lenM }, rows?: [{ coef(ci, dir) -> number, target, w, scale }],
+    //           scale: N (forces are solved as multiples of it), reg, warm?: beta (same layout) }
+    const ancestors = [];
+    const ancestorsOf = (l) => { if (!ancestors[l]) { const a = []; for (let x = l; x > 0; x = PAR[x]) a.push(x); ancestors[l] = a; } return ancestors[l]; };
+    function contactForcePlan(spec) {
+      const C = spec.contacts, sc = spec.scale || 1, net = spec.net, rows = spec.rows || [];
+      const cols = [];
+      for (let ci = 0; ci < C.length; ci++) for (const d of C[ci].dirs) cols.push({ ci, d, ub: C[ci].ub != null ? C[ci].ub / sc : Infinity });
+      const nv = cols.length, hingeRow = new Int32Array(n).fill(-1);
+      let nr = 6 + rows.length;
+      for (let i = 1; i < n; i++) if (spec.cap[i] > 0) hingeRow[i] = nr++;
+      // A (rows x nv, weights folded in as sqrt(w)) and b; the joint rows sparse per column
+      const lenM = net.lenM || 0.1, sF = Math.sqrt(net.wF ?? 1e4), sM = Math.sqrt(net.wM ?? 1e4);
+      const dense = new Float64Array((6 + rows.length) * nv), b = new Float64Array(nr), sparse = new Array(nv);
+      const about = net.about;
+      for (let k = 0; k < 3; k++) { b[k] = (sF * net.F[k]) / sc; b[3 + k] = (sM * net.M[k]) / (sc * lenM); }
+      rows.forEach((r, k) => { b[6 + k] = (Math.sqrt(r.w) * r.target) / (r.scale || sc); });
+      const wJ = spec.wJoint;
+      for (let i = 1; i < n; i++) if (hingeRow[i] >= 0) b[hingeRow[i]] = (-Math.sqrt(wJ ? wJ[i] : 1) * spec.tau0[i]) / spec.cap[i];
+      for (let j = 0; j < nv; j++) {
+        const { ci, d } = cols[j], c = C[ci], x = c.x, r = [x[0] - about[0], x[1] - about[1], x[2] - about[2]], m = cross(r, d);
+        for (let k = 0; k < 3; k++) { dense[k * nv + j] = sF * d[k]; dense[(3 + k) * nv + j] = (sM * m[k]) / lenM; }
+        rows.forEach((rw, k) => { dense[(6 + k) * nv + j] = (Math.sqrt(rw.w) * rw.coef(ci, d) * sc) / (rw.scale || sc); });
+        const sp = [];
+        for (const li of ancestorsOf(c.link)) {
+          const hr = hingeRow[li];
+          if (hr < 0) continue;
+          const R = S.Rw[li], a = AX[li], aw = [R[0] * a[0] + R[1] * a[1] + R[2] * a[2], R[3] * a[0] + R[4] * a[1] + R[5] * a[2], R[6] * a[0] + R[7] * a[1] + R[8] * a[2]];
+          const o = S.ow[li], J = cross(aw, [x[0] - o[0], x[1] - o[1], x[2] - o[2]]);
+          sp.push(hr, (-Math.sqrt(wJ ? wJ[li] : 1) * dot(J, d) * sc) / spec.cap[li]);
+        }
+        sparse[j] = sp;
+      }
+      // normal equations Q = A^T A + reg I, g = A^T b
+      const Q = new Float64Array(nv * nv), g = new Float64Array(nv), nd = 6 + rows.length, reg = spec.reg ?? 1e-3;
+      for (let r = 0; r < nd; r++) {
+        const row = r * nv, br = b[r];
+        for (let j = 0; j < nv; j++) {
+          const aj = dense[row + j];
+          if (!aj) continue;
+          g[j] += aj * br;
+          for (let k = j; k < nv; k++) { const ak = dense[row + k]; if (ak) Q[j * nv + k] += aj * ak; }
+        }
+      }
+      const byRow = new Map();
+      for (let j = 0; j < nv; j++) { const sp = sparse[j]; for (let t = 0; t < sp.length; t += 2) { let l = byRow.get(sp[t]); if (!l) byRow.set(sp[t], (l = [])); l.push(j, sp[t + 1]); } }
+      for (const [r, l] of byRow) {
+        const br = b[r];
+        for (let s = 0; s < l.length; s += 2) {
+          const j = l[s], aj = l[s + 1];
+          g[j] += aj * br;
+          for (let t = 0; t < l.length; t += 2) { const k = l[t]; if (k >= j) Q[j * nv + k] += aj * l[t + 1]; }
+        }
+      }
+      for (let j = 0; j < nv; j++) { Q[j * nv + j] += reg; for (let k = j + 1; k < nv; k++) Q[k * nv + j] = Q[j * nv + k]; }
+      const ub = Float64Array.from(cols, (c) => c.ub);
+      const x0 = new Float64Array(nv);
+      if (spec.warm && spec.warm.length === nv) for (let j = 0; j < nv; j++) x0[j] = Math.min(ub[j], Math.max(0, spec.warm[j] / sc));
+      const res = boundedLSQ(Q, g, nv, x0, ub, 4 * nv + 20);
+      // forces per contact, the joint torques they need, what they achieve
+      const f = C.map(() => [0, 0, 0]), beta = new Float64Array(nv);
+      for (let j = 0; j < nv; j++) { const v = res.x[j] * sc; beta[j] = v; if (!v) continue; const fc = f[cols[j].ci], d = cols[j].d; fc[0] += v * d[0]; fc[1] += v * d[1]; fc[2] += v * d[2]; }
+      const tau = Float64Array.from(spec.tau0), netF = [0, 0, 0], netM = [0, 0, 0];
+      for (let ci = 0; ci < C.length; ci++) {
+        const fc = f[ci], x = C[ci].x;
+        if (!fc[0] && !fc[1] && !fc[2]) continue;
+        for (let k = 0; k < 3; k++) netF[k] += fc[k];
+        const m = cross([x[0] - about[0], x[1] - about[1], x[2] - about[2]], fc);
+        for (let k = 0; k < 3; k++) netM[k] += m[k];
+        for (const li of ancestorsOf(C[ci].link)) {
+          const R = S.Rw[li], a = AX[li], aw = [R[0] * a[0] + R[1] * a[1] + R[2] * a[2], R[3] * a[0] + R[4] * a[1] + R[5] * a[2], R[6] * a[0] + R[7] * a[1] + R[8] * a[2]];
+          const o = S.ow[li];
+          tau[li] -= dot(cross(aw, [x[0] - o[0], x[1] - o[1], x[2] - o[2]]), fc);
+        }
+      }
+      const rowsOut = rows.map((rw) => { let v = 0; for (let j = 0; j < nv; j++) if (beta[j]) v += rw.coef(cols[j].ci, cols[j].d) * beta[j]; return v; });
+      return { beta, f, tau, netF, netM, rowsOut, iters: res.iters, nv };
+    }
     // totals for checks: linear/angular momentum about the world origin, kinetic energy, COM
     function totals() {
       let m = 0, com = [0, 0, 0], P = [0, 0, 0], Hh = [0, 0, 0], T = 0;
@@ -372,10 +463,76 @@
       }
       return { mass: m, com: com.map((x) => x / m), P, H: Hh, T };
     }
-    return Object.assign(S, { kinematics, pointVelocity, toWorld, toLocal, clearForces, applyForce, applyGravity, aba, integrate, inverseDynamicsStatic, totals });
+    return Object.assign(S, { kinematics, pointVelocity, toWorld, toLocal, clearForces, applyForce, applyGravity, aba, integrate, inverseDynamicsStatic, totals, contactForcePlan });
   }
 
-  const api = { createArticulatedBody, math: { cross, dot, mv, mtv, mm, mt, axisAngle, expSO3, orthonormalize } };
+  // min 1/2 x'Qx - g'x subject to 0 <= x <= ub (Q symmetric positive definite, n x n row-major):
+  // primal active set (Lawson-Hanson with upper bounds). Each pass solves the free variables'
+  // equations (Cholesky) with the others at their bounds; a solution outside the box is stepped
+  // towards only until the first variable reaches its bound, which then joins the bound set; with
+  // the free ones inside, the bound variable whose gradient most wants to leave its bound is freed.
+  // Warm start: x (feasible after clipping). Returns { x, iters }.
+  function boundedLSQ(Q, g, n, x, ub, maxIter) {
+    const st = new Uint8Array(n); // 0 at 0, 1 free, 2 at ub
+    for (let j = 0; j < n; j++) { x[j] = Math.min(ub[j], Math.max(0, x[j])); st[j] = x[j] <= 0 ? 0 : x[j] >= ub[j] ? 2 : 1; }
+    const grad = new Float64Array(n);
+    let it = 0, freed = -1;
+    for (; it < maxIter; it++) {
+      const F = [];
+      for (let j = 0; j < n; j++) if (st[j] === 1) F.push(j);
+      if (F.length) {
+        const m = F.length, L = new Float64Array(m * m), rhs = new Float64Array(m);
+        for (let a = 0; a < m; a++) {
+          const ja = F[a];
+          let s = g[ja];
+          for (let k = 0; k < n; k++) if (st[k] !== 1 && x[k]) s -= Q[ja * n + k] * x[k];
+          rhs[a] = s;
+          for (let c = 0; c <= a; c++) L[a * m + c] = Q[ja * n + F[c]];
+        }
+        // Cholesky in place (lower), then solve
+        let ok = true;
+        for (let a = 0; a < m && ok; a++) {
+          for (let c = 0; c <= a; c++) {
+            let s = L[a * m + c];
+            for (let k = 0; k < c; k++) s -= L[a * m + k] * L[c * m + k];
+            if (a === c) { if (s <= 1e-14) { ok = false; break; } L[a * m + a] = Math.sqrt(s); }
+            else L[a * m + c] = s / L[c * m + c];
+          }
+        }
+        if (!ok) break;
+        const z = rhs;
+        for (let a = 0; a < m; a++) { let s = z[a]; for (let k = 0; k < a; k++) s -= L[a * m + k] * z[k]; z[a] = s / L[a * m + a]; }
+        for (let a = m - 1; a >= 0; a--) { let s = z[a]; for (let k = a + 1; k < m; k++) s -= L[k * m + a] * z[k]; z[a] = s / L[a * m + a]; }
+        // inside the box? else step towards it until the first bound
+        let alpha = 1, block = -1, blockTo = 0;
+        for (let a = 0; a < m; a++) {
+          const j = F[a], zj = z[a];
+          if (zj < 0) { const t = x[j] / (x[j] - zj); if (t < alpha) { alpha = t; block = j; blockTo = 0; } }
+          else if (zj > ub[j]) { const t = (ub[j] - x[j]) / (zj - x[j]); if (t < alpha) { alpha = t; block = j; blockTo = 2; } }
+        }
+        // (the variable just freed blocking at once: rounding - it stays where it was; done)
+        if (block >= 0 && block === freed && alpha < 1e-12) { st[block] = blockTo; break; }
+        for (let a = 0; a < m; a++) { const j = F[a]; x[j] += alpha * (z[a] - x[j]); }
+        freed = -1;
+        if (block >= 0) { st[block] = blockTo; x[block] = blockTo === 0 ? 0 : ub[block]; continue; }
+      }
+      // optimality of the bound variables
+      let worst = -1, wv = 1e-9;
+      for (let j = 0; j < n; j++) {
+        if (st[j] === 1) continue;
+        let s = -g[j];
+        for (let k = 0; k < n; k++) if (x[k]) s += Q[j * n + k] * x[k];
+        grad[j] = s;
+        const v = st[j] === 0 ? -s : s; // at 0 it wants up if the gradient is negative; at ub, down if positive
+        if (v > wv) { wv = v; worst = j; }
+      }
+      if (worst < 0) break;
+      st[worst] = 1; freed = worst;
+    }
+    return { x, iters: it };
+  }
+
+  const api = { createArticulatedBody, boundedLSQ, math: { cross, dot, mv, mtv, mm, mt, axisAngle, expSO3, orthonormalize } };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   global.LUCID_MULTIBODY = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -71,7 +71,7 @@
     // the front of the pelvis between the thighs (perineum, lower abdomen) has no bone under it
     // the way the ischial tuberosities do: softer contact (x tissueK)
     softTissueScale: 0.35,
-    pegK: 6e4, pegC: 380, gripK: 2.5e4, gripC: 150, gripRotK: 30, gripRotC: 0.6, gripTwistK: 12, gripStrengthN: 450,
+    pegK: 6e4, pegC: 380, gripK: 2.5e4, gripC: 150, gripRotK: 30, gripRotC: 0.6, gripTwistK: 12, gripStrengthN: 450, gripSettleS: 0.12,
     mu: { seat: 0.6, bike: 0.45, peg: 1.0, ground: 0.55, sole: 0.8 },
     clavicleMassKg: 0.05, // physbody.py CLAVICLE_MASS, taken from the chest
   };
@@ -570,11 +570,13 @@
     // press a limb into the tank are not what a rider aims for; the contacts do the pressing)
     const CLEAR = 0.004, TRUNK_CLEAR = 0.012, SEAT_SINK = 0.008;
     const clearSets = new Map();
-    function solveClear(tasks, dofs, iters, bk, passes = 3, passIters = 4, margin = CLEAR) {
+    // (pref: the chain's preferred angles - riding's by default; seatOk: a thigh on the seat is
+    // resting, not something to steer away from - riding; off the bike her leg is kept clear of it)
+    function solveClear(tasks, dofs, iters, bk, passes = 3, passIters = 4, margin = CLEAR, pref = prefMap, seatOk = true, depth = 0.035) {
       // cold solves reach the position first (preferences can hold a chain in a poor basin), then
       // settle with the preferences, directions and clearance
-      if (iters > 8) ikSolve(ikb, tasks.filter((t) => t.type === "pos"), dofs, prefMap, 8, 1e-4, 0.1);
-      ikSolve(ikb, tasks, dofs, prefMap, iters);
+      if (iters > 8) ikSolve(ikb, tasks.filter((t) => t.type === "pos"), dofs, pref, 8, 1e-4, 0.1);
+      ikSolve(ikb, tasks, dofs, pref, iters);
       if (!bk) return;
       let mine = clearSets.get(dofs);
       if (!mine) {
@@ -588,13 +590,13 @@
           const cw = ikb.toWorld(s.link, s.c), g = [0, 0, 1], cb = toBikeFrame(bk, cw), d = SURF.sdf(cb, g);
           // the thighs rest on the seat: that is contact (tissue compression), not something to
           // steer away from; against the tank flanks they are kept clear
-          if (s.seg.endsWith("Thigh") && cb[1] < -0.24 && g[2] > 0.5) continue;
+          if (seatOk && s.seg.endsWith("Thigh") && cb[1] < -0.24 && g[2] > 0.5) continue;
           // only near the surface: deep inside the envelope the field's gradient points to the
           // nearest exit, which is not where a limb should go
-          if (d < s.r + margin && d > s.r - 0.035) extra.push({ type: "pos", link: s.link, local: s.c, target: add(cw, scl(mv(bk.R, g), Math.min(0.02, s.r + margin - d))), w: 40 });
+          if (d < s.r + margin && d > s.r - depth) extra.push({ type: "pos", link: s.link, local: s.c, target: add(cw, scl(mv(bk.R, g), Math.min(0.02, s.r + margin - d))), w: 40 });
         }
         if (!extra.length) break;
-        ikSolve(ikb, tasks.concat(extra), dofs, prefMap, passIters);
+        ikSolve(ikb, tasks.concat(extra), dofs, pref, passIters);
       }
     }
     R.solvePosture = solvePosture;
@@ -799,7 +801,7 @@
           const F = add(scl(nw, Fn), Ft);
           applyContact(s.link, F, x);
           out.push({ F: scl(F, -1), x, part: "frame" });
-          st.on = true; st.F = F; st.x = x; st.pen = pen; st.where = cb[1] < -0.2 ? "seat" : cb[1] < 0.36 ? "tank" : "front";
+          st.on = true; st.F = F; st.x = x; st.n = nw; st.mu = mu; st.pen = pen; st.where = cb[1] < -0.2 ? "seat" : cb[1] < 0.36 ? "tank" : "front";
         } else if (st.on) { st.on = false; st.anchor = null; st.F = [0, 0, 0]; st.pen = 0; }
         // --- footpegs (sole points and any leg sphere): capsule of the peg radius
         if (!s.edge && (s.kind === "sole" || s.seg.endsWith("Foot") || s.seg.endsWith("Calf"))) {
@@ -820,7 +822,7 @@
             const F = add(scl(nw, Fn), Ft);
             applyContact(s.link, F, x);
             out.push({ F: scl(F, -1), x, part: "frame" });
-            ps.on = true; ps.F = F; ps.side = hit.side;
+            ps.on = true; ps.F = F; ps.side = hit.side; ps.x = x; ps.n = nw; ps.mu = mu;
           } else if (ps.on) { ps.on = false; ps.anchor = null; ps.F = [0, 0, 0]; }
         }
         // --- ground
@@ -834,7 +836,7 @@
             const Ft = Fn > 0 ? frictionForce(gs, x, gn, vt, k, c, mu, Fn, (a) => a, (w) => w) : [0, 0, 0];
             const F = add(scl(gn, Fn), Ft);
             applyContact(s.link, F, x);
-            gs.on = true; gs.F = F;
+            gs.on = true; gs.F = F; gs.x = x; gs.n = gn; gs.mu = mu;
           } else if (gs.on) { gs.on = false; gs.anchor = null; gs.F = [0, 0, 0]; }
         }
       }
@@ -842,7 +844,11 @@
       for (const S of ["L", "R"]) {
         const g = R.grips[S], hd = hand[S];
         if (!g.held) { g.F = [0, 0, 0]; g.T = [0, 0, 0]; continue; }
-        const gb = gripBody(bk, g), gc = add(gb.c, scl(gb.a, g.tOff)), cw = bikeToWorld(bk, gc), aw = mv(bk.R, gb.a);
+        // (a hand that has just closed on its grip away from its middle - reaching for it - is held
+        // where it closed, settling onto the grip's middle over gripSettleS: the fingers wrap and the
+        // hand slides home, it is not yanked there)
+        if (g.slip) { const k = Math.exp(-(PL.lastDt || 1 / 540) / PRIORS.gripSettleS); g.slip = scl(g.slip, k); if (len(g.slip) < 1e-4) g.slip = null; }
+        const gb = gripBody(bk, g), gc = add(add(gb.c, scl(gb.a, g.tOff)), g.slip ? mv(gb.Rs, g.slip) : [0, 0, 0]), cw = bikeToWorld(bk, gc), aw = mv(bk.R, gb.a);
         const pw = b.toWorld(hd.link, hd.p), vp = b.pointVelocity(hd.link, hd.p), vg = steerPointVel(bk, cw);
         const F = sub(scl(sub(cw, pw), PRIORS.gripK), scl(sub(vp, vg), PRIORS.gripC)); // on the hand
         // alignment of the hand's grasp axis with the bar (perpendicular misalignment), and a mild
@@ -868,7 +874,14 @@
       }
       return out;
     }
-    R.gripWorld = (bk, S) => { const g = R.grips[S], gb = gripBody(bk, g); return { c: bikeToWorld(bk, add(gb.c, scl(gb.a, g.tOff))), a: mv(bk.R, gb.a) }; };
+    R.gripWorld = (bk, S) => { const g = R.grips[S], gb = gripBody(bk, g); return { c: bikeToWorld(bk, add(add(gb.c, scl(gb.a, g.tOff)), g.slip ? mv(gb.Rs, g.slip) : [0, 0, 0])), a: mv(bk.R, gb.a) }; };
+    // her hand closes on its grip where it is (its offset from the grip's middle settles out)
+    R.closeGrip = (bk, S) => {
+      const g = R.grips[S];
+      g.slip = null;
+      const gb = gripBody(bk, g), d = sub(toBikeFrame(bk, body.toWorld(hand[S].link, hand[S].p)), add(gb.c, scl(gb.a, g.tOff)));
+      g.held = true; g.overloadS = 0; g.twist0 = null; g.slip = mtv(gb.Rs, d);
+    };
 
     // ------------------------------------------------------------------ planner (posture intent -> targets -> IK)
     // Intent (player or auto rider): hang -1..1 (right +), foreAft -1..1 (forward +), tuck -1..1
@@ -1016,7 +1029,8 @@
       const hpitch = (PL.headPitchDeg + P.tuck * 6 - stand * 4) * DEG;
       T.head = mm(Rb, mm(Rz(PL.lookYaw - hang * 12 * DEG), mm(Ry(hroll), mm(Rx(-hpitch), M2B))));
       T.hands = {};
-      for (const S of ["L", "R"]) if (R.grips[S].held) { const g = R.gripWorld(bk, S); T.hands[S] = { p: g.c, axis: g.a, volar: mv(Rb, unit([0, 0.35, -1])) }; }
+      // (a hand reaching for its grip - just sat down, the grip not yet taken - goes there too)
+      for (const S of ["L", "R"]) if (R.grips[S].held || R.grips[S].reach) { const g = R.gripWorld(bk, S); T.hands[S] = { p: g.c, axis: g.a, volar: mv(Rb, unit([0, 0.35, -1])) }; }
       T.feet = {};
       for (const [S, side, sx] of [["L", "left", -1], ["R", "right", 1]]) {
         const pg = SURF.pegs[side], mid = scl(add(pg.a, pg.b), 0.5), inside = sx * hang > 0;
@@ -1641,6 +1655,131 @@
       R.servoScale.fill(1);
     };
 
+    // ------------------------------------------------------------------ load path: whole-body contact forces
+    // Which of her contacts carries what, and the joint torques that carry it. Her contacts as they
+    // are this step: the feet on the ground (each touching sole point, pushing only, within the
+    // sole's friction), a hand holding its grip (either way, within gripShare of her grip strength),
+    // and wherever else she touches the bike (a palm on the tank, her hip against the seat, the seat
+    // under her, a foot on a peg - pushing only, within friction). The forces are chosen
+    // (MB contactForcePlan) so that together they give her body the net force and moment asked for
+    // (her balance) and the bike the roll moment asked for, with the least joint effort - each
+    // joint's torque as a share of its capacity: the load goes from contact to contact through the
+    // joints that carry it most easily, and how hard that is depends on her posture. The
+    // feed-forward is then the joint torques that carry those forces (RNEA with the base held, the
+    // planned forces applied where they act). Weights: her own balance first (wF, wM on force and
+    // moment errors, per body weight and per body weight x 0.1 m), then the bike's roll moment
+    // (bikeW per bikeScale N m of shortfall), then effort. Declared priors.
+    const LOAD = (R.loadPath = { forces: [], warm: null, key: "", out: null, gripShare: 0.7, wF: 1e5, wM: 1e5, bikeW: 25, bikeScale: 20, reg: 1e-3, capShare: 0.85, capPasses: 2 });
+    const capOf = new Float64Array(L.length);
+    for (const h of H) capOf[h.link] = h.tmax;
+    // a friction pyramid inside the cone: n + mu' t over four tangents (the normal share is 1 per unit)
+    const pyramid = (n, mu) => {
+      const t1 = unit(Math.abs(n[2]) < 0.9 ? cross(n, [0, 0, 1]) : cross(n, [1, 0, 0])), t2 = cross(n, t1), m = (mu * 0.9) / Math.SQRT2;
+      return [add(n, scl(t1, m)), sub(n, scl(t1, m)), add(n, scl(t2, m)), sub(n, scl(t2, m))];
+    };
+    const AXES6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    const comOf = (bb) => { const c = [0, 0, 0]; for (let i = 0; i < L.length; i++) { const m = L[i].mass; if (!m) continue; const w = bb.toWorld(i, L[i].com); c[0] += m * w[0]; c[1] += m * w[1]; c[2] += m * w[2]; } return scl(c, 1 / riderMassKg); };
+    // Her hands and feet are where she pushes: the forces there are chosen. Where she only rests on
+    // something - her chest on the tank, a thigh or her hip against the seat, the seat under her -
+    // the force is what her posture presses into it: it is not chosen but taken as it is (the last
+    // contact step's), a load her joints carry like her weight; leaning her hip into the bike is a
+    // posture, and the force it makes is then counted.
+    const passiveOn = (s) => (s.bike.on && s.bike.n && s.kind !== "palm") || (s.ground.on && s.kind !== "sole");
+    // o: { feet: ["L","R"] allowed to carry (default both), bike: her hands' contacts with the bike
+    //      count, aDes: her centre of mass's acceleration wanted (world), LdotDes: rate of her angular
+    //      momentum about it, bikeRow: { M, o, h } roll moment on the bike about the line through o
+    //      along h, gravity }
+    function loadPlan(o = {}) {
+      const b = body, g = o.gravity || b.gravity, C = [];
+      // her feet (each touching sole point; with the sole's edge points down, its middle row adds
+      // nothing to where the pressure can be - left out)
+      for (const S of ["L", "R"]) {
+        if (o.feet && !o.feet.includes(S)) continue;
+        const pts = spheres.filter((s) => s.link === foot[S].link && s.ground.on && s.ground.n);
+        const edges = pts.some((s) => s.edge);
+        for (const s of pts) if (!edges || s.edge || s.at === "toe") C.push({ link: s.link, x: s.ground.x, dirs: pyramid(s.ground.n, s.ground.mu), kind: "foot", side: S });
+      }
+      if (o.bike) {
+        for (const S of ["L", "R"]) { const gr = R.grips[S]; if (gr.held) C.push({ link: hand[S].link, x: b.toWorld(hand[S].link, hand[S].p), dirs: AXES6, ub: LOAD.gripShare * PRIORS.gripStrengthN, kind: "grip", side: S, bike: true }); }
+        for (const s of spheres) {
+          if (s.kind === "palm" && s.bike.on && s.bike.n && !R.grips[s.seg[0]].held) C.push({ link: s.link, x: s.bike.x, dirs: pyramid(s.bike.n, s.bike.mu ?? PRIORS.mu.bike), kind: "palm", seg: s.seg, bike: true });
+          if (s.peg.on && s.peg.n) C.push({ link: s.link, x: s.peg.x, dirs: pyramid(s.peg.n, s.peg.mu ?? PRIORS.mu.peg), kind: "peg", seg: s.seg, bike: true });
+        }
+      }
+      const com = comWorld(), W = riderMassKg * 9.81, aD = o.aDes || [0, 0, 0];
+      const Fnet = [riderMassKg * (aD[0] - g[0]), riderMassKg * (aD[1] - g[1]), riderMassKg * (aD[2] - g[2])], Mnet = (o.LdotDes || [0, 0, 0]).slice();
+      // what she rests on: its forces as they are, taken off what her pushes must give
+      const br = o.bikeRow;
+      let bikeM = br ? br.M : 0;
+      const rest = [];
+      for (const s of spheres) {
+        if (!passiveOn(s)) continue;
+        const onBike = s.bike.on && s.bike.n && s.kind !== "palm";
+        const F = onBike ? s.bike.F : s.ground.F, x = onBike ? s.bike.x : s.ground.x;
+        if (!x) continue;
+        rest.push({ link: s.link, x, F, bike: onBike, seg: s.seg });
+        for (let k = 0; k < 3; k++) Fnet[k] -= F[k];
+        const mm_ = cross(sub(x, com), F);
+        for (let k = 0; k < 3; k++) Mnet[k] -= mm_[k];
+        if (br && onBike) bikeM -= -dot(cross(sub(x, br.o), F), br.h);
+      }
+      // joint torques with no chosen contact force: her limbs held up against gravity, and what she
+      // rests on (base held)
+      b.clearForces();
+      const save = b.gravity;
+      b.gravity = g; b.applyGravity(); b.gravity = save;
+      for (const r of rest) b.applyForce(r.link, r.F, r.x);
+      const tau0 = Float64Array.from(b.inverseDynamicsStatic(false));
+      b.clearForces();
+      // (what her tissues give at this posture - the passive stops and stiffness - carries its share
+      // for free: the effort is the rest)
+      for (const hh of H) tau0[hh.link] -= passiveTau(hh, b.q[hh.link], 0).tau;
+      const rows = [];
+      if (br) rows.push({ coef: (ci, d) => (C[ci].bike ? -dot(cross(sub(C[ci].x, br.o), d), br.h) : 0), target: bikeM, w: LOAD.bikeW, scale: LOAD.bikeScale });
+      const key = C.map((c) => c.kind + c.link + ":" + c.dirs.length).join("|");
+      // (a joint cannot give more than its capacity: one planned past capShare of it is weighted up by
+      // the fourth power of its overshoot and the plan solved again - at most capPasses times)
+      const spec = { contacts: C, tau0, cap: capOf, wJoint: null, net: { F: Fnet, M: Mnet, about: com, wF: LOAD.wF, wM: LOAD.wM, lenM: 0.1 }, rows, scale: W, reg: LOAD.reg, warm: key === LOAD.key ? LOAD.warm : null };
+      let res = b.contactForcePlan(spec), passes = 0;
+      for (; passes < LOAD.capPasses; passes++) {
+        let over = false;
+        const w = spec.wJoint || new Float64Array(L.length).fill(1);
+        for (const hh of H) { const e = Math.abs(res.tau[hh.link]) / (LOAD.capShare * hh.tmax); if (e > 1) { w[hh.link] *= e ** 4; over = true; } }
+        if (!over) break;
+        spec.wJoint = w; spec.warm = res.beta;
+        res = b.contactForcePlan(spec);
+      }
+      LOAD.key = key; LOAD.warm = res.beta;
+      LOAD.forces = [];
+      const sum = { feet: { L: [0, 0, 0], R: [0, 0, 0] }, grips: { L: null, R: null }, bike: [0, 0, 0], bikeParts: {} };
+      C.forEach((c, i) => {
+        const F = res.f[i];
+        if (!F[0] && !F[1] && !F[2]) return;
+        LOAD.forces.push({ link: c.link, local: b.toLocal(c.link, c.x), F, kind: c.kind, bike: !!c.bike });
+        if (c.kind === "foot") sum.feet[c.side] = add(sum.feet[c.side], F);
+        else if (c.kind === "grip") sum.grips[c.side] = F;
+        else if (c.bike) { sum.bike = add(sum.bike, F); sum.bikeParts[c.seg] = add(sum.bikeParts[c.seg] || [0, 0, 0], F); }
+      });
+      for (const r of rest) if (r.bike) sum.bikeParts[r.seg + "~"] = add(sum.bikeParts[r.seg + "~"] || [0, 0, 0], r.F);
+      LOAD.out = { ...sum, tau: res.tau, capPasses: passes, netErrF: sub(res.netF, Fnet), netErrM: sub(res.netM, Mnet), bikeM: br ? res.rowsOut[0] + (br.M - bikeM) : null, bikeNeed: br ? br.M : null, bikeRest: br ? br.M - bikeM : null, n: C.length, nv: res.nv, iters: res.iters, com, rest: rest.length };
+      return LOAD.out;
+    }
+    // the feed-forward that carries the planned forces: RNEA with the base held, gravity, the planned
+    // forces where she pushes and what she rests on as it is, applied where they act on her now
+    function loadFeedForward(g) {
+      const b = body, save = b.gravity;
+      b.clearForces(); b.gravity = g || save; b.applyGravity(); b.gravity = save;
+      for (const f of LOAD.forces) b.applyForce(f.link, f.F, b.toWorld(f.link, f.local));
+      for (const s of spheres) if (passiveOn(s)) { const onBike = s.bike.on && s.bike.n && s.kind !== "palm", x = onBike ? s.bike.x : s.ground.x; if (x) b.applyForce(s.link, onBike ? s.bike.F : s.ground.F, x); }
+      const tau = b.inverseDynamicsStatic(false);
+      for (let i = 0; i < L.length; i++) R.tauFF[i] = tau[i];
+      // (less what her tissues give at this posture: the servos add the rest)
+      for (const hh of H) R.tauFF[hh.link] -= passiveTau(hh, b.q[hh.link], 0).tau;
+      b.clearForces();
+    }
+    R.loadPlan = loadPlan;
+    R.loadFeedForward = loadFeedForward;
+
     // ------------------------------------------------------------------ step
     // forces(bike, ground, dt): contact + servo forces at the current state; returns the reactions
     // the bike must receive. integrate(dt) advances the rider with those same forces.
@@ -1655,7 +1794,9 @@
       b.clearForces();
       b.applyGravity();
       const reactions = contacts(bk, ground);
-      steerNeutral(bk, dt);
+      // (quiet hands on the bars is riding: off the bike, what her hands do to the bars is what she
+      // means them to do)
+      if (!PL.fallen) steerNeutral(bk, dt);
       if (PL.fallen && R.postContacts) R.postContacts(bk, dt, reactions);
       servoTorques(dt);
       R.last.reactions = reactions;
@@ -1693,7 +1834,7 @@
     R.calibrateSeat = calibrateSeat;
     R.calibration = calibrateSeat();
     // the machinery the off-the-bike layer (48_rider_onfoot.js) builds on
-    R.internal = { ikb, ikSolve, solveClear, prefMap, hingeIndex, hingeOfLink, H, L, Jcol, comWorld, riderMassKg, bodyWeightN, upperKg, feedForward, uprightFrame, isAncestor, kneeLink, KNEE_SEED, footOnGroundN, PRIORS, SURF, toBikeFrame, bikeToWorld, bikePointVel };
+    R.internal = { ikb, ikSolve, solveClear, prefMap, hingeIndex, hingeOfLink, H, L, Jcol, comWorld, comOf, capOf, riderMassKg, bodyWeightN, upperKg, feedForward, uprightFrame, isAncestor, kneeLink, KNEE_SEED, footOnGroundN, PRIORS, SURF, toBikeFrame, bikeToWorld, bikePointVel };
     return R;
   }
 

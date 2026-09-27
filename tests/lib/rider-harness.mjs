@@ -38,6 +38,47 @@ export function accumulate(bk, reactions) {
   }
   return { F, M: Mo, steer: st };
 }
+// A stub bike free to roll about its tyre line (the y axis at the ground): its weight (211 kg, its
+// centre of mass 0.52 m up - 46's holdBikeKg / holdBikeComH estimates - and 20 kg m^2 of roll
+// inertia about it, declared), what her contacts do to it (the reactions R.forces returns), a
+// little roll damping at the tyres, its side stand (it rests on it at standDeg, leaning left, and
+// cannot lean further that way while it is down; on its side it lies at lieDeg), and the same
+// declared residual as the browser while she holds it (48: G.hold, P.holdK / holdC /
+// holdAssistMaxNm) - reported in st.res - and lift assist while she lifts it (st.lift).
+export const BIKE = { kg: 211, comH: 0.52, IcomRoll: 20, rollC: 30 };
+export function rollStub(bk, G, R, dt, st, reactions) {
+  const { cross } = MB.math, g = 9.81, I = BIKE.IcomRoll + BIKE.kg * BIKE.comH * BIKE.comH;
+  if (st.w == null) st.w = 0;
+  let M = BIKE.kg * g * BIKE.comH * Math.sin(st.phi) - BIKE.rollC * st.w, her = 0;
+  for (const r of reactions || []) {
+    if (r.F) her += cross(r.x, r.F)[1]; // about the y axis through the origin (the tyre line): + rolls it to +x, its right
+    if (r.T) her += r.T[1];
+  }
+  let res = 0;
+  if (G?.hold?.active) {
+    const P = G.P;
+    res = Math.max(-P.holdAssistMaxNm, Math.min(P.holdAssistMaxNm, -(P.holdK * (st.phi - G.hold.target) + P.holdC * st.w)));
+  }
+  // (lifting it off its side: the declared lift assist, as the browser's - 48: G.lift, P.liftK /
+  // liftC / liftMaxNm - reported in st.lift)
+  let lift = 0;
+  if (G?.lift?.active) {
+    const P = G.P;
+    lift = Math.max(-P.liftMaxNm, Math.min(P.liftMaxNm, -(P.liftK * (st.phi - G.lift.target) + P.liftC * st.w)));
+  }
+  st.lift = lift; st.liftSum = (st.liftSum || 0) + Math.abs(lift) * dt;
+  st.her = her; st.res = res;
+  st.resSum = (st.resSum || 0) + Math.abs(res) * dt; st.herSum = (st.herSum || 0) + her * dt; st.T = (st.T || 0) + (G?.hold?.active ? dt : 0);
+  st.resMax = Math.max(st.resMax || 0, Math.abs(res));
+  st.w += ((M + her + res + lift) / I) * dt;
+  st.phi += st.w * dt;
+  if (st.standDeg != null && st.phi < (st.standDeg * Math.PI) / 180) { st.phi = (st.standDeg * Math.PI) / 180; st.w = Math.max(0, st.w); }
+  // (on its side it lies on its bars, pegs and bodywork: lieDeg over)
+  const lie = ((st.lieDeg ?? 86) * Math.PI) / 180;
+  if (Math.abs(st.phi) > lie) { st.phi = Math.sign(st.phi) * lie; st.w = 0; }
+  const c = Math.cos(st.phi), s = Math.sin(st.phi), w = st.w;
+  bk.R = [c, 0, s, 0, 1, 0, -s, 0, c]; bk.p = [0.65 * s, 0, 0.65 * c]; bk.w = [0, w, 0]; bk.v = [0.65 * c * w, 0, -0.65 * s * w];
+}
 // the stub bike held while she gets on / off (48: G.hold): its roll follows the lean she keeps it at
 // (else its side stand's, or where it is), turning about its tyre line - the chassis's dynamics, her
 // arm's push through the grip and the declared residual that hold the real one are not in the Node

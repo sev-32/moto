@@ -4,10 +4,11 @@
 // balance torque, capture-point catch, get-up assist), not measured human data.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { character, surfaces, BIO, stubBike, holdStub } from "./lib/rider-harness.mjs";
+import { character, surfaces, BIO, stubBike, holdStub, rollStub } from "./lib/rider-harness.mjs";
 await import("../src/core/48_rider_onfoot.js");
 const OF = globalThis.LUCID_RIDER_ONFOOT, dt = 1 / 540, DEG = Math.PI / 180;
 const ground = { height: () => 0, normal: () => [0, 0, 1], grip: () => 1 };
+const len3 = (v) => Math.hypot(v[0], v[1], v[2]);
 
 // run her for T seconds; intent(t, G) sets what she is told; each(t, R, G) observes
 function onFoot(T, intent, each) {
@@ -84,7 +85,10 @@ for (const [name, push] of [["on her back", [0, -260, 0]], ["on her front", [0, 
 // controller of 46 taking her on once seated. The stub's bars are kinematic: while her hand is on
 // (or reaching) the left grip they are turned straight as her hands would (the browser layer does
 // it with a capped torque about the steering axis).
-function atTheBike({ T, steerDeg = 0, start = [-1.0, -0.8, 0], script }) {
+// With free: the stub bike free to roll (rollStub) while she gets on or off it - it falls unless
+// held, by her (her contacts' reactions on it) or the declared residual (48: G.hold) - and rests on
+// its side stand; seated and riding, the kinematic stub holds it at the lean of her foot down.
+function atTheBike({ T, steerDeg = 0, start = [-1.0, -0.8, 0], script, free = false }) {
   const R = BIO.createRider(character, surfaces), G = OF.install(R), P = R.plan, b = R.body;
   G.seatPose = BIO.presettle(BIO.createRider(character, surfaces)).rel;
   const bk = stubBike();
@@ -100,10 +104,18 @@ function atTheBike({ T, steerDeg = 0, start = [-1.0, -0.8, 0], script }) {
     script(t, R, G, bk, o);
     if (P.mode === "script" && G.barsStraight) bk.steer -= Math.sign(bk.steer) * Math.min(Math.abs(bk.steer), 1.5 * dt);
     if (G.hold.active) hs.standDeg = null;
-    holdStub(bk, G, R, dt, hs);
+    if (!free) holdStub(bk, G, R, dt, hs);
 
-    R.forces(bk, ground, dt);
+    const rs = R.forces(bk, ground, dt);
     R.integrate(dt);
+    if (free) {
+      if (o.seatedT == null || (o.off && P.fallen)) {
+        rollStub(bk, G, R, dt, hs, rs);
+        // (what she presses the bike with, body parts other than her hands, before she sits)
+        if (P.mode === "script" && G.script.i < G.script.keys.length - 1) for (const s of R.spheres) if (s.bike.on && s.kind !== "palm" && !/Hand/.test(s.seg)) o.maxPressN = Math.max(o.maxPressN || 0, len3(s.bike.F));
+        if (G.hold.active) o.maxBikeErrDeg = Math.max(o.maxBikeErrDeg, Math.abs(hs.phi - G.hold.target) / DEG);
+      } else { holdStub(bk, G, R, dt, (hs.seat ||= { phi: hs.phi, standDeg: -1.5 })); hs.phi = hs.seat.phi; hs.w = 0; }
+    }
     if (!b.q.every(Number.isFinite)) { o.finite = false; break; }
     if (o.fell == null && P.mode === "fallen") o.fell = t;
     if (o.done) break;
@@ -167,3 +179,102 @@ test("getting off (stopped, riding, left foot down): she climbs off to the left,
   // (off to the bike's left, and further away after walking)
   assert.ok(o.R.body.p[0] < -0.6, `pelvis x ${o.R.body.p[0].toFixed(2)}`);
 });
+
+// ---- the bike free to roll: she holds it up while she gets on - leaning onto her side, her legs
+// and her arms through the grip (the whole-body load path, 46: loadPlan) - with the declared
+// residual (48: G.hold) holding what she does not. Measured in this harness (see docs/PHYSICS.md):
+// her own moment on it about a third of the residual's; these bounds keep her share from falling
+// and the residual from saturating (past its cap the bike would fall).
+test("getting on the bike free to roll: she holds it up (her own moment on it, the residual never at its cap), nothing but her hands presses it hard, and she sits", () => {
+  const o = atTheBike({
+    T: 20, free: true,
+    script(t, R, G, bk, o) {
+      if (t > 0.3 && !o.started) { o.started = true; G.startMount(bk, () => { G.toRide(bk); o.seatedT = o.now; }); }
+      if (o.seatedT != null && t > o.seatedT + 2) o.done = true;
+    },
+  });
+  assert.ok(o.finite && o.fell == null, `fell at ${o.fell}`);
+  assert.ok(!o.G.script.failed, `failed ${JSON.stringify(o.G.script.failed)}`);
+  assert.ok(o.seatedT != null && o.seatedT < 16, `seated at ${o.seatedT}`);
+  assert.equal(o.R.plan.mode, "ride");
+  assert.ok(seated(o.R), `pelvis ${o.R.body.p.map((x) => x.toFixed(2))}`);
+  assert.ok(o.R.grips.L.held && o.R.grips.R.held, "grips");
+  const hs = o.hs, herMean = hs.herSum / hs.T, resMean = hs.resSum / hs.T;
+  // (held within a few degrees of the lean she keeps it at)
+  assert.ok(o.maxBikeErrDeg < 6, `lean error ${o.maxBikeErrDeg.toFixed(1)} deg`);
+  // (her moment on it, + = against its lean onto her side: she holds it up; the residual below its cap)
+  assert.ok(herMean > 5, `her moment ${herMean.toFixed(0)} N m mean`);
+  assert.ok(resMean < 120 && hs.resMax < o.G.P.holdAssistMaxNm, `residual ${resMean.toFixed(0)} N m mean, ${hs.resMax.toFixed(0)} max`);
+  // (her legs and body brush it at most - under 300 N - until she sits)
+  assert.ok(o.maxPressN < 300, `pressed it with ${o.maxPressN.toFixed(0)} N`);
+});
+test("getting off with the bike free to roll: the side stand down and the bike on it, she climbs off, stands and walks away, and it stays on its stand", () => {
+  const o = atTheBike({
+    T: 32, free: true,
+    script(t, R, G, bk, o) {
+      if (t > 0.3 && !o.started) { o.started = true; G.startMount(bk, () => { G.toRide(bk); o.seatedT = o.now; }); }
+      if (o.seatedT != null && o.offT == null && t > o.seatedT + 1.5 && !o.off) { o.off = true; o.hs.phi = o.hs.seat.phi; o.hs.w = 0; G.startDismount(bk, () => { o.offT = o.now; }, () => { o.hs.standDeg = -10; }); }
+      if (o.offT != null) { G.setIntent(t > o.offT + 0.5 && t < o.offT + 3.5 ? [-0.8, 0] : [0, 0]); if (t > o.offT + 4.5) o.done = true; }
+    },
+  });
+  assert.ok(o.finite && o.fell == null, `fell at ${o.fell}`);
+  assert.ok(o.offT != null, "got off");
+  assert.equal(o.R.plan.mode, "foot");
+  assert.ok(!o.R.grips.L.held && !o.R.grips.R.held, "hands free");
+  assert.ok(o.R.body.p[0] < -0.6, `pelvis x ${o.R.body.p[0].toFixed(2)}`);
+  // (the bike on its side stand, still)
+  assert.ok(Math.abs(o.hs.phi / DEG + 10) < 0.5 && Math.abs(o.hs.w) < 0.05, `bike at ${(o.hs.phi / DEG).toFixed(1)} deg`);
+});
+
+// ---- lifting the bike off its side: the stub free to roll with the declared lift assist as the
+// browser's (48: G.lift - it raises the bike, not her hands); she walks round to its upper side,
+// squats, holds its tank's and seat's top edges, rises with it, steps in, pushes it up and over
+// onto its side stand and stands. Lying on its right she then walks round and gets on.
+function liftBike({ side, T, mount = false }) {
+  const R = BIO.createRider(character, surfaces), G = OF.install(R), P = R.plan, b = R.body;
+  G.seatPose = BIO.presettle(BIO.createRider(character, surfaces)).rel;
+  const bk = stubBike();
+  bk.slip = { rearDeg: 0, frontDeg: 0 };
+  const hs = { phi: side * 86 * DEG, w: 0, standDeg: null };
+  rollStub(bk, G, R, dt, hs, []);
+  G.placeStanding([side * 2.0, -0.5, 0], 0);
+  const o = { R, G, hs, fell: null, finite: true, herSum: 0, herT: 0 };
+  for (let t = 0; t <= T; t += dt) {
+    if (t > 0.3 && !o.started) { o.started = true; G.startLift(bk, () => { o.standT = t; }, null, () => { o.failT = t; }, [0, 0, 0]); }
+    if (o.standT != null && o.liftT == null && P.mode === "foot" && !G.goal) {
+      o.liftT = t;
+      if (mount) G.startMount(bk, () => { G.toRide(bk); o.seatedT = t; }, null, () => { o.failT = t; });
+    }
+    if (o.liftT != null && !mount && t > o.liftT + 2) break;
+    if (o.seatedT != null && t > o.seatedT + 1.5) break;
+    // (its side stand down once she lets it onto it, up while she holds it to get on)
+    hs.standDeg = o.standT != null && !G.hold.active ? -10 : null;
+    const rs = R.forces(bk, ground, dt);
+    R.integrate(dt);
+    if (o.seatedT == null) rollStub(bk, G, R, dt, hs, rs);
+    // (her own moment on the bike while it is lifted, + = back down onto the side it lay on)
+    if (G.lift.active) { o.herSum += side * (hs.her || 0) * dt; o.herT += dt; }
+    if (!b.q.every(Number.isFinite)) { o.finite = false; break; }
+    if (o.fell == null && P.mode === "fallen") o.fell = t;
+  }
+  return o;
+}
+for (const side of [1, -1]) {
+  test(`lifting the bike off its ${side > 0 ? "right" : "left"} side: up and onto its side stand, she on her feet, not leaning on it${side > 0 ? "; then she gets on" : ""}`, () => {
+    const o = liftBike({ side, T: side > 0 ? 45 : 22, mount: side > 0 });
+    assert.ok(o.finite && o.fell == null, `fell at ${o.fell}, ${JSON.stringify(o.G.script.failed)}`);
+    assert.ok(o.failT == null, `failed at ${o.failT}: ${JSON.stringify(o.G.script.failed)}`);
+    assert.ok(o.liftT != null && o.liftT < 16, `lifted at ${o.liftT}`);
+    // (her hands follow it up; she does not press it back down)
+    const her = o.herSum / Math.max(1e-9, o.herT);
+    assert.ok(her < 120, `her moment on it while lifted ${her.toFixed(0)} N m mean`);
+    if (side > 0) {
+      assert.ok(o.seatedT != null && o.seatedT < 40, `seated at ${o.seatedT}`);
+      assert.equal(o.R.plan.mode, "ride");
+    } else {
+      assert.equal(o.R.plan.mode, "foot");
+      assert.ok(o.R.body.p[2] > 0.8, `pelvis at ${o.R.body.p[2].toFixed(2)} m`);
+      assert.ok(Math.abs(o.hs.phi / DEG + 10) < 0.5 && Math.abs(o.hs.w) < 0.05, `bike at ${(o.hs.phi / DEG).toFixed(1)} deg`);
+    }
+  });
+}
