@@ -38,3 +38,14 @@ export function accumulate(bk, reactions) {
   }
   return { F, M: Mo, steer: st };
 }
+// the stub bike held while she gets on / off (48: G.hold): its roll follows the lean she keeps it at
+// (else its side stand's, or where it is), turning about its tyre line - the chassis's dynamics, her
+// arm's push through the grip and the declared residual that hold the real one are not in the Node
+// harness (her arm's push still loads her: it is in her hand's target)
+export function holdStub(bk, G, R, dt, st) {
+  const target = G.hold?.active ? G.hold.target : st.standDeg != null ? (st.standDeg * Math.PI) / 180 : st.phi;
+  const phi0 = st.phi;
+  st.phi += (target - st.phi) * Math.min(1, dt / 0.3);
+  const c = Math.cos(st.phi), s = Math.sin(st.phi), w = (st.phi - phi0) / dt;
+  bk.R = [c, 0, s, 0, 1, 0, -s, 0, c]; bk.p = [0.65 * s, 0, 0.65 * c]; bk.w = [0, w, 0]; bk.v = [0.65 * c * w, 0, -0.65 * s * w];
+}

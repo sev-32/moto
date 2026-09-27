@@ -197,11 +197,63 @@ reported, not hidden.
   under the hips, pelvis at 0.5 m), plants her toes and lifts her knees so the hips go back and
   up over her feet with the hands still down (a deep squat), then rises over 1.2 s, trunk and
   pelvis pitching back to upright, arms forward, the on-foot balance holding her.
-* **Bike** (F / pad X): stopped, F gets her off to the bike's left with the side stand down; by a
-  fallen bike F lifts it onto its stand; by an upright one F gets her on (the bike rocked upright
-  off its stand). First versions: these three move her or the bike straight to the end state -
-  the stepping-off, lifting and leg-over motions are not built yet. Off the bike its throttle is
-  shut, clutch in, steering free, front brake held while it stands.
+* **Going down**: after her reaction time (0.15 s), while she still moves faster than 0.5 m/s,
+  protective reactions at 35 % of her gains: arms out towards where she falls (forward: both,
+  elbows soft; sideways: that arm; backwards: tucked across the chest), chin tucked, legs
+  gathered; sliding on the ground, arms in by her chest. At rest she lies for a daze that grows
+  with how hard her head and trunk hit the ground (0.8 s + 0.6 s per kN, at most 4 s), then gets
+  up.
+* **Walking herself somewhere** (to get on, to lift the bike): a path round the bike, not through
+  it (its footprint with her half-width as a box, the way through its corners where it must), the
+  last 0.55 m sidestepped facing the way she will stand, turning on the spot at 1.5 rad/s; the
+  stick takes over at any time.
+* **Motions at the bike** (getting on and off, lifting): keyframes in the bike's frame (at its tyre
+  line, sheared with its lean so what is placed by the bike - over its seat, beside its tail -
+  leans with it while the ground stays the ground; frozen once it goes onto its stand or while it
+  is lifted) - pelvis position, pitch, side tilt and twist, the chest level across, feet and knees
+  through via points, hands on the grips or points of the bike. A keyframe ends when its pose is
+  reached (pelvis and a swung knee or foot within 8-10 cm, a hand sent to a grip holding it, the
+  bike steady where it is held); a leg that cannot get over is put back down beside the standing
+  foot, the hands let go and she stands. Legs and arms are solved by IK from the planned pelvis;
+  the feet on the ground carry her share of her weight (Jᵀ F at mid-foot while she holds a bar), a
+  hand at its grip closes on it and turns to it (the bar across the palm), and a declared assist -
+  force ≤ 300 N and torque ≤ 150 N m on the pelvis towards the planned pose - carries the rest.
+* **The leg over**: the hip and the pelvis's side tilt do it. The swung leg's three hip joints are
+  solved to point the thigh (at a knee target) and turn it so the lower leg trails towards a foot
+  hint; the knee is folded to an easy angle at 35 % of its servo gains, the ankle loose near
+  neutral at 15 %. The path: leaning over the tank, the knee back and up beside the tail, over the
+  seat at 0.97 m, the foot over the tail at 1.1-1.2 m, down the far side as the pelvis moves over
+  the seat.
+* **Holding the bike up** while getting on and off: she keeps it leaning a few degrees onto her
+  side (her standing leg's; -3 to -4°) through the bars - her left hand pushes the bar across,
+  against the lean error and its rate (its target moved up to 8 cm into the bar): her arm's servos
+  make that push within their strength and the grip carries it into the bike, her legs bracing
+  her. What her arm does not, a declared residual - a roll moment on the bike towards the lean,
+  ≤ 450 N m, reported (`holdNm`) - holds. (A force pair on the bar and back on her hand was tried
+  first: through the held grip the two cancel, so it held nothing.) She stands on one foot to
+  swing only once the bike is within 2.5° of that lean and steady; if it tips 8° away during the
+  swing she puts the leg back down. Getting off she first rises onto her left leg, her right hand
+  moving from its grip to the tank (holding the right bar as she rises pulls the bike over onto
+  her); the side stand goes down before her left hand lets go. Getting on, as her weight lands on
+  the seat the riding controller (46) takes her on and balances the bike with her left foot down.
+  Stopped and parked, the bars are at full lock with the left grip against the tank: with her hand
+  at the grip she turns them straight - rate-controlled against the standing tyre's scrub,
+  ≤ 60 N m about the steering axis.
+* **Lifting it off its side**: she walks round to its upper side and faces it, squats and holds its
+  tank's top edge and the seat's rear edge, rises as it comes up to 35°, steps in twice, pushes it
+  upright and lets it down onto its stand. The bike is raised by a declared lift assist - a force
+  at the points she holds, square to the bike and its tyre line, of the size that turns it about
+  that line towards the roll she asks for (≤ 1200 N m) - not by her hands' own forces.
+* **Joint effort and range** (telemetry `riderBio.onFoot.effort` / `lastMotion`): per joint group
+  (hips, knees, ankles, spine, neck, arms) the servo's active torque as a share of that joint's
+  capacity (the R1.5 torque ledger) and whether a joint is in the stiff end of its range (within
+  its passive stop's width of a limit), live and per motion and keyframe - an awkward motion (a
+  muscle near capacity, a joint in its end stop) shows here. Caveat: the shoulder's
+  abduction/adduction reads "at its limit" when the arm simply hangs (its passive rest is -55°, its
+  range starts at -40°).
+* **Bike** (F / pad X): stopped, F gets her off; by a fallen bike F lifts it; by one standing F gets
+  her on (she walks there first). Off the bike its throttle is shut, clutch in, front brake held
+  while she holds it or it stands.
 * **Camera and controls**: off the bike the camera follows her (drag or right stick to orbit,
   wheel to zoom; walking she draws it round behind her); WASD / arrows / left stick move her
   relative to the camera, Shift / right trigger run.
@@ -209,21 +261,33 @@ reported, not hidden.
   within 2.5°, balance torque under 15 N m rms; told 1 m/s ahead, 8 s and over 3.5 m without a
   fall; turning on the spot to face the other way; a seeded 30 s random-stick player without a
   fall; down on her back, front and side she is standing again within 12 s, the get-up assist's
-  mean force under a quarter of her weight.
+  mean force under a quarter of her weight; getting on the stub bike from its stand (bars straight
+  and at full lock) - seated within 16 s, riding with both grips and her left foot down, the motion
+  assist's mean under a fifth of her weight, over the leg-over the swung ankle's mean effort under
+  15 % and never in its end stop, the knee under 30 %, no abort; getting off and walking away. (In
+  Node the stub bike is kinematic: it follows the lean she keeps it at - `holdStub` - her arm's push
+  still loading her; the chassis that her push and the residual hold is in the browser.)
 * **Measured** (Node, flat ground): told 0.6 / 1.0 / 1.4 m/s she walks at 0.44 / 0.72 / 0.96 m/s
-  (balance torque 32-52 N m rms); 12 of 13 scripted scenarios pass (stop and go, curve, sidestep,
-  spin on the spot, about-turn, walking away backwards, stopping from speed, two pushes, a 2 m/s
-  run at 1.40 m/s); random stick input, 8 × 30 s walking: 1 fall (0.25 per minute), the catch
-  acting 24 % of the time at 95 N rms; with running mixed in, 6 × 30 s: 4 falls (2.6 per minute).
-  (These counts move with small changes to the controller - a fall is chaotic - so they are
-  re-measured with every change.) Getting up after a push from 5 directions: 3.3-3.7 s from rest to the squat, the
-  get-up assist averaging 140 N (19 % of her weight) and 150-165 N m. Browser: after the
-  rear-patch crash she lies 2 s, gets up, walks back to the bike, lifts it and rides on.
+  (balance torque 32-52 N m rms); 12 of 13 scripted scenarios pass; random stick input, 8 × 30 s
+  walking: 1 fall, the catch acting 24 % of the time at 95 N rms; with running mixed in, 6 × 30 s:
+  4 falls. (These counts move with small changes to the controller - a fall is chaotic - so they
+  are re-measured with every change.) Getting up after a push from 5 directions: 3.3-3.7 s from
+  rest to the squat, the get-up assist averaging 140 N and 150-165 N m. Getting on (from 1.3 m away,
+  the bike on its stand, bars straight / at full lock): seated after 12.8 / 13.3 s (4.3 s walking
+  round, 8.5 / 9.0 s at the bike); getting off: 9.1-9.8 s. Over the leg-over (2.5 s getting on,
+  3.0 s getting off) the swung leg's mean effort: ankle 1-2 % (never in its end stop), knee 8-16 %,
+  hip 19-32 % - before this rework (the whole leg solved to a foot target) the ankle sat in its
+  dorsiflexion end stop 97-100 % of the time at up to its full capacity and the knee's axial
+  rotation at its limit 50-100 %. The motion assist averages 155-160 N (≤ 300 N). Still high: her
+  standing leg (knee 47 %, ankle 44-54 %), her arms (the right, leaning on the tank getting on,
+  65 %; the left holding the bar getting off, 47-52 %), and the right hip's abduction at its limit
+  2/3 of the leg-over getting off.
 * **Not yet / known**: running is a fast walk (no flight phase) - told 3 m/s she falls; the
-  swinging foot lands 5-8 cm from its aim; protective reactions in a fall (arms out, tucking,
-  rolling) are not built - she is limp until she comes to rest; lifting, getting on and off are
-  placements, not motions; the catch assist does real work (above) and is the first thing to
-  reduce.
+  swinging foot lands 5-8 cm from its aim; getting on takes about twice as long as a rider's;
+  her standing leg and arms work hard in the motions at the bike (above); holding the bike up, the
+  declared residual does more than her arm (browser, below); lifting: one hand loses its point of
+  the bike while it rises, and the bike is raised by the declared assist, not by her; the catch
+  assist does real work and is the first thing to reduce.
 
 ## Legacy rider (`40_rider_body.js`, `?rider=legacy`)
 
