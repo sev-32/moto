@@ -20,7 +20,7 @@
   let on = false;
   try { on = global.localStorage?.getItem("lucid.feelHud") === "1"; } catch (_) {}
   const H = (CORE.feelHud = { get on() { return on; }, trail: { front: [], rear: [] }, frames: 0 });
-  const W = 348, HH = 196;
+  const W = 348, HH = 212;
   let cv = null, ctx = null, dpr = 1;
   function ensure() {
     if (cv) return true;
@@ -144,6 +144,14 @@
     line(10, 168, `EGT ${Math.round(ex?.egtC || 0)}C  bangs ${CORE.exhaust?.stats?.bangs ?? 0}  ${rb?.active ? "BURNOUT " + rb.phase : ""}`);
     const au = CORE.audioEnv?.state;
     if (au) line(10, 180, `squeal F ${au.squealF} R ${au.squealR}  wind ${au.wind}`);
+    // her muscles (riding muscle-driven): mean activation per region, the most active, and the share
+    // of her intent they make
+    const RB = CORE.riderBio?.rider, mt = RB?.muscles?.active ? RB.telemetry?.muscles : null;
+    if (mt) {
+      const rg = mt.regions, short = (id) => id.replace(/^left_/, "L ").replace(/^right_/, "R ").replace(/_/g, " ");
+      line(10, 192, `MUSCLES legs ${Math.round(100 * (rg.legs || 0))}% trunk ${Math.round(100 * (rg.trunk || 0))}% arms ${Math.round(100 * (rg.arms || 0))}% neck ${Math.round(100 * (rg.neck || 0))}%  made ${Math.round(100 * mt.made)}%`);
+      line(10, 204, mt.top.map(([id, a]) => `${short(id)} ${Math.round(100 * a)}%`).join("  "));
+    } else if (RB) line(10, 192, "rider: servos (joint motors)");
   }
   let acc = 0;
   function frame() {

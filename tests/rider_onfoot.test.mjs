@@ -242,10 +242,11 @@ function liftBike({ side, T, mount = false }) {
   G.placeStanding([side * 2.0, -0.5, 0], 0);
   const o = { R, G, hs, fell: null, finite: true, herSum: 0, herT: 0 };
   for (let t = 0; t <= T; t += dt) {
-    if (t > 0.3 && !o.started) { o.started = true; G.startLift(bk, () => { o.standT = t; }, null, () => { o.failT = t; }, [0, 0, 0]); }
+    o.now = t; // (callbacks read the time they are called at, not the loop step they were made in)
+    if (t > 0.3 && !o.started) { o.started = true; G.startLift(bk, () => { o.standT = o.now; }, null, () => { o.failT = o.now; o.failed = { script: G.script.name, key: G.script.i, why: G.script.failed }; }, [0, 0, 0]); }
     if (o.standT != null && o.liftT == null && P.mode === "foot" && !G.goal) {
       o.liftT = t;
-      if (mount) G.startMount(bk, () => { G.toRide(bk); o.seatedT = t; }, null, () => { o.failT = t; });
+      if (mount) G.startMount(bk, () => { G.toRide(bk); o.seatedT = o.now; }, null, () => { o.failT = o.now; o.failed = { script: G.script.name, key: G.script.i, why: G.script.failed }; });
     }
     if (o.liftT != null && !mount && t > o.liftT + 2) break;
     if (o.seatedT != null && t > o.seatedT + 1.5) break;
@@ -265,7 +266,7 @@ for (const side of [1, -1]) {
   test(`lifting the bike off its ${side > 0 ? "right" : "left"} side: up and onto its side stand, she on her feet, not leaning on it${side > 0 ? "; then she gets on" : ""}`, () => {
     const o = liftBike({ side, T: side > 0 ? 45 : 22, mount: side > 0 });
     assert.ok(o.finite && o.fell == null, `fell at ${o.fell}, ${JSON.stringify(o.G.script.failed)}`);
-    assert.ok(o.failT == null, `failed at ${o.failT}: ${JSON.stringify(o.G.script.failed)}`);
+    assert.ok(o.failT == null, `failed at ${o.failT}: ${JSON.stringify(o.failed)}`);
     assert.ok(o.liftT != null && o.liftT < 16, `lifted at ${o.liftT}`);
     // (her hands follow it up; she does not press it back down)
     const her = o.herSum / Math.max(1e-9, o.herT);

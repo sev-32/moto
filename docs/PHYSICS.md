@@ -57,7 +57,8 @@ Suspension rates vs the v2.6 reconstruction (VOLUMETRICS build, `data/v2_6`):
 
 The default rider is the LUCID character itself as an articulated body: the floating pelvis plus
 46 revolute hinges that are the Semantic51 DOFs of the canonical rig (same joints, axes, order and
-hard ranges; toes not simulated). Mass: the R1.5 17-body profile (75 kg). Her state is Semantic51
+hard ranges; the toes a quasi-static flap on each foot - see *her feet*). Mass: the R1.5 17-body
+profile (75 kg). Her state is Semantic51
 commands + a placement, drawn every frame through the canonical skin path (nothing writes bones or
 skin). The R1.5 passive tissue priors act on every hinge as soft joint stops.
 
@@ -108,7 +109,95 @@ but muscle force and passive tissue acts on her joints while she rides:
     are now orientation tasks (a moment on the chest carried by every spine hinge, on the head by
     every neck hinge; weak joint posture terms), as the package's whole-body controller does.
   - *reaching for a grip*: the joint targets of a reach lag a trunk still settling; a reaching
-    hand is now pulled to its grip (400 N/m, ~2 Hz for the arm).
+    hand is now pulled to its grip (400 N/m, ~2 Hz for the arm) - roughly: see *feel* below.
+  - *impossible demands*: a demand past what the muscles can make in that direction had the
+    allocation recruit every muscle with any arm that way, whatever it did elsewhere (a lumbar
+    side-bend demand past its strength drove the hip adductors to -90 N m and turned the inside hip's
+    torques against their own intent - her inside foot rolled off its peg in a hang-off). The trunk and
+    neck demands are now kept within the directional strength of the muscles spanning them.
+  - *legs as rigid struts*: the servos held her pelvis to her thighs; on muscles her pelvis rolled on
+    the seat with the bike and more. Her pelvis's roll on the seat is now held by pressing one foot
+    harder on its peg than the other (1500 N m/rad, up to 150 N m; eased while she moves over on the
+    seat): at 400 N m/rad the bike and her body rolled against each other on a launch - a slow mode
+    the steering could not hold at 3-7 m/s - and the bike went down.
+  - *hands fixed between plans*: her arms' joint targets stood still between plans while the bars
+    turned under her hands, their damping resisting the steering; a hand on its grip now follows the
+    bar (its arm's targets move at the rates that carry it with the grip).
+* **Her feet** (`46_rider_biomech.js`: the sole's pads, `R.feel`, `footToes`, `footFeelTorques`;
+  `tests/rider_feet.test.mjs`). Each foot stands on an anatomical tripod on her own sole: pads where
+  the package's plantar contact region (`contactRegions.leftFoot` / `rightFoot`, her skin in the rest
+  pose) is lowest - the heel (under the calcaneus), the balls of the big and little toes (1st and
+  5th metatarsal heads, 4.6 cm apart; the little toe's 0.5 cm further back), the outer border of the
+  midfoot (the lateral arch, 4 mm up: it bears when the foot rolls out or sinks in), and the big toe
+  and lesser toes. What stands on a peg is the line between the two metatarsal heads (it was the
+  toe joint, 2.3 cm further forward).
+  - *soft but strong pads* (declared priors): each pad's stiffness and damping build up from nothing
+    over its first mm (heel 4 mm, balls 3, toes 2) and it is firm beyond (heel 60 kN/m, balls 50,
+    outer border 30, toes 20): it takes the foot softly and bears it firmly (standing, the heel pad
+    sinks ~5 mm).
+  - *the toes* are a flap hinged at her toe joint on the asset's toe DOF (`leftToe.flexionExtension`,
+    -35..70°): the R1.5 physical body folds the toes into the foot and their ~50 g are negligible, so
+    each step the flap turns to where the ground's push on the toe pads balances the toe joint - its
+    R1.5 passive tissue, its elastic hold (below) and the press of her toe flexors as she feels her
+    weight move out over the balls (toe capacity: the asset's 28 N m). The skin shows the angle (the
+    asset's toe rule). Standing on her forefoot the ball is the rocker, the toes flat on the ground.
+    (Declared: the lumped toe flexor / extensor pair is not among the R1.5 muscles.)
+  - *what her soles feel* (`R.feel.feet`): per foot, the load on each pad, the centre of pressure in
+    the foot's own frame, the forefoot's share and the outer edge's, and the ground's normal under
+    it - felt through the skin's delay (30 ms first order, declared).
+  - *the tripod balanced by feel*: a foot bearing on the ground has its ankle's roll (inversion /
+    eversion: peroneals against tibialis posterior) worked from what its sole feels - a torque built
+    up from the load × the centre of pressure's offset from the middle of the tripod across the foot
+    (at the pressure's place along it), over 80 ms, at most 40 N m. Rolled onto its outer edge it
+    everts until the big toe's ball bears. The angle servo cannot do this riding: on her muscles its
+    neural bandwidth is that of the light foot alone (1.3 N m/rad at the ankle's roll, measured).
+  - *lying flat on the ground she feels or sees*: a planted foot's posture aims its sole square to
+    the ground under it (felt through the sole when it bears, else seen - the ground's normal there);
+    on foot, the leg solves' flat-sole tasks do the same (they aimed at world up).
+  - measured standing on level ground (`tests/rider_feet.test.mjs`): each foot bears ~340 N - the
+    heel 57 %, the big toe's ball 19 %, the little toe's 17 %, a little on the outer border and the big
+    toe; the centre of pressure centred across the foot and 4.5-5 cm ahead of the ankle (quiet
+    standing puts it a few cm ahead); soles within 2° of the ground, toes resting 3° flexed. Across a
+    10° slope both feet lie on it (soles within ~2°) on heel and both balls.
+* **Neural elastic holds** (riding on her muscles; `PRIORS.hold...`): her muscles are not all driven
+  like motors. Each keeps a tone (2 % activation; a planted foot's ankle muscles 6 % - the tripod held
+  while she balances on it, co-contraction), and each stretched past its length at the posture it has
+  settled into (following it over 0.4 s) is recruited - soft near it, firmer the further it is pushed:
+  activation 1.5 × d × (1 + d / 0.05), d = the stretch past 0.4 % of its optimal fibre length, in those
+  units (a spinal stretch reflex about a threshold length - Feldman's λ model). A muscle over several
+  joints holds its whole length, not each joint. The holds resist quick disturbances and give
+  stability while her intent's muscles move her; they do not drag her to a posture. Their torque is
+  part of what the muscles are to make, and the muscles they recruit are at least that active (added
+  after the allocation instead, the allocation undid them with the antagonists: a planted foot rolled
+  in 23° had peroneals and tibialis anterior both at 100 %). Her trunk and neck are not held so - they
+  are held in space by the chest and head orientation tasks (held to their joint angles, the chest
+  followed a rocking pelvis: 32° against 21°); her arms on the bars are held at 0.4 of the gain (a
+  rider's arms stay loose for the steering: stiff, the street launch weaved down). Declared priors.
+  Her toes hold their relaxed angle the same way: 3 N m/rad at the pose, doubling every 15° of bend
+  and growing with the forefoot's load (× (1 + load / 200 N): the plantar fascia's windlass, the stance
+  reflexes). With only the R1.5 passive toe (1.5 N m/rad) her toes folded up under her forefoot and
+  lifting the bike off its right side she lost it.
+* **Feel drives the movement** (her senses, not millimetre targets):
+  - *taking a grip*: the hand puts the palm roughly on the bar, feels where it landed and narrows in
+    as the fingers close round it (it eases onto its place on the grip over 0.12 s). It closes when her
+    palm feels the bar (its contact sphere on the grip's rubber) or when the open hand is over the bar
+    (the bar within 8 cm of the palm point - her curling fingers' reach - along the rubber, and not
+    behind the back of the hand). The old rule, a palm point within 6 cm of one point on the grip, had
+    her hovering 6.1 cm away. (Holding on where the palm landed along the bar instead, getting on and
+    off a bike free to roll her body pressed it with 483 N and it went over after she got off.)
+  - *stepping with a foot down*: the planted foot comes up only once she feels it light (under 60 N):
+    a foot her weight or the bike's still bears on is unloaded first, not dragged.
+  - *feeling for the ground*: a planted foot that does not feel the ground bear on it (under 60 N)
+    reaches on down for it - ankle and knee - 5 cm at most, and, reached that far and still not
+    feeling it, she slides her hips over towards it (4 cm at most); once it bears the reach eases back.
+    (After getting on, her left foot had hovered 2-6 cm over the ground, stepping for it.)
+  - *a strut that gives*: in a motion at the bike, a foot she stands on with her leg locked straight
+    (knee under 6° - a short rider's leg reaching down from a tall bike) that feels itself pushing
+    200 N and more past what the motion means it to eases its target up (0.1 m/s, 3 cm at most) until
+    the push is what was meant - not while lifting the bike (48: `yield...`). Getting off a bike free to
+    roll, her locked leg pushed 400-590 N as the motion began and shoved the bike over. (Taken as hip
+    to ball over 0.8 m instead, it also caught her standing with soft knees and slowed her after a
+    lift.)
   - *starting relaxed*: placed on the bike (a reset, taking over from the motors) she starts with
     the activations that hold the posture she is in, not at resting tone.
 * **Limits of the package's muscles seen riding** (reported, not changed): lumbar side-bend is
@@ -116,18 +205,26 @@ but muscle force and passive tissue acts on her joints while she rides:
   stretched extensors lose force); the shoulder girdle has only pectoralis major, latissimus and
   upper trapezius (no serratus anterior - protraction is weak and the trapezius's elevation drags it
   back); wrist muscles cross the wrist with ~2 mm arms (2-4 N m); no pronator / supinator.
-* **Her posture uses her strength** (planner priors): pelvis pitch 18°; her pelvis levels by half
-  towards the felt vertical when the bike rolls under her (the hips do it; in a balanced turn the
-  felt vertical is the bike's and nothing changes).
-* **Measured, muscle-driven** (`tests/rider_biomech.test.mjs`, bands kept from the motor era): 7 of 11
-  pass - pre-settled, 0.8 g acceleration, 0.8 g steady turn, low-side dab, a slide ridden through,
-  foot down left and right. Open: static (her chest settles 1.5-3° to one side; band 1°); the bike
-  rocking ±8° under her (chest 13°: the lumbar side-bend limit above); 1 g braking (she rises 5.05 cm
-  sliding into the tank; band 5 cm); creeping with a foot down (the planted leg locks straight and
-  drags: the feet-down stepping is on-foot logic, not yet converted).
+* **Her posture uses her strength** (planner priors): pelvis pitch 18°; when the bike rolls under her
+  her pelvis and her chest level by half towards the felt vertical together - her upper body rolls
+  over her hips as one block, and her lumbar spine is not asked to bend between them (in a balanced
+  turn the felt vertical is the bike's and nothing changes); her head firmer (40 N m/rad: at 22 the
+  other neck and shoulder muscles tilted it 1.5°).
+* **The lumbar side-bend limit** (measured, riding posture): leaning to the bars her trunk is an
+  inverted pendulum sideways (gravity ~2 N m per degree about the lumbar spine: 12 N m at 6°,
+  20 N m at 10°). The restoring muscles sum to 70-80 N m at full activation, but used without side
+  effects elsewhere (the allocation, the other joints held) they make +15 of +20 N m asked, +23 of 40,
+  +29 of 60 - an effective 20-25 N m; the stretched side weakens further as she bends. So a bike rocked
+  ±8° at 0.5 Hz under her swings her trunk ±15-25° (the motor-driven rider used 35 N m there).
+* **Measured, muscle-driven** (`tests/rider_biomech.test.mjs`, bands kept from the motor era): 10 of
+  11 pass - pre-settled, static, 1 g braking, 0.8 g acceleration, 0.8 g steady turn, creeping with a
+  foot down (the planted foot stays put and steps as the bike rolls on - it had slipped 0.5-1 m/s),
+  low-side dab, a slide ridden through, foot down left and right. Open: the bike rocking ±8° at 0.5 Hz
+  under her (chest ±21°: the lumbar side-bend limit above).
 * **Off the bike she is still motor-driven** (`R.muscles.onFoot` off): standing, walking, getting
   up, getting on / off and lifting the bike use the servos as joint motors - those controllers
-  are not yet converted. The hand-over is clean both ways (all 16 at-the-bike tests pass).
+  are not yet converted; her feet (pads, toes, feel, the tripod balanced by feel) are the same in
+  both. The hand-over is clean both ways (all 16 at-the-bike tests pass).
 * `?muscles=0` in the browser (and `--motors` in the maneuver suite) runs the pre-muscle rider
   (servos as joint motors while riding too), for comparison.
 
@@ -531,20 +628,22 @@ the same build, headless:
 
 | Maneuver | Her muscles | Joint motors |
 | --- | --- | --- |
-| coast 20 m/s hands off | self-stable (|roll| 0.5°), 0.13 g engine braking + drag | |roll| 0.2°, 0.13 g |
-| coastSlow 6 m/s | capsizes (below the self-stable band: physical), to 29° | capsizes, to 50° |
-| standstill | foot down, bike at 3.7° | 2.8° |
+| coast 20 m/s hands off | self-stable (|roll| 0.4°), 0.13 g engine braking + drag | |roll| 0.2°, 0.13 g |
+| coastSlow 6 m/s | capsizes (below the self-stable band: physical) | capsizes |
+| standstill | foot down, bike at 4.2° | 2.8° |
 | brakeFirm 16 / 5 bar | 0.81 g, stops in 4.05 s | 0.81 g, 4.05 s |
-| brakeMax (front slip -6…-9 %, eased as the rear goes light) | 0.95 g, 50.4 m, rear down | 0.97 g, 49.9 m |
+| brakeMax (front slip -6…-9 %, eased as the rear goes light) | 0.93 g, 49.9 m, rear down | 0.97 g, 49.9 m |
 | brakeGrab 40 bar step, no ABS | front lock, over the bars — no numeric explosion | the same |
-| brakeAbs 55 bar | 1.70 g peak, rear lift ≤ 52 mm, stops in 3.6 s | 1.73 g, 57 mm, 3.55 s |
+| brakeAbs 55 bar | 1.73 g peak, rear lift ≤ 58 mm, stops in 3.65 s | 1.73 g, 57 mm, 3.55 s |
 | stoppie | rear lifted ~17 cm and set down | ~17 cm |
-| launch | 1.14 g; the bike rolls to 17.9° under her (motors 3.6°) - open | 1.15 g |
+| launch | 1.14 g; the bike rolls to 13.3° under her (motors 3.6°) | 1.15 g |
 | wheelie | held at ~26° | ~27° |
 | lean35 | steady 35° lean | 35.8° |
-| radius60 (0.68 g, hang-off) | **fails**: her pelvis moves over 2 cm of the planned 5.4 (her legs straighten under the push that unweights the seat), the bike weaves from ~7 s and falls at 8.5 s - open | 39.9°, steady |
-| slalom ±22° / 1.2 s | ±17.1° | ±16.8° |
+| radius60 (0.68 g, hang-off) | 39.6°, steady (it weaved and fell at 8.5-9.9 s before her feet and holds) | 39.9°, steady |
+| slalom ±22° / 1.2 s | ±17.6° | ±16.8° |
 | burnout | stationary, rear spinning | the same |
+
+14 of 14 within bands on her muscles (feet as tripods, neural elastic holds).
 
 (brakeMax: threshold braking with her pelvis at the muscle-efficient 18° pitch put her weight far
 enough forward that braking on front slip alone went over the bars - motors too; the maneuver's

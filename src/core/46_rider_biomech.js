@@ -78,13 +78,42 @@
     // the front of the pelvis between the thighs (perineum, lower abdomen) has no bone under it
     // the way the ischial tuberosities do: softer contact (x tissueK)
     softTissueScale: 0.35,
+    // the sole's pads (her plantar soft tissue): stiffness once pressed past its soft start (N/m),
+    // damping (N s/m), and the soft start (m) over which both build up from nothing - a pad takes a
+    // foot softly and bears it firmly (declared priors: the heel pad, the thickest, ~5 mm under her
+    // standing weight on it; the forefoot's thinner fat pads; the toes' soft pulp)
+    pads: { heel: [6e4, 380, 0.004], ball: [5e4, 300, 0.003], mid: [3e4, 200, 0.003], toe: [2e4, 100, 0.002] },
+    // her toes' muscles (not among the R1.5 muscles - a lumped flexor / extensor pair, declared): a
+    // neural elastic hold about their relaxed angle (toeRelaxDeg) - soft near it, firmer the further
+    // they are bent (N m/rad at the pose, doubling every toeSoftDeg of bend) and firmer with the load
+    // on the forefoot (x (1 + load / toeLoadN): the plantar fascia's windlass and the stance reflexes)
+    // - and a press as she feels her weight move out over the balls (share of the asset's toe
+    // capacity)
+    toeRelaxDeg: 0, toeHoldK: 3, toeSoftDeg: 15, toeLoadN: 200, toeTone: 0.02, toeFeelGain: 0.06,
     pegK: 6e4, pegC: 380, gripK: 2.5e4, gripC: 150, gripRotK: 30, gripRotC: 0.6, gripTwistK: 12, gripStrengthN: 450, gripSettleS: 0.12,
+    // an open hand closes on a bar whose axis is within this of its palm point (the reach of her
+    // curling fingers, ~7-8 cm for her hand), and on one lying up to gripPalmDepthM behind that point
+    // (the palm point is ~3 cm out from the palm: the bar at the palm itself; R.canCloseGrip)
+    gripCaptureM: 0.08, gripPalmDepthM: 0.045,
     mu: { seat: 0.6, bike: 0.45, peg: 1.0, ground: 0.55, sole: 0.8 },
     clavicleMassKg: 0.05, // physbody.py CLAVICLE_MASS, taken from the chest
     // muscle drive (46_rider_muscles.js): allocation of the intent torques to the 84 muscles -
     // activation effort weight (per hinge the torque error counts in units of its capacity) and the
     // projected Gauss-Seidel sweeps per step (warm-started); resting tone (lucid_bcr.neuro: 0.01)
     muscleReg: 0.001, muscleSweeps: 12, muscleTone: 0.01,
+    // neural elastic holds (riding on her muscles): around the posture each joint has settled into
+    // (following it over holdSettleS) each muscle stretched past its length there is recruited -
+    // soft near the posture, firmer the further it is pushed: activation holdGain x d x (1 + d /
+    // holdSoftD), d = the stretch past holdDeadD in units of its optimal fibre length (a spinal
+    // stretch reflex about a threshold length: Feldman's lambda model), on top of what her intent
+    // drives, through the activation dynamics. Holding muscles keep a tone: holdTone, a planted
+    // foot's ankle muscles holdStanceTone (co-contraction - the tripod held while she balances on
+    // it). The holds resist quick disturbances and give stability without dragging her anywhere -
+    // her intent moves her, and a planted foot settles where the ground and its feel put it. Her
+    // trunk and neck are not held so: they are held in space (the chest and head orientation tasks);
+    // her arms, on the bars, are held looser (holdArmScale - a rider's arms stay loose for the
+    // steering's sake). Declared priors.
+    hold: true, holdGain: 1.5, holdSoftD: 0.05, holdDeadD: 0.004, holdTone: 0.02, holdStanceTone: 0.06, holdSettleS: 0.4, holdArmScale: 0.4,
     // her intent's stiffness when her muscles drive: a joint's servo gains, but no faster than a
     // neural bandwidth (rad/s, critically damped) for the inertia that joint actually moves (the
     // articulated inertia about it). The servo gains were set for joint motors with implicit
@@ -96,15 +125,19 @@
     // a light hand needs a relatively stiff command to be placed on a grip at all; explicit-stable
     // at 540 Hz for its inertia, kd dt / D ~ 0.25)
     intentOmegaHand: 80,
+    intentCap: "neural",
+    intentWithinStrength: true, intentStrengthShare: 1, intentStrengthTrunkOnly: true,
     // riding on her muscles, her trunk and head are commanded as orientation tasks (as the R1.5
     // whole-body muscle controller does, lucid_bcr.neuro: pelvis / thorax / head orientation, weak
     // joint posture): a moment between pelvis and chest (N m/rad, N m s/rad) carried by every spine
     // hinge, one between chest and head by every neck hinge. Per-joint servos on the spine ask its
     // two segments to bend opposite ways (a zig-zag the long trunk muscles cannot make - the package
     // R1.4 notes) and fight each other; the joint posture term keeps only taskPostScale of the servo
-    // stiffness (declared priors: chest ~ the old spine servos in series, 0.2 Hz below them)
-    chestTaskK: 260, chestTaskC: 40, headTaskK: 22, headTaskC: 1, taskPostScale: 0.15,
+    // stiffness (declared priors: chest ~ the old spine servos in series; head firmer than the old neck
+    // servos in series - at 22 N m/rad the other neck and shoulder muscles tilted it 1.5 deg, at 40 0.5)
+    chestTaskK: 260, chestTaskC: 40, headTaskK: 40, headTaskC: 2, taskPostScale: 0.15,
     // a reaching hand's pull to its grip (N/m, N s/m, N): ~2 Hz for the arm's ~2 kg at the hand, damped
+    // (it brings the hand roughly over the bar; the fingers closing do the rest - R.canCloseGrip)
     reachTaskK: 400, reachTaskC: 40, reachTaskMaxN: 120,
   };
   // physbody.py tables
@@ -337,34 +370,50 @@
       hand[S] = { link: M.linkOf[S + "_Hand"], p: sub(grip, wr), axis, volar };
       spheres.push({ link: M.linkOf[S + "_Hand"], seg: S + "_Hand", c: sub(grip, wr), r: 0.022, kind: "palm" });
     }
-    // foot soles: a row of sole spheres from the heel to the toe tips on her rest sole plane (the
-    // ground in the rest pose), ball = under the MTP joints; the sole's extent comes from the
-    // foot segment's skin points
+    // her feet: an anatomical tripod on her own sole - the package's plantar contact region
+    // (contactRegions.leftFoot / rightFoot, her skin in the rest pose) - pads where its lowest points
+    // are: the heel (under the calcaneus), the balls of the big and little toes (the 1st and 5th
+    // metatarsal heads), the outer border of the midfoot (the lateral arch, a few mm up: it bears
+    // when the foot rolls out or sinks in), and the toes - the big toe and the lesser toes - on a
+    // flap hinged at her toe joint (ToeBase: the asset's toe DOF, folded into the foot in the R1.5
+    // physical body; its ~50 g are negligible, so its angle is where the ground's push on the toes
+    // balances the joint, each step - footToes). Each pad is soft tissue: soft at first touch,
+    // stiffening as it is pressed (PRIORS.pads). The foot's reference points: ball = between the two
+    // metatarsal heads on the sole (what stands on a peg), heel, toe = the toe tips.
     const foot = {};
     for (const S of ["L", "R"]) {
-      const an = B[TI[S + "_Foot"]], mtp = B[TI[S + "_ToeBase"]], fp = segPts[S + "_Foot"] || [[0, 0, 0]];
-      const soleY = Math.min(...fp.map((p) => p[1]));
-      const ball = [mtp[0], soleY, mtp[2]], zs = fp.map((p) => p[2]), heelZ = Math.max(...zs), toeZ = Math.min(...zs);
-      const heel = [an[0], soleY, heelZ - 0.02], toe = [mtp[0] + 0.3 * (mtp[0] - an[0]), soleY, toeZ + 0.018];
-      const rs = 0.018;
-      foot[S] = { link: M.linkOf[S + "_Foot"], ball: sub(ball, an), heel: sub(heel, an), toe: sub(toe, an), forward: unit(sub(ball, heel)) };
-      const row = [["heel", heel], ["mid", add(scl(heel, 0.45), scl(ball, 0.55))], ["ball", ball], ["toe", toe]];
-      for (const [at, pt] of row) spheres.push({ link: M.linkOf[S + "_Foot"], seg: S + "_Foot", c: sub(add(pt, [0, rs, 0]), an), r: rs, kind: "sole", at });
-      // the sole's width: inner and outer edge spheres at the heel and the ball, inside the skin's
-      // extent there. They touch the ground only when she is off the bike (standing on her feet she
-      // balances on their width); riding, the centre row is her contact with pegs and ground.
-      const nearX = (z0) => fp.filter((p) => p[1] < soleY + 0.03 && Math.abs(p[2] - z0) < 0.02).map((p) => p[0]);
-      for (const [at, pt] of [["heel", heel], ["ball", ball]]) {
-        const xs = nearX(pt[2]);
-        if (xs.length < 4) continue;
-        const lo = Math.min(...xs) + rs, hi = Math.max(...xs) - rs;
-        if (hi - lo < 0.01) continue;
-        for (const [e, x] of [["A", lo], ["B", hi]]) spheres.push({ link: M.linkOf[S + "_Foot"], seg: S + "_Foot", c: sub([x, soleY + rs, pt[2]], an), r: rs, kind: "sole", at: at + e, edge: true });
-      }
+      const an = B[TI[S + "_Foot"]], mtpW = B[TI[S + "_ToeBase"]], mtp = sub(mtpW, an), link = M.linkOf[S + "_Foot"], seg = S + "_Foot";
+      const reg = ch.contactRegions?.[(S === "L" ? "left" : "right") + "Foot"], V = ch.vrest;
+      const P = reg && reg.length > 50 ? Array.from(reg, (v) => [V[3 * v] - an[0], V[3 * v + 1] - an[1], V[3 * v + 2] - an[2]]) : (segPts[seg] || [[0, 0, 0]]).map((p) => sub(p, an));
+      const med = -Math.sign(an[0]) || 1; // her midline side (her left is -x)
+      const soleY = Math.min(...P.map((p) => p[1])), zBack = Math.max(...P.map((p) => p[2])), zFront = Math.min(...P.map((p) => p[2]));
+      const band = (z0, z1) => P.filter((p) => p[2] >= Math.min(z0, z1) && p[2] <= Math.max(z0, z1));
+      const lowest = (A, h = 0.004) => { const y0 = Math.min(...A.map((p) => p[1])); return A.filter((p) => p[1] < y0 + h); };
+      const at = (A) => [A.reduce((s_, p) => s_ + p[0], 0) / A.length, Math.min(...A.map((p) => p[1])), A.reduce((s_, p) => s_ + p[2], 0) / A.length];
+      const across = (A, inner, w) => { const xs = A.map((p) => p[0] * med), lo = Math.min(...xs), hi = Math.max(...xs); return A.filter((p) => (inner ? p[0] * med > hi - w : p[0] * med < lo + w)); };
+      const ballBand = band(mtp[2] + 0.004, mtp[2] + 0.04), midBand = band(mtp[2] + 0.05, mtp[2] + 0.09), toeBand = band(mtp[2] - 0.008, zFront);
+      const tx = toeBand.map((p) => p[0] * med), tMid = (Math.min(...tx) + Math.max(...tx)) / 2;
+      const pads = [
+        ["heel", at(lowest(band(zBack, zBack - 0.05))), 0.02],
+        ["ballMed", at(lowest(across(ballBand, true, 0.025))), 0.015],
+        ["ballLat", at(lowest(across(ballBand, false, 0.025))), 0.015],
+        ["midLat", at(lowest(across(midBand, false, 0.02))), 0.012],
+        ["hallux", at(lowest(toeBand.filter((p) => p[0] * med > tMid))), 0.01, true],
+        ["toes", at(lowest(toeBand.filter((p) => p[0] * med <= tMid))), 0.01, true],
+      ];
+      const pad = Object.fromEntries(pads.map(([n, p]) => [n, p]));
+      const ball = [(pad.ballMed[0] + pad.ballLat[0]) / 2, soleY, (pad.ballMed[2] + pad.ballLat[2]) / 2], heel = [pad.heel[0], soleY, pad.heel[2]], toe = [(pad.hallux[0] + pad.toes[0]) / 2, soleY, zFront + 0.01];
+      // the toe flap: hinged at the toe joint about the asset's toe axis (+ lifts the toes)
+      const tdof = ch.dofs.find((d) => d.joint === S + "_ToeBase");
+      const toes = tdof ? { id: tdof.id, pivot: mtp, axis: unit(tdof.axis), lo: tdof.min * DEG, hi: tdof.max * DEG, passive: tdof.passive, tmax: tdof.torqueLimitNm ?? 28, q: 0, M: 0, K: 0, felt: 0 } : null;
+      foot[S] = { link, ball, heel, toe, forward: unit(sub(ball, heel)), up: [0, 1, 0], med: [med, 0, 0], soleY, toes };
+      for (const [name, p, r, onToes] of pads) spheres.push({ link, seg, c: [p[0], p[1] + r, p[2]], r, kind: "sole", at: name, pad: name === "heel" ? "heel" : name.startsWith("ball") ? "ball" : name === "midLat" ? "mid" : "toe", toe: !!(onToes && toes), side: S });
     }
     function mkSphere(s) {
-      s.k = s.kind === "sole" ? PRIORS.pegK : PRIORS.tissueK * s.r * (s.at === "front" ? PRIORS.softTissueScale : 1);
-      s.cN = s.kind === "sole" ? PRIORS.pegC : s.k * PRIORS.tissueTau;
+      const pd = s.kind === "sole" ? PRIORS.pads[s.pad] : null;
+      s.k = pd ? pd[0] : PRIORS.tissueK * s.r * (s.at === "front" ? PRIORS.softTissueScale : 1);
+      s.cN = pd ? pd[1] : s.k * PRIORS.tissueTau;
+      s.soft = pd ? pd[2] : 0;
       s.bike = { on: false, anchor: null, F: [0, 0, 0], x: null, n: null, pen: 0, where: "" };
       s.ground = { on: false, anchor: null, F: [0, 0, 0] };
       s.peg = { on: false, anchor: null, F: [0, 0, 0], side: null };
@@ -382,7 +431,7 @@
       // (riding: her muscles; off the bike - standing, walking, getting up, getting on and off, lifting
       // the bike - still the servos as joint motors: those controllers are not yet converted, so
       // onFoot is off. The drive in use is R.muscles.active, reported in telemetry)
-      muscles: { on: !!MUS && opts.muscles !== false, ride: true, onFoot: false, active: false, M: MUS, tauDes: new Float64Array(L.length), tauMus: new Float64Array(L.length), damp: new Float64Array(L.length), stats: null },
+      muscles: { on: !!MUS && opts.muscles !== false, ride: true, onFoot: false, active: false, M: MUS, tauDes: new Float64Array(L.length), tauMus: new Float64Array(L.length), damp: new Float64Array(L.length), telK: 0 },
       grips: { L: mkGrip("L"), R: mkGrip("R") },
       last: { forces: [], bikeWrench: null },
       telemetry: {},
@@ -813,12 +862,19 @@
         if (R.servo && R.servoOn[i]) {
           let kp = h.kp * gain * R.servoScale[i], kd = h.kd * Math.sqrt(gain) * R.servoScale[i];
           if (MD) {
-            // (neural bandwidth: kp <= D w^2, kd <= 2 zeta D w, D the articulated inertia about the hinge)
-            const D = b.Dart[li], w = h.base === "Hand" ? PRIORS.intentOmegaHand : PRIORS.intentOmegaMax;
-            if (D > 0 && kp > D * w * w) { kp = D * w * w; kd = Math.min(kd, 2 * PRIORS.intentZeta * D * w); }
+            const D = b.Dart[li];
+            if (PRIORS.intentCap === "stability") {
+              // (explicit stability at this step for the inertia the hinge moves: kp dt^2 / D <= 0.25,
+              // kd dt / D <= 0.5, and kd no more than critical damping)
+              if (D > 0) { kp = Math.min(kp, (0.25 * D) / (dt * dt)); kd = Math.min(kd, (0.5 * D) / dt, 2 * PRIORS.intentZeta * Math.sqrt(kp * D)); }
+            } else {
+              // (neural bandwidth: kp <= D w^2, kd <= 2 zeta D w, D the articulated inertia about the hinge)
+              const w = h.base === "Hand" ? PRIORS.intentOmegaHand : PRIORS.intentOmegaMax;
+              if (D > 0 && kp > D * w * w) { kp = D * w * w; kd = Math.min(kd, 2 * PRIORS.intentZeta * D * w); }
+            }
             if (tasks && taskHinge[i]) kp *= PRIORS.taskPostScale;
           }
-          let u = kp * (R.qT[li] - q - dt * qd) + kd * (R.qdT[li] - qd) + R.tauFF[li] + R.tauVF[li] + (tasks ? taskTau[li] : 0);
+          let u = kp * (R.qT[li] - q - dt * qd) + kd * (R.qdT[li] - qd) + R.tauFF[li] + R.tauVF[li] + (tasks ? taskTau[li] : 0) + tauFeel[li];
           // at its torque limit a servo keeps its damping (implicit): a saturated muscle still
           // resists being stretched quickly (force-velocity), and a light segment (a foot, a
           // hand) held at the limit against a stiff contact would otherwise ring step to step
@@ -839,6 +895,73 @@
     // step of MuJoCo's activation dynamics can reach (lucid_bcr.neuro: reachable box, excitation
     // planned exactly, actearly); limp (no servo), resting tone. The joints get the muscles' torque;
     // their force-velocity damping enters the step implicitly (MuJoCo implicitfast does the same).
+    // her intent knows her strength: no hinge asks for more than a share of what the muscles spanning
+    // it can make in that direction now (their arms that way x their force-length-velocity force at
+    // full activation). A demand past it would have the allocation recruit every muscle with any arm
+    // that way, whatever it does elsewhere (measured: a lumbar side-bend demand past its strength drove
+    // the hip adductors to -90 N m and turned the inside hip's torques against their own intent)
+    function withinStrength(MD) {
+      const MU_ = MD.M, share = PRIORS.intentStrengthShare;
+      for (let i = 0; i < NH; i++) {
+        const li = H[i].link, d = MD.tauDes[li];
+        if (!d || (PRIORS.intentStrengthTrunkOnly && !taskHinge[i])) continue;
+        let cap = 0;
+        for (const { i: m, k } of MU_.byHinge[li]) { const r = MU_.muscles[m].r[k]; if (r * d > 0) cap += Math.abs(r) * MU_.gain[m]; }
+        const c = share * cap;
+        if (Math.abs(d) > c) MD.tauDes[li] = Math.sign(d) * c;
+      }
+    }
+    // telemetry (every 27 steps, ~20 Hz): mean activation per body region, her three most active
+    // muscles, and how much of the intent the muscles made (share of the torque asked, over the hinges)
+    const REGION = [["legs", /gluteus|rectus_femoris|vastus|hamstrings|adductors|gastrocnemius|soleus|tibialis|iliopsoas|peroneals|deep_posterior|piriformis/], ["trunk", /rectus_abdominis|erector|lumbar_ext|thoracic_ext|quadratus|external_oblique|latissimus/], ["neck", /neck_ext|suboccipitals|longus_colli|sternocleidomastoid|upper_trapezius/], ["arms", /./]];
+    let regionOf = null;
+    function muscleTelemetry(MD) {
+      const MU_ = MD.M;
+      if (!regionOf) regionOf = MU_.ids.map((id) => REGION.find(([, re]) => re.test(id))[0]);
+      const sum = {}, n = {};
+      for (let i = 0; i < MU_.n; i++) { const r = regionOf[i]; sum[r] = (sum[r] || 0) + MU_.act[i]; n[r] = (n[r] || 0) + 1; }
+      const regions = {};
+      for (const r in sum) regions[r] = +(sum[r] / n[r]).toFixed(3);
+      const top = [...MU_.act].map((a, i) => [MU_.ids[i], +a.toFixed(2)]).sort((x, y) => y[1] - x[1]).slice(0, 3);
+      let asked = 0, made = 0;
+      for (let i = 0; i < NH; i++) { const li = H[i].link; asked += Math.abs(MD.tauDes[li]); made += Math.min(Math.abs(MD.tauDes[li]), Math.max(0, Math.sign(MD.tauDes[li]) * MD.tauMus[li])); }
+      R.telemetry.muscles = { regions, top, made: asked > 1e-6 ? +(made / asked).toFixed(2) : 1, sumA2: +MU_.act.reduce((s_, a) => s_ + a * a, 0).toFixed(2) };
+    }
+    // ---- neural elastic holds (PRIORS.hold...): the tone each muscle keeps, and its recruitment
+    // when stretched past its length at the held posture (linearised: stretch = sum over the hinges
+    // it spans of its moment arm x (held angle - angle); a muscle over several joints holds its whole
+    // length, not each joint's angle)
+    const ANKLE_MUSCLE = /gastrocnemius|soleus|tibialis|peroneals|deep_posterior/;
+    const LEG_MUSCLE = /gluteus|rectus_femoris|vastus|hamstrings|adductors|gastrocnemius|soleus|tibialis|iliopsoas|peroneals|deep_posterior|piriformis/;
+    const TRUNK_MUSCLE = /rectus_abdominis|erector|lumbar_ext|thoracic_ext|quadratus|external_oblique|neck_ext|suboccipitals|longus_colli|sternocleidomastoid/;
+    let holdInfo = null;
+    const qSettled = new Float64Array(L.length).fill(NaN);
+    function holdTones(MD) {
+      const MU_ = MD.M;
+      if (!holdInfo) holdInfo = { tone: new Float64Array(MU_.n), side: MU_.ids.map((id) => (id.startsWith("left_") ? "L" : id.startsWith("right_") ? "R" : null)), ankle: MU_.ids.map((id) => ANKLE_MUSCLE.test(id)), scale: MU_.ids.map((id) => (TRUNK_MUSCLE.test(id) ? 0 : LEG_MUSCLE.test(id) ? 1 : PRIORS.holdArmScale)), L0: MU_.muscles.map((m) => (m.lr[1] - m.lr[0]) / (m.prm[1] - m.prm[0])), a: new Float64Array(MU_.n) };
+      const T = holdInfo.tone, planted = { L: R.feel.feet.L.felt.N > FEEL.feelOnN, R: R.feel.feet.R.felt.N > FEEL.feelOnN };
+      for (let i = 0; i < MU_.n; i++) T[i] = holdInfo.ankle[i] && planted[holdInfo.side[i]] ? PRIORS.holdStanceTone : PRIORS.holdTone;
+      return T;
+    }
+    function holds(MD, dt) {
+      const MU_ = MD.M, b = body, G = PRIORS.holdGain, d0 = PRIORS.holdSoftD, dz = PRIORS.holdDeadD, hi = holdInfo;
+      // (the posture each joint has settled into)
+      const e = 1 - Math.exp(-dt / PRIORS.holdSettleS);
+      for (let i = 0; i < NH; i++) { const li = H[i].link, q = b.q[li]; qSettled[li] = qSettled[li] === qSettled[li] ? qSettled[li] + e * (q - qSettled[li]) : q; }
+      for (let i = 0; i < MU_.n; i++) {
+        const m = MU_.muscles[i];
+        if (!hi.scale[i]) { hi.a[i] = 0; continue; }
+        let st = 0;
+        for (let k = 0; k < m.span.length; k++) { const h = m.span[k].h; st += m.r[k] * (qSettled[h] - b.q[h]); }
+        const d = st / hi.L0[i] - dz;
+        const a = d > 0 ? Math.min(MU_.hi[i], hi.scale[i] * G * d * (1 + d / d0)) : 0;
+        hi.a[i] = a;
+        if (!a) continue;
+        // (its torque joins the intent; its recruitment is a floor for the allocation)
+        for (let k = 0; k < m.span.length; k++) MD.tauDes[m.span[k].h] += m.r[k] * a * MU_.gain[i];
+        MU_.lo[i] = Math.max(MU_.lo[i], a);
+      }
+    }
     function muscleDrive(MD, dt) {
       const b = body, MU_ = MD.M, tone = PRIORS.muscleTone;
       MU_.geometry(); MU_.muscleState();
@@ -846,12 +969,20 @@
         // placed mid-life (a reset, a snap to her targets): she is already holding the posture she
         // is in, not relaxed - the activations of that intent over their whole range, at once
         MD.snap = false;
+        qSettled.fill(NaN);
         MU_.lo.fill(0); MU_.hi.fill(1);
         MU_.allocate(MD.tauDes, { reg: PRIORS.muscleReg, sweeps: 300, tone, warm: MU_.act });
         MU_.act.set(MU_.aDes); MU_.u.set(MU_.aDes);
       } else {
         MU_.reachable(dt);
-        if (R.servo) MU_.allocate(MD.tauDes, { reg: PRIORS.muscleReg, sweeps: PRIORS.muscleSweeps, tone });
+        if (R.servo && PRIORS.intentWithinStrength) withinStrength(MD);
+        const toneOf = PRIORS.hold ? holdTones(MD) : null;
+        // (the holds' recruitment adds to what her intent drives, as a spinal reflex adds to the
+        // descending command: the torque it makes is part of what the muscles are to make, and the
+        // muscles it recruits are at least that active - the allocation does not undo it with their
+        // antagonists)
+        if (R.servo && PRIORS.hold) holds(MD, dt);
+        if (R.servo) MU_.allocate(MD.tauDes, { reg: PRIORS.muscleReg, sweeps: PRIORS.muscleSweeps, tone, toneOf });
         else for (let i = 0; i < MU_.n; i++) MU_.aDes[i] = clamp(tone, MU_.lo[i], MU_.hi[i]);
         MU_.excitation(MU_.aDes, dt);
         MU_.stepActivation(dt);
@@ -859,6 +990,7 @@
       MD.tauMus.fill(0);
       MU_.forces(MD.tauMus);
       MU_.damping(MD.damp);
+      if (++MD.telK % 27 === 0) muscleTelemetry(MD);
       for (let i = 0; i < NH; i++) { const li = H[i].link; b.tau[li] += MD.tauMus[li]; b.armature[li] += MD.damp[li] * dt; }
     }
     R.servoOn = new Uint8Array(NH).fill(1);
@@ -896,12 +1028,28 @@
     }
     function applyContact(i, F, x) { body.applyForce(i, F, x); }
     const pelvisLink = M.linkOf.Hip;
+    // a pad of her sole (PRIORS.pads): soft at first touch - its stiffness and damping build up over
+    // its soft start - then firm (the force-depth curve smooth through it); it only presses
+    function padForce(s, pen, vn) {
+      const d0 = s.soft, e = pen < d0 ? (s.k * pen * pen) / (2 * d0) : s.k * (pen - d0 / 2);
+      return Math.max(0, e - s.cN * Math.min(1, pen / d0) * vn);
+    }
+    // the toe flap: where a toe pad is (link-local) at the toes' angle; what the ground's push on the
+    // toes does about the toe joint (moment, and its stiffness: normal stiffness x lever^2)
+    const toeLocal = (s) => { const t = foot[s.side].toes; return t.q ? add(t.pivot, mv(axisAngle(t.axis, t.q), sub(s.c, t.pivot))) : s.c; };
+    function toeLoad(s, x, F, n) {
+      const t = foot[s.side].toes, aw = mv(body.Rw[s.link], t.axis), r = sub(x, body.toWorld(s.link, t.pivot));
+      t.M += dot(aw, cross(r, F));
+      const lever = dot(n, cross(aw, r));
+      t.K += s.k * lever * lever;
+    }
     // everything the rider and the bike exert on each other this step; returns the reactions
     function contacts(bk, ground) {
       const out = [];
       const b = body;
+      for (const S of ["L", "R"]) if (foot[S].toes) foot[S].toes.M = foot[S].toes.K = 0;
       for (const s of spheres) {
-        const cw = b.toWorld(s.link, s.c), vc = b.pointVelocity(s.link, s.c);
+        const lc = s.toe ? toeLocal(s) : s.c, cw = b.toWorld(s.link, lc), vc = b.pointVelocity(s.link, lc);
         // --- bike envelope (sdf in the bike frame)
         const cb = toBikeFrame(bk, cw), gb = [0, 0, 1], d = SURF.sdf(cb, gb);
         const st = s.bike;
@@ -918,7 +1066,7 @@
           st.on = true; st.F = F; st.x = x; st.n = nw; st.mu = mu; st.pen = pen; st.where = cb[1] < -0.2 ? "seat" : cb[1] < 0.36 ? "tank" : "front";
         } else if (st.on) { st.on = false; st.anchor = null; st.F = [0, 0, 0]; st.pen = 0; }
         // --- footpegs (sole points and any leg sphere): capsule of the peg radius
-        if (!s.edge && (s.kind === "sole" || s.seg.endsWith("Foot") || s.seg.endsWith("Calf"))) {
+        if (s.kind === "sole" || s.seg.endsWith("Foot") || s.seg.endsWith("Calf")) {
           const ps = s.peg;
           let hit = null;
           for (const side of ["left", "right"]) {
@@ -929,27 +1077,29 @@
           if (hit) {
             const nw = mv(bk.R, hit.n), x = sub(cw, scl(nw, s.r - hit.pen / 2));
             const vr = sub(vc, bikePointVel(bk, x)), vn = dot(vr, nw), vt = sub(vr, scl(nw, vn));
-            const k = s.kind === "sole" ? PRIORS.pegK : s.k, c = s.kind === "sole" ? PRIORS.pegC : s.cN;
-            const Fn = Math.max(0, k * hit.pen - c * vn);
+            const k = s.k, c = s.cN;
+            const Fn = s.kind === "sole" ? padForce(s, hit.pen, vn) : Math.max(0, k * hit.pen - c * vn);
             const mu = s.kind === "sole" ? PRIORS.mu.peg : PRIORS.mu.bike;
             const Ft = Fn > 0 ? frictionForce(ps, x, nw, vt, k, c, mu, Fn, (a) => bikeToWorld(bk, a), (w) => toBikeFrame(bk, w)) : [0, 0, 0];
             const F = add(scl(nw, Fn), Ft);
             applyContact(s.link, F, x);
+            if (s.toe) toeLoad(s, x, F, nw);
             out.push({ F: scl(F, -1), x, part: "frame" });
             ps.on = true; ps.F = F; ps.side = hit.side; ps.x = x; ps.n = nw; ps.mu = mu;
           } else if (ps.on) { ps.on = false; ps.anchor = null; ps.F = [0, 0, 0]; }
         }
         // --- ground
-        if (ground && !(s.edge && !PL.fallen)) {
+        if (ground) {
           const gs = s.ground, gz = ground.height(cw[0], cw[1]), gn = ground.normal ? ground.normal(cw[0], cw[1]) : [0, 0, 1];
           const dz = dot(sub(cw, [cw[0], cw[1], gz]), gn), pen = s.r - dz;
           if (pen > 0) {
             const x = sub(cw, scl(gn, s.r - pen / 2)), vn = dot(vc, gn), vt = sub(vc, scl(gn, vn));
-            const k = s.kind === "sole" ? PRIORS.pegK : s.k, c = s.kind === "sole" ? PRIORS.pegC : s.cN;
-            const Fn = Math.max(0, k * pen - c * vn), mu = (s.kind === "sole" ? PRIORS.mu.sole : PRIORS.mu.ground) * (ground.grip ? ground.grip(cw[0], cw[1]) : 1);
+            const k = s.k, c = s.cN;
+            const Fn = s.kind === "sole" ? padForce(s, pen, vn) : Math.max(0, k * pen - c * vn), mu = (s.kind === "sole" ? PRIORS.mu.sole : PRIORS.mu.ground) * (ground.grip ? ground.grip(cw[0], cw[1]) : 1);
             const Ft = Fn > 0 ? frictionForce(gs, x, gn, vt, k, c, mu, Fn, (a) => a, (w) => w) : [0, 0, 0];
             const F = add(scl(gn, Fn), Ft);
             applyContact(s.link, F, x);
+            if (s.toe) toeLoad(s, x, F, gn);
             gs.on = true; gs.F = F; gs.x = x; gs.n = gn; gs.mu = mu;
           } else if (gs.on) { gs.on = false; gs.anchor = null; gs.F = [0, 0, 0]; }
         }
@@ -989,7 +1139,31 @@
       return out;
     }
     R.gripWorld = (bk, S) => { const g = R.grips[S], gb = gripBody(bk, g); return { c: bikeToWorld(bk, add(add(gb.c, scl(gb.a, g.tOff)), g.slip ? mv(gb.Rs, g.slip) : [0, 0, 0])), a: mv(bk.R, gb.a) }; };
-    // her hand closes on its grip where it is (its offset from the grip's middle settles out)
+    // Can her hand close on its grip now? A hand is not placed to the millimetre: it puts the palm
+    // roughly on the bar, feels where it landed, and the fingers close round the bar, drawing the palm
+    // onto it (closeGrip: the hand eases onto the bar over gripSettleS). Two ways in:
+    //   touch - her palm feels the bar: its contact sphere is on the bike's surface at the grip's
+    //           rubber (along it, a couple of cm past its ends the fingers still wrap it)
+    //   reach - the open hand is over the bar: its axis within her curling fingers' reach of the palm
+    //           point (gripCaptureM), along the rubber, and not behind the back of the hand (the palm
+    //           point is ~3 cm out from the palm: the bar may lie up to the palm itself, gripPalmDepthM)
+    const palmSphere = {};
+    R.canCloseGrip = (bk, S) => {
+      const g = R.grips[S], gb = gripBody(bk, g), geo = g.geom, slack = 0.02;
+      const onRubber = (xb) => { const d = sub(xb, gb.c), t = dot(d, gb.a); return t >= geo.tMinM - slack && t <= geo.tMaxM + slack ? len(sub(d, scl(gb.a, t))) : Infinity; };
+      const ps = palmSphere[S] || (palmSphere[S] = spheres.find((s) => s.kind === "palm" && s.link === hand[S].link));
+      if (ps && ps.bike.on && ps.bike.x && onRubber(toBikeFrame(bk, ps.bike.x)) < geo.radiusM + slack) { g.closedBy = "touch"; return true; }
+      const pb = toBikeFrame(bk, body.toWorld(hand[S].link, hand[S].p)), dist = onRubber(pb);
+      if (dist > PRIORS.gripCaptureM) return false;
+      const d = sub(pb, gb.c), perp = sub(d, scl(gb.a, dot(d, gb.a))), volar = mtv(bk.R, mv(body.Rw[hand[S].link], hand[S].volar));
+      if (dot(scl(perp, -1), volar) < -PRIORS.gripPalmDepthM) return false;
+      g.closedBy = "reach";
+      return true;
+    };
+    // her hand closes on its grip where it is, and narrows in onto its place on the grip as the
+    // fingers wrap: its offset from there, along the bar and across it, settles out (gripSettleS).
+    // (measured: holding on where the palm landed along the bar instead, getting on and off a bike
+    // free to roll, her body pressed it with 483 N and it went over after she got off)
     R.closeGrip = (bk, S) => {
       const g = R.grips[S];
       g.slip = null;
@@ -1011,6 +1185,11 @@
       // static, on a still bike: 8 deg 3.0 - the lumbar extensors near 0.9, 15-20 deg 1.5, 25 deg
       // 3.4, 35 deg 8.0 - iliopsoas and the lumbar extensors saturated)
       seatZ: 0.239, seatY: -0.34, leanDeg: 52, pelvisPitchDeg: 18, headPitchDeg: 12, pelvisLevelShare: 0.5,
+      // (her pelvis's roll on the seat, riding on her muscles: N m/rad, N m s/rad, N m - declared priors.
+      // Locked in on a 916 - thighs on the tank, balls of the feet on the pegs - her pelvis rolls
+      // little on the seat: at 400 N m/rad the bike and her body rolled against each other on a launch,
+      // a slow mode the steering could not hold at 3-7 m/s (±12-31°, down); at 1500, ±5-9°, steady)
+      pelvisRollK: 1500, pelvisRollC: 200, pelvisRollMaxNm: 150, chestLevelShare: 0.5, armFollow: true,
       // reach: the trunk leans (within reachLeanMaxDeg) until the elbows keep elbowPrefDeg of bend
       // (declared prior; the 916's clip-ons are a long reach for her 0.54 m arm: seated, her
       // elbows stay nearly straight); reachLean is that correction
@@ -1068,6 +1247,14 @@
       // swingS with swingLiftM of clearance to a spot ahead by the bike's travel over stepLeadS
       // (at most stepLeadMaxM), and plants there. Faster, the foot skims the ground.
       stepMaxMps: 0.6, stepBackM: 0.08, stepFwdM: 0.2, stepSideM: 0.12, swingS: 0.3, swingLiftM: 0.05, stepLeadS: 0.25, stepLeadMaxM: 0.15, stepReachS: 0.25, stepUnloadM: 0.04, stanceLoadScale: 1,
+      stepLiftFeelN: 60, stepLiftWaitS: 0.6,
+      // feeling for the ground: a planted foot that does not feel the ground bear on it (under
+      // footRestN) reaches on down for it - ankle and knee - at feelReachRate, at most feelReachMaxM
+      // under where she thought it was; reached that far and still not feeling it, she slides her
+      // hips over towards it (feelHipRate, at most feelHipMaxM more). Once it bears the reach eases
+      // back, the hips stay over until her feet come up (declared priors: a hand's-breadth of reach,
+      // a slow deliberate slide - the way a short rider finds the ground under a tall bike)
+      footRestN: 60, feelReachRate: 0.15, feelReachMaxM: 0.05, feelHipRate: 0.08, feelHipMaxM: 0.04, feel: { dz: 0, hip: 0 },
       step: { phase: "none", s: 0, fromW: null, plantW: null, steps: 0 }, footMode: "none",
       // walking the bike (intent.walk -1..1, back..forward): in stance she stands on the planted
       // foot with at least walkLoadN and pushes the ground so that her pelvis is pushed walkN
@@ -1150,7 +1337,7 @@
       // to the bike held upright.)
       const level = (1 - fd) * PL.pelvisLevelShare * rollFelt / DEG;
       const pel = R.pelvisPoseBike({
-        x: hang * PL.hangOffsetM + fd * fsx * PL.footPelvisShiftM, y: PL.seatY + P.foreAft * 0.05 + stand * 0.06 + bf * PL.braceForwardM, z: PL.seatZ + stand * 0.19 - Math.abs(hang) * 0.012,
+        x: hang * PL.hangOffsetM + fd * fsx * (PL.footPelvisShiftM + PL.feel.hip), y: PL.seatY + P.foreAft * 0.05 + stand * 0.06 + bf * PL.braceForwardM, z: PL.seatZ + stand * 0.19 - Math.abs(hang) * 0.012,
         pelvisPitchDeg: PL.pelvisPitchDeg - stand * 14 + P.tuck * 4 + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hang * PL.hangPelvisRollDeg + fd * fsx * PL.footPelvisRollDeg + level, pelvisYawDeg: -hang * PL.hangPelvisYawDeg,
       });
       // (feet down: sideways and fore/aft from the bike held upright, the height from the seat as it
@@ -1159,7 +1346,10 @@
       const T = { pelvis: { p: pelW, R: mm(RU, pel.R) }, bike: bk, feetDown: fd, pelvisUp: fd > 0 ? pel.pos : null };
       const wb = mtv(Rb, WUP), rollWorld = Math.atan2(wb[0], wb[2]);
       const lean = (PL.leanDeg + (P.tuck >= 0 ? P.tuck * 10 : P.tuck * 16) - stand * 22 + Math.abs(hang) * PL.hangTuckDeg) * DEG + PL.reachLean;
-      const roll = rollFelt + hang * PL.hangChestRollDeg * DEG;
+      // (her chest levels towards the felt vertical by the same share as her pelvis: the upper body
+      // rolls over the hips as one block, and the lumbar spine - whose side-bend muscles are weak,
+      // leaning to the bars - is not asked to bend between them when the bike rolls under her)
+      const roll = PL.chestLevelShare * rollFelt + hang * PL.hangChestRollDeg * DEG;
       T.chest = mm(Rb, mm(Rz(-hang * 10 * DEG), mm(Ry(roll), mm(Rx(-lean), M2B))));
       // head: closer to the true horizon than the trunk, eyes along the path
       const hroll = 0.55 * rollWorld + 0.45 * rollFelt + hang * 6 * DEG;
@@ -1231,6 +1421,7 @@
       const w = add(upF.p, mv(upF.R, [nom[0], nom[1] + lead, 0])), onG = [w[0], w[1], g.height(w[0], w[1])];
       const forward = unit(add(scl(tF.forward, 1 - fd), scl(mv(upF.R, [sx * 0.15, 1, 0]), fd)));
       if (!PL.feetDownWant || st.side !== S || !stepping) { st.phase = "none"; st.side = S; }
+      if (!PL.feetDownWant || st.side !== S) PL.feel.dz = PL.feel.hip = 0;
       PL.footMode = "none"; PL.stanceLoadScale = 1;
       if (st.phase === "none") {
         // coming down from the peg (or going back up to it), or skimming the ground beside it;
@@ -1263,8 +1454,15 @@
         // on its way down keeps reaching for its spot)
         const ball = body.toWorld(foot[S].link, foot[S].ball);
         if (footOnGroundN(S) > 50 && Math.hypot(ball[0] - st.plantW[0], ball[1] - st.plantW[1]) > PL.footSlipM) st.plantW = [ball[0], ball[1], g.height(ball[0], ball[1])];
-        // a foot that has not found the ground there (out of reach) steps again
-        st.airS = footOnGroundN(S) > 20 ? 0 : (st.airS || 0) + 1 / PL.hz;
+        // feeling for the ground (footRestN): reaching on down for it, then her hips over
+        const felt = footOnGroundN(S), fl = PL.feel;
+        if (felt < PL.footRestN) {
+          fl.dz = Math.min(PL.feelReachMaxM, fl.dz + PL.feelReachRate / PL.hz);
+          if (fl.dz >= PL.feelReachMaxM) fl.hip = Math.min(PL.feelHipMaxM, fl.hip + PL.feelHipRate / PL.hz);
+        } else if (felt > 2 * PL.footRestN) fl.dz = Math.max(0, fl.dz - 0.5 * PL.feelReachRate / PL.hz);
+        // a foot that has not found the ground there (out of reach, reached for as far as it goes)
+        // steps again
+        st.airS = felt > 20 || fl.dz < PL.feelReachMaxM ? 0 : (st.airS || 0) + 1 / PL.hz;
         // (where the planted foot is relative to its spot on the bike held upright)
         const u = mtv(upF.R, sub(st.plantW, upF.p)), dy = u[1] - nom[1], dx = u[0] - nom[0];
         // (its target is as far under the surface as the sole sinks in under the load she puts on
@@ -1275,7 +1473,12 @@
         PL.stanceLoadScale = smooth01(Math.min(dy + PL.stepBackM, PL.stepFwdM - dy) / PL.stepUnloadM);
         const press = plantedLoadN() / (2 * PRIORS.pegK);
         const inReach = st.airS <= PL.stepReachS;
-        if (inReach && dy > -PL.stepBackM && dy < PL.stepFwdM && Math.abs(dx) < PL.stepSideM) { PL.footMode = "stance"; return { ...tF, p: sub(st.plantW, [0, 0, press]), forward, knee: null, world: true, stance: true }; }
+        if (inReach && dy > -PL.stepBackM && dy < PL.stepFwdM && Math.abs(dx) < PL.stepSideM) { PL.footMode = "stance"; return { ...tF, p: sub(st.plantW, [0, 0, press + fl.dz]), forward, knee: null, world: true, stance: true }; }
+        // (it comes up only once she feels it light - under stepLiftFeelN: a foot her weight, or the
+        // bike's, still bears on is not lifted, it is unloaded first; she keeps it planted, unloading,
+        // for at most stepLiftWaitS, and it may slip on the ground meanwhile as a boot does)
+        if (inReach && felt > PL.stepLiftFeelN && (st.waitS = (st.waitS || 0) + 1 / PL.hz) < PL.stepLiftWaitS) { PL.stanceLoadScale = 0; PL.footMode = "stance"; return { ...tF, p: sub(st.plantW, [0, 0, press]), forward, knee: null, world: true, stance: true }; }
+        st.waitS = 0;
         st.airS = 0; st.phase = "swing"; st.s = 0; st.fromW = inReach ? st.plantW.slice() : [ball[0], ball[1], g.height(ball[0], ball[1])];
       }
       // swing (advanced once per plan), on the ground's frame: from where it left the ground to where
@@ -1345,6 +1548,9 @@
         if (ikb.q[kl] < KNEE_SEED) { ikb.q[kl] = KNEE_SEED; ikb.kinematics(); }
         const tasks = [{ type: "pos", link: foot[S].link, local: foot[S].ball, target: tF.p, w: 100 }];
         if (tF.forward) tasks.push({ type: "dir", link: foot[S].link, local: foot[S].forward, target: tF.forward, w: tF.forwardW ?? 0.3 });
+        // (a foot standing on the ground means to lie flat on it: its sole square to the ground she
+        // feels under it - or sees, before it touches)
+        if (tF.stance) tasks.push({ type: "dir", link: foot[S].link, local: foot[S].up, target: groundUnder(S), w: 0.5 });
         if (tF.knee) tasks.push({ type: "pos", link: M.linkOf[S + "_Calf"], local: [0, 0, 0], target: tF.knee, w: 5 });
         solveClear(tasks, S === "L" ? CH.legL : CH.legR, iters, T.bike, 1, 2);
       }
@@ -1498,11 +1704,25 @@
       // (feet down, her pelvis's force goes through the planted foot only: pushed through the peg it
       // would push the bike)
       const pushers = fd > 0.5 ? (legs.includes(PL.footSide) ? [PL.footSide] : []) : legs;
+      // riding on her muscles, her pelvis's roll on the seat is held by pressing one foot harder on its
+      // peg than the other (her legs are not rigid struts: the servos no longer hold the pelvis to the
+      // thighs): a roll moment towards the pelvis's target, damped against the bike's roll rate
+      let rollF = 0;
+      if (R.muscles.on && R.muscles.ride && legs.length === 2 && fd < 0.05 && PL.targets) {
+        const fw = [Rb[1], Rb[4], Rb[7]], e = dot(logSO3(mm(PL.targets.pelvis.R, mt(b.R))), fw);
+        const wp = dot(mv(b.R, [b.vb[0], b.vb[1], b.vb[2]]), fw), wb = dot(bk.w, fw);
+        // (moving over on the seat - lifted off it, pushing herself across - she does not hold it locked)
+        const hold = 1 - (PL.shift || 0);
+        const Mr = clamp(hold * (PL.pelvisRollK * e - PL.pelvisRollC * (wp - wb)), -PL.pelvisRollMaxNm, PL.pelvisRollMaxNm);
+        const d = 0.5 * Math.abs(dot(sub(b.toWorld(foot.R.link, foot.R.ball), b.toWorld(foot.L.link, foot.L.ball)), [Rb[0], Rb[3], Rb[6]])) || 0.2;
+        rollF = Mr / (2 * d);
+        R.telemetry.pelvisRoll = { errDeg: e / DEG, Nm: Mr };
+      }
       for (const S of legs) {
         const pw = b.toWorld(foot[S].link, foot[S].ball);
         const share = pushers.includes(S) ? 1 / pushers.length : 0;
         // (riding on the load path, how hard each foot bears on its peg is planned there)
-        const Fpelvis = add(scl(Fw, share), scl(up, PL.rideLP ? 0 : PL.pegPressN * (1 - fd))); // the pelvis gets this; the foot pushes -that (feet down: neither presses a peg)
+        const Fpelvis = add(add(scl(Fw, share), scl(up, PL.rideLP ? 0 : PL.pegPressN * (1 - fd))), scl(up, (S === "L" ? 1 : -1) * rollF)); // the pelvis gets this; the foot pushes -that (feet down: neither presses a peg)
         for (const { li, j } of Jcol(foot[S].link, pw, S === "L" ? CH.legL : CH.legR)) R.tauVF[li] -= dot(j, Fpelvis);
       }
       R.telemetry.vmc = { F: Fw, legs: legs.join(""), knees: { ...kneeOut }, want, tanDone, sideDone, Fd, walkF };
@@ -1541,6 +1761,31 @@
         const x = solve3(A, scl(vFrozen, -1));
         for (const { li, j } of cols) { const qd = dot(j, x); R.qdT[li] = qd; R.qT[li] += qd * dt; }
         legVel[S] = true;
+      }
+    }
+    // Riding on her muscles, a hand on its grip follows the bar: its arm's joint targets move at the
+    // rates that carry the hand with the grip (the bike's motion and the bars turning), relative to
+    // what her chest does (damped least squares on the arm's position Jacobian). Held to targets fixed
+    // between plans, the arms' damping would resist the steering turning under her hands - measured on
+    // a launch: her hands put 5-20 N m into the bars against the rider's steering and the bike weaved
+    // down at 5-7 m/s.
+    const armVel = { L: null, R: null };
+    function heldArmRates(bk, dt) {
+      const on = R.muscles.on && R.muscles.ride && PL.armFollow;
+      for (const S of ["L", "R"]) {
+        const chain = S === "L" ? CH.armL : CH.armR;
+        if (!on || !R.grips[S].held) { if (armVel[S]) { for (const i of chain) R.qdT[H[i].link] = 0; armVel[S] = null; } continue; }
+        const pw = body.toWorld(hand[S].link, hand[S].p), c = M.linkOf.Spine02;
+        const vFrozen = body.pointVelocity(c, body.toLocal(c, pw)); // the hand carried by her chest, the arm still
+        const g = R.gripWorld(bk, S).c, aw = mv(bk.R, bk.axis), piv = bikeToWorld(bk, bk.pivot);
+        const vGrip = add(bikePointVel(bk, g), cross(scl(aw, bk.steerRate || 0), sub(g, piv)));
+        const cols = Jcol(hand[S].link, pw, chain);
+        const A = [0, 0, 0, 0, 0, 0, 0, 0, 0], l2 = 0.0025;
+        for (const { j } of cols) for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) A[3 * r + k] += j[r] * j[k];
+        A[0] += l2; A[4] += l2; A[8] += l2;
+        const x = solve3(A, sub(vGrip, vFrozen));
+        for (const { li, j } of cols) { const qd = dot(j, x); R.qdT[li] = qd; R.qT[li] += qd * dt; }
+        armVel[S] = true;
       }
     }
     function solve3(A, b) {
@@ -1744,6 +1989,7 @@
       PL.rideLP = rideLoadOn();
       pelvisVMC(bk);
       stanceLegRates(bk, dt);
+      heldArmRates(bk, dt);
     };
 
     // ------------------------------------------------------------------ quiet hands on the bars
@@ -1845,13 +2091,10 @@
     //      along h, gravity }
     function loadPlan(o = {}) {
       const b = body, g = o.gravity || b.gravity, C = [];
-      // her feet (each touching sole point; with the sole's edge points down, its middle row adds
-      // nothing to where the pressure can be - left out)
+      // her feet (each touching pad of the sole: the heel, the balls, the outer border, the toes)
       for (const S of ["L", "R"]) {
         if (o.feet && !o.feet.includes(S)) continue;
-        const pts = spheres.filter((s) => s.link === foot[S].link && s.ground.on && s.ground.n);
-        const edges = pts.some((s) => s.edge);
-        for (const s of pts) if (!edges || s.edge || s.at === "toe") C.push({ link: s.link, x: s.ground.x, dirs: pyramid(s.ground.n, s.ground.mu), kind: "foot", side: S });
+        for (const s of soleOf[S]) if (s.ground.on && s.ground.n) C.push({ link: s.link, x: s.ground.x, dirs: pyramid(s.ground.n, s.ground.mu), kind: "foot", side: S });
       }
       if (o.bike) {
         for (const S of ["L", "R"]) { const gr = R.grips[S]; if (gr.held) C.push({ link: hand[S].link, x: b.toWorld(hand[S].link, hand[S].p), dirs: AXES6, ub: LOAD.gripShare * PRIORS.gripStrengthN, kind: "grip", side: S, bike: true }); }
@@ -1969,6 +2212,108 @@
     // ------------------------------------------------------------------ step
     // forces(bike, ground, dt): contact + servo forces at the current state; returns the reactions
     // the bike must receive. integrate(dt) advances the rider with those same forces.
+    // ---- what her soles feel (plantar pressure): for each foot, the load on each of its pads (N,
+    // normal), the centre of pressure in the foot's own frame (m: across, + towards her midline;
+    // along, + forward, from the ankle), the forefoot's share of the load (balls and toes) and the
+    // outer edge's among the forefoot and midfoot (the little toe's ball, the outer border, the lesser
+    // toes), and the ground's normal under it (world, force-weighted). Felt through the skin's delay:
+    // the "felt" values lag the pressure by feelTauS (first order, a declared prior - cutaneous
+    // afferents and their spinal relay, tens of ms).
+    const FEEL = { feelTauS: 0.03 };
+    const PADS = ["heel", "ballMed", "ballLat", "midLat", "hallux", "toes"];
+    const mkFoot = () => ({ N: 0, pads: Object.fromEntries(PADS.map((k) => [k, 0])), cop: [0, 0], fore: 0, lat: 0, n: [0, 0, 1], on: "", felt: { N: 0, cop: [0, 0], fore: 0, lat: 0 } });
+    R.feel = { feet: { L: mkFoot(), R: mkFoot() } };
+    const soleOf = { L: spheres.filter((s) => s.kind === "sole" && s.side === "L"), R: spheres.filter((s) => s.kind === "sole" && s.side === "R") };
+    function plantarFeel(dt) {
+      const b = body, k = 1 - Math.exp(-dt / FEEL.feelTauS);
+      for (const S of ["L", "R"]) {
+        const f = R.feel.feet[S], ft = foot[S], fw = ft.forward, md = ft.med;
+        let N = 0, ca = 0, cl = 0, fore = 0, lat = 0, med = 0, n = [0, 0, 0], on = "";
+        for (const s of soleOf[S]) {
+          let Fn = 0, x = null, nn = null;
+          if (s.ground.on && s.ground.n) { Fn = dot(s.ground.F, s.ground.n); x = s.ground.x; nn = s.ground.n; on = "ground"; }
+          if (s.peg.on && s.peg.n) { const F2 = dot(s.peg.F, s.peg.n); if (F2 > Fn) { Fn = F2; x = s.peg.x; nn = s.peg.n; on = on || "peg"; } }
+          f.pads[s.at] = Fn;
+          if (Fn <= 0 || !x) continue;
+          const xl = b.toLocal(s.link, x);
+          N += Fn; ca += Fn * dot(xl, md); cl += Fn * dot(xl, fw); n = add(n, scl(nn, Fn));
+          if (s.pad === "ball" || s.pad === "toe") fore += Fn;
+          if (s.at === "ballLat" || s.at === "midLat" || s.at === "toes") lat += Fn; else if (s.at !== "heel") med += Fn;
+        }
+        f.N = N; f.on = on;
+        f.cop = N > 1 ? [ca / N, cl / N] : [0, 0];
+        f.fore = N > 1 ? fore / N : 0;
+        f.lat = lat + med > 1 ? lat / (lat + med) : 0.5;
+        f.n = N > 1 ? unit(n) : [0, 0, 1];
+        const e = f.felt;
+        e.N += k * (f.N - e.N); e.fore += k * (f.fore - e.fore); e.lat += k * (f.lat - e.lat);
+        e.cop[0] += k * (f.cop[0] - e.cop[0]); e.cop[1] += k * (f.cop[1] - e.cop[1]);
+      }
+    }
+    // ---- her toes: each step the toe flap turns to where the ground's push on it balances the toe
+    // joint - its R1.5 passive tissue (the asset's k, A, w about its range), her toes' elastic hold
+    // about their relaxed angle (PRIORS.toeHoldK...) and the press of her toe flexors as she feels her
+    // weight move forward over the balls (toeTone, toeFeelGain; the asset's torque limit). One Newton
+    // step a step, at most 3 deg.
+    function footToes() {
+      for (const S of ["L", "R"]) {
+        const t = foot[S].toes;
+        if (!t) continue;
+        const p = t.passive, a = clamp((t.q - t.lo) / p.w, -12, 30), c = clamp((t.hi - t.q) / p.w, -12, 30), ea = Math.exp(-a), eb = Math.exp(-c);
+        const f = R.feel.feet[S], ff = f.felt;
+        t.tone = clamp(PRIORS.toeTone + PRIORS.toeFeelGain * smooth01((ff.fore - 0.5) / 0.4) * smooth01(ff.N / 100), 0, 1);
+        // (the hold: k (1 + |bend| / soft) x bend, k growing with the forefoot's load)
+        const bend = t.q - PRIORS.toeRelaxDeg * DEG, soft = PRIORS.toeSoftDeg * DEG, kh = PRIORS.toeHoldK * (1 + (ff.N * ff.fore) / PRIORS.toeLoadN);
+        const hold = -kh * bend * (1 + Math.abs(bend) / soft), Kh = kh * (1 + (2 * Math.abs(bend)) / soft);
+        t.hold = hold;
+        const tj = -p.k * (t.q - (p.q0 || 0) * DEG) + p.A * (ea - eb) - t.tone * t.tmax + hold, Kj = p.k + (p.A / p.w) * (ea + eb) + Kh;
+        t.q = clamp(t.q + clamp((t.M + tj) / (t.K + Kj), -0.05, 0.05), t.lo - 0.05, t.hi + 0.05);
+      }
+    }
+    // the ground under a foot: felt through its sole when it bears on it, else seen (the ground's
+    // normal where the foot is)
+    function groundUnder(S) {
+      const f = R.feel.feet[S];
+      if (f.felt.N > 30 && f.on === "ground") return f.n;
+      const g = R.lastGround, pw = body.toWorld(foot[S].link, foot[S].ball);
+      return g && g.normal ? g.normal(pw[0], pw[1]) : [0, 0, 1];
+    }
+    R.groundUnder = groundUnder;
+    // ---- the tripod balanced by feel: a foot bearing on the ground has its ankle's sideways roll
+    // (inversion / eversion - peroneals against tibialis posterior) worked from what its sole feels:
+    // the roll torque builds while the felt centre of pressure is off the middle of the tripod across
+    // the foot (between the heel and the two balls, at the pressure's place along it), until the
+    // load sits across the foot - rolled onto its outer edge, it everts until the big toe's ball
+    // bears. Torque = load x centre-of-pressure error / feelRollS, integrated; at most
+    // feelRollMaxNm; it fades as the foot unloads. (Declared priors. The angle servo does not do
+    // this: riding on her muscles its bandwidth is that of the light foot alone.)
+    Object.assign(FEEL, { feelRollS: 0.08, feelRollMaxNm: 40, feelOnN: 30 });
+    const tauFeel = new Float64Array(L.length);
+    const ieLink = { L: H[hingeIndex["leftAnkle.inversionEversion"]]?.link, R: H[hingeIndex["rightAnkle.inversionEversion"]]?.link };
+    const ieSign = { L: 0, R: 0 };
+    for (const S of ["L", "R"]) {
+      // (which way this hinge rolls the sole: + inversion turns the sole towards her midline)
+      const li = ieLink[S];
+      if (li == null) continue;
+      const a = L[li].axis, lat = scl(foot[S].med, -1), sole = [0, -1, 0];
+      ieSign[S] = Math.sign(dot(cross(a, lat), sole)) || 1;
+    }
+    function footFeelTorques(dt) {
+      tauFeel.fill(0);
+      for (const S of ["L", "R"]) {
+        const li = ieLink[S], f = R.feel.feet[S], ft = foot[S], st = ft.feelRoll || (ft.feelRoll = { tau: 0 });
+        if (li == null) continue;
+        const e = f.felt;
+        if (e.N > FEEL.feelOnN && f.on === "ground") {
+          // (the middle of the tripod across the foot, at the pressure's place along it)
+          const heel = dot(ft.heel, ft.forward), ball = dot(ft.ball, ft.forward), u = clamp((e.cop[1] - heel) / (ball - heel), 0, 1);
+          const mid = (1 - u) * dot(ft.heel, ft.med) + u * dot(ft.ball, ft.med), err = e.cop[0] - mid; // + = towards her midline
+          // (pressure too far out: roll the sole out - evert - to bring the inner side down)
+          st.tau = clamp(st.tau + (dt * e.N * err) / FEEL.feelRollS, -FEEL.feelRollMaxNm, FEEL.feelRollMaxNm);
+        } else st.tau *= Math.exp(-dt / 0.1);
+        tauFeel[li] = ieSign[S] * st.tau;
+      }
+    }
     R.forces = function (bk, ground, dt) {
       const b = body;
       R.lastGround = ground || null;
@@ -1980,6 +2325,9 @@
       b.clearForces();
       b.applyGravity();
       const reactions = contacts(bk, ground);
+      plantarFeel(dt);
+      footToes();
+      footFeelTorques(dt);
       // (quiet hands on the bars is riding: off the bike, what her hands do to the bars is what she
       // means them to do)
       if (!PL.fallen) steerNeutral(bk, dt);
@@ -1999,6 +2347,7 @@
       const cmds = {};
       for (const d of ch.dofs) cmds[d.id] = 0;
       for (let i = 0; i < NH; i++) cmds[H[i].id] = body.q[H[i].link] / DEG;
+      for (const S of ["L", "R"]) if (foot[S].toes) cmds[foot[S].toes.id] = foot[S].toes.q / DEG;
       return { commands: ch.clampToRange(cmds), placement: { R: body.R.slice(), t: sub(body.p, B[TI.Hip]) } };
     };
     R.totals = () => body.totals();

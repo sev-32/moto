@@ -49,11 +49,12 @@
       restMps: 0.25, restS: 0.6, dazeS: 0.8, dazePerKN: 0.6, dazeMaxS: 4, reachBikeM: 2.0, // come to rest, a daze growing with the impact on head / trunk (s per kN), then up; F acts within this of the bike's seat (she walks there herself)
       reactS: 0.15, protectMps: 0.5, protectMaxS: 4, protectTone: 0.35, // protective reactions: after her reaction time, while moving, at this share of her gains
       fallZ: 0.55, fallTiltDeg: 55, // on her feet: pelvis this low or trunk this tilted - she is down
-      goToMps: 0.8, goToTurnRate: 1.5, gripCloseM: 0.06, scriptMaxN: 300, scriptMaxNm: 150, barsRate: 1.2, barsGain: 400, barsMaxNm: 60, regripS: 3, liftMidDeg: 35, liftK: 8000, liftC: 1500, liftMaxNm: 1200, swingKneeTone: 0.35, swingAnkleTone: 0.15, scriptAnkleTone: 0.35, gripWristTone: 0.3, holdLeanDeg: -2, holdPushK: 1.2, holdPushC: 0.25, holdPushMaxM: 0.08, holdK: 15000, holdC: 2500, holdAssistMaxNm: 450, // walking herself to a spot (speed, turning standing); a hand this near its grip closes on it; the getting-on / off assist (declared); her hands turning the bars straight (rad/s, N m per rad/s of rate error per s, N m); after getting on, a hand closes on its grip once there (s); lifting the bike: the roll it is held at while she steps in (deg), the declared lift assist (N m/rad, N m s/rad, N m); tone (share of the servo's gains) of a swung leg's knee and ankle, of an ankle on the ground in a motion at the bike, and of a wrist whose hand holds a grip; holding the bike up while getting on / off: the lean she keeps it at (deg, - = onto her side, its left), her hand's push into the bar (m per rad of lean error, m per rad/s, at most m), the declared residual (N m/rad, N m s/rad, at most N m)
+      goToMps: 0.8, goToTurnRate: 1.5, scriptMaxN: 300, scriptMaxNm: 150, barsRate: 1.2, barsGain: 400, barsMaxNm: 60, regripS: 3, liftMidDeg: 35, liftK: 8000, liftC: 1500, liftMaxNm: 1200, swingKneeTone: 0.35, swingAnkleTone: 0.15, scriptAnkleTone: 0.35, gripWristTone: 0.3, holdLeanDeg: -2, holdPushK: 1.2, holdPushC: 0.25, holdPushMaxM: 0.08, holdK: 15000, holdC: 2500, holdAssistMaxNm: 450, // walking herself to a spot (speed, turning standing) (an open hand closes on its grip where it can - 46: R.canCloseGrip); the getting-on / off assist (declared); her hands turning the bars straight (rad/s, N m per rad/s of rate error per s, N m); after getting on, a hand closes on its grip once there (s); lifting the bike: the roll it is held at while she steps in (deg), the declared lift assist (N m/rad, N m s/rad, N m); tone (share of the servo's gains) of a swung leg's knee and ankle, of an ankle on the ground in a motion at the bike, and of a wrist whose hand holds a grip; holding the bike up while getting on / off: the lean she keeps it at (deg, - = onto her side, its left), her hand's push into the bar (m per rad of lean error, m per rad/s, at most m), the declared residual (N m/rad, N m s/rad, at most N m)
       all4H: 0.5, squatH: 0.55, tuckPitchDeg: 30, tuckFwdM: 0.06, riseS: 1.2, getUpTolM: 0.08, // pelvis on hands and knees; the squat (hands down) over the feet: height, trunk pitch above horizontal, ahead of the feet; rising // pelvis over the ground on hands and knees / half-kneeling; a phase's pose reached within
       getUpK: 900, getUpC: 110, getUpMaxNm: 200, getUpKp: 2500, getUpCp: 400, getUpMaxN: 150, // get-up assist (declared): torque and force on the pelvis towards the phase's pose
       // the load path at the bike (on / off): her balance through her contacts (centre of mass 1/s^2, 1/s, at most m/s^2; pelvis orientation kg m^2 x 1/s^2, 1/s); planned every lpEveryS; her lean into what she pushes (1/s, at most m) with lpOuterShare of the pressure towards the outer foot; her own hold on the bike's lean (N m/rad, N m s/rad)
       standDeg: -10, scriptIkHz: 135, clearM: 0.015, swingClearM: 0.03, trunkClearM: 0.012, // motions at the bike: posture solved at this rate; limbs / trunk kept this clear of the bike (m)
+      yieldExcessN: 200, yieldRate: 0.1, yieldMaxM: 0.03, yieldKneeDeg: 6, // a planted foot pushing this much more than meant (N), its leg locked straight (knee under yieldKneeDeg), gives: its target up at this rate (m/s), at most this far (m)
       braceStartDeg: 3, braceSpanDeg: 4, braceHipM: 0.14, letGoDeg: 20, stepAwayS: 1.2, stepNearBikeM: 0.3, scriptDownM: 0.25, scriptDownS: 0.3, liftLostM: 0.3, liftLostS: 0.5, // holding the bike up, it tipping towards her past braceStartDeg (+ braceSpanDeg to full) of the lean she keeps it at: her hip into it, her pelvis up to braceHipM further over (m); past letGoDeg she lets it go and steps away from it for stepAwayS; walking, a swinging foot this near the bike keeps its leg clear of it (m); a motion is over when her pelvis is this far under its planned height this long (m, s), a lift when a hand is this far from its point of the bike this long
       loadPath: true, lpK: 25, lpC: 10, lpAmax: 2.5, lpKz: 36, lpCz: 12, lpAzMax: 3, lpI: 8, lpKr: 36, lpCr: 12, lpEveryS: 1 / 135, lpLeanRate: 3, lpLeanMaxM: 0.2, lpForeMaxM: 0.15, lpForeDeadM: 0.05, lpOuterShare: 0.7, holdHerK: 3000, holdHerC: 400,
     };
@@ -348,7 +349,7 @@
         const tasks = [
           { type: "pos", link: foot[S].link, local: foot[S].ball, target: t.p, w: 100 },
           { type: "dir", link: foot[S].link, local: foot[S].forward, target: t.fwd, w: 1 },
-          { type: "dir", link: foot[S].link, local: [0, 1, 0], target: [0, 0, 1], w: 2 },
+          { type: "dir", link: foot[S].link, local: foot[S].up, target: R.groundUnder(S), w: 2 },
         ];
         // (a foot swinging near the bike - walking round it lying on its side, stepping out from
         // beside it - carries its leg clear of it: its knee and shin over, not into, its edge)
@@ -636,7 +637,7 @@
         const tasks = [];
         if (T.knees?.[S]) tasks.push({ type: "pos", link: R.model.linkOf[S + "_Calf"], local: [0, 0, 0], target: T.knees[S], w: 60 });
         if (T.feet?.[S]) tasks.push({ type: "pos", link: foot[S].link, local: foot[S].ball, target: T.feet[S], w: 60 });
-        if (T.feet?.[S] && !T.knees?.[S]) tasks.push({ type: "dir", link: foot[S].link, local: [0, 1, 0], target: [0, 0, 1], w: 2 * (T.flatFeet ?? 1) }, { type: "dir", link: foot[S].link, local: foot[S].forward, target: GU.long, w: 1 });
+        if (T.feet?.[S] && !T.knees?.[S]) tasks.push({ type: "dir", link: foot[S].link, local: foot[S].up, target: R.groundUnder(S), w: 2 * (T.flatFeet ?? 1) }, { type: "dir", link: foot[S].link, local: foot[S].forward, target: GU.long, w: 1 });
         if (tasks.length) solveLimb(legSet(S), tasks);
         else for (const i of legSet(S)) { const li = H[i].link; R.qT[li] = (H[i].id.includes("Knee.flex") ? 40 : H[i].id.includes("Hip.flex") ? 30 : 0) * DEG; }
         if (T.hands?.[S]) solveLimb(armSet(S), [{ type: "pos", link: hand[S].link, local: hand[S].p, target: T.hands[S], w: 60 }]);
@@ -733,7 +734,7 @@
       const up = mv(b.Rw[R.model.linkOf.Spine02], [0, 1, 0]);
       const from = { pelvis: toB(F, b.p), R: mm(mt(F.Ry), b.R), feet: {}, hands: {}, chest: Math.atan2(len(flat(up)), up[2]) / DEG, yaw: angWrap(headingOfBody() - F.yaw) / DEG };
       for (const S of ["L", "R"]) { from.feet[S] = toB(F, ballW(S)); from.hands[S] = toB(F, b.toWorld(hand[S].link, hand[S].p)); }
-      Object.assign(SC, { name, keys, i: 0, t: 0, onDone, onFail, from, done: false, failed: null, downS: 0, lostS: 0, prev: from, handFix: { L: [0, 0, 0], R: [0, 0, 0] }, footFix: { L: [0, 0, 0], R: [0, 0, 0] } });
+      Object.assign(SC, { name, keys, i: 0, t: 0, onDone, onFail, from, done: false, failed: null, downS: 0, lostS: 0, prev: from, handFix: { L: [0, 0, 0], R: [0, 0, 0] }, footFix: { L: [0, 0, 0], R: [0, 0, 0] }, yield: { L: 0, R: 0 } });
       Object.assign(G.loadPathState, { acc: 1, cT: null, vT: [0, 0, 0], lean: [0, 0], p: null });
       R.loadPath.forces = []; R.loadPath.key = "";
       if (G.effort.run) G.effort.last = G.effort.run;
@@ -756,7 +757,7 @@
       for (const S of ["L", "R"]) {
         const gr = R.grips[S];
         gr.reach = !gr.held && G.regripS > 0;
-        if (!gr.held && len(sub(b.toWorld(hand[S].link, hand[S].p), R.gripWorld(bk, S).c)) < P.gripCloseM) { R.closeGrip(bk, S); gr.reach = false; }
+        if (!gr.held && R.canCloseGrip(bk, S)) { R.closeGrip(bk, S); gr.reach = false; }
       }
     }
     // (riding: the planner of 46, then that)
@@ -841,11 +842,22 @@
         // (a foot in the air, like a reaching hand, is corrected for where it actually is)
         const fc = SC.footFix[S];
         if (!onGround && T.fix?.[S]) { const e = sub(T.feet[S], ballW(S)); for (let k = 0; k < 3; k++) fc[k] = clamp(fc[k] + e[k] * 4 * ikDt, -0.08, 0.08); } else fc.fill(0);
+        // (a foot she stands on with her leg at the end of its reach - the knee locked straight, a
+        // strut - that feels itself pushing far harder than the motion means it to gives: its target
+        // eases up until the push is what was meant; back down as it eases. A bent leg pushing hard,
+        // or lifting the bike, means it.)
+        const yl = SC.yield || (SC.yield = { L: 0, R: 0 });
+        const strut = !G.lift.active && b.q[lk((S === "L" ? "left" : "right") + "Knee.flexionExtension")] < P.yieldKneeDeg * DEG;
+        if (onGround && (strut || yl[S] > 0)) {
+          const meant = (T.load * m * g) / Math.max(1, T.stance.length), felt = R.feel.feet[S].felt.N;
+          yl[S] = strut && felt > meant + P.yieldExcessN ? Math.min(P.yieldMaxM, yl[S] + P.yieldRate * ikDt) : Math.max(0, yl[S] - 0.5 * P.yieldRate * ikDt);
+          if (yl[S] > 0) fc[2] += yl[S];
+        } else yl[S] = 0;
         // (a foot planted on the ground keeps pointing the way it points - the ground holds it; the
         // leg is not twisted to re-aim it)
         const fdir = onGround && footLoad(S) > 20 ? flat(mv(b.Rw[foot[S].link], foot[S].forward)) : null;
         const tasks = [{ type: "pos", link: foot[S].link, local: foot[S].ball, target: add(T.feet[S], fc), w: 100 }, { type: "dir", link: foot[S].link, local: foot[S].forward, target: fdir && len(fdir) > 0.3 ? unit(fdir) : T.fwd, w: 1 }];
-        if (flatW > 0.05) tasks.push({ type: "dir", link: foot[S].link, local: [0, 1, 0], target: [0, 0, 1], w: flatW });
+        if (flatW > 0.05) tasks.push({ type: "dir", link: foot[S].link, local: foot[S].up, target: R.groundUnder(S), w: flatW });
         // (a knee drawn towards a pole point: over the bike, not under its seat)
         if (T.knees[S]) tasks.push({ type: "pos", link: R.model.linkOf[S + "_Calf"], local: [0, 0, 0], target: T.knees[S], w: T.kneeW });
         const kl = I.kneeLink[S];
@@ -901,7 +913,7 @@
           for (const i of armDofs[S]) { const li = H[i].link; R.qT[li] = ikb.q[li]; R.qdT[li] = 0; }
         }
         // (a hand at its grip closes on it)
-        if (tgt && T.grip[S] && !gr.held && len(sub(b.toWorld(hand[S].link, hand[S].p), R.gripWorld(bk, S).c)) < P.gripCloseM) R.closeGrip(bk, S);
+        if (tgt && T.grip[S] && !gr.held && R.canCloseGrip(bk, S)) R.closeGrip(bk, S);
         if (tgt) continue;
         {
           // (a free hand hangs)
