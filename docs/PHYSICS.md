@@ -74,7 +74,29 @@ canonical skin path (nothing writes bones or skin).
   sustained turning acceleration), so the bike rocks under a floating upper body; hang-off, tuck,
   sit-up, fore/aft and stand intents; the trunk leans until the elbows keep some bend (reach
   loop); damped-least-squares IK with clearance against the envelope. Per-step controllers keep
-  their targets in the bike frame.
+  their targets in the bike frame. The felt vertical and the feed-forward's apparent gravity are
+  low-pass filtered in the frame of her heading (0.6 s / 0.25 s): filtered in the world frame, a
+  steady turn's acceleration - which turns with her - lagged her heading and read as a push along
+  the bike (0.37 g of false drive at 1 g and 0.65 rad/s of yaw, measured on the stub bike: it slid
+  her back on the seat and lifted her feet off the pegs when she hung off).
+* **Hanging off, and what carries it** (Node, the stub bike in a steady turn at 15 m/s, leaned
+  where bike and rider together balance - her centre of mass off its plane stands it up 2.6-4.6°;
+  joint effort = the servos' active torque as a share of capacity, mean over 1 s, telemetry
+  `riderBio.effort` while riding): seated, riding straight: hips 19-20 %, knees 2-8 %, ankles
+  9-13 %, spine 31 %, arms 16-18 %. Fully hung off to the inside riding straight - no G to carry
+  it - her outside hip 75 %, knee 73 %, ankle 56 %, spine 66 %; the same in a 1 g turn: 43 / 51 /
+  32 / 52 %, at 1.2 g 36 / 39 / 17 / 38 %, and she is further off the seat (0.09 m straight, 0.14 m
+  at 1 g, 0.17 m at 1.2 g): the turn's load carries the pose. Not held yet: she goes past the
+  pelvis target (0.09 m across) and sinks down the seat's inside edge (5 cm at 1 g, 11 cm at
+  1.2 g, 17 cm at 0.6 g), her outside knee comes off the tank (nothing hooks it there), and her
+  outside arm's clavicle - a declared 40 N m, the arm chain's root - is at its capacity
+  throughout. Deeper targets (the pelvis 0.15 m across, the inside knee 0.2 m out) and a pull on
+  the inside elbow down and out made her slide off the seat: the posture stays at the values
+  above until something holds her at the seat's edge. Tried and left off (CANDIDATE,
+  `PL.rideLoadPath`): the whole-body load path while riding (the seat, pegs and grips loaded to
+  carry her felt weight with the least joint effort) - in the same turns it left the outside leg
+  and arms working as hard (knee 62-64 %, arms 75-100 %) and its contacts squeezing her (seat and
+  pegs 1.6 × her felt weight).
 * **Lower body** (virtual-model control, nothing moves the pelvis directly): the hips hold the
   pelvis orientation against the thighs; knee flexion and ankle relax when seated (the legs do not
   prop her off the seat); knee squeeze (adduction), stronger braced and as a clamp reflex when the
@@ -285,10 +307,13 @@ reported, not hidden.
   clear. A leg caught on its way over goes back onto its peg and she sits again.
 * **Lifting it off its side**: she walks round to its upper side and faces it, squats and holds its
   tank's and seat's top edges (on its side away from the ground), rises as it comes up to 35°,
-  steps in twice, pushes it up - past upright if it lay on its right - to lean on its side stand
-  (on its left, at −10°), lets go and stands. The bike is raised by a declared lift assist - a
-  force at the points she holds, square to the bike and its tyre line, of the size that turns it
-  about that line towards the roll she asks for (≤ 1200 N m) - not by her hands' own forces. Off
+  steps in twice, pushes it upright and over to lean on its side stand (on its left, at −10°) -
+  lying on its right it goes over away from her: she lets go as it passes upright and stands back
+  into balance (leaning on it, she followed it down); from its left it comes towards her and she
+  eases it onto the stand - and stands. The bike is raised by a declared lift assist - a
+  roll moment on it about its heading towards the roll she asks for (≤ 1200 N m) - not by her
+  hands' own forces (as a force square to the bike at her hands it carried much of the bike's
+  weight off its tyres and pushed it sideways: part way up it slid out of her hands). Off
   the bike its rear brake is held, standing in for a bike left in gear with its engine stopped:
   after a crash the rear wheel kept the spin it had (70 rad/s measured), and when she lifted the
   bike onto its tyres it drove it 1.4 m out of her hands.
@@ -346,11 +371,14 @@ reported, not hidden.
   directions: 3.3-3.7 s from rest to the squat, the get-up assist averaging 140 N and 150-165 N m.
   Before the hip-driven leg-over (the whole leg solved to a foot target) the swung ankle sat in its
   dorsiflexion end stop 97-100 % of the time at up to its full capacity.
-* **Browser** (the 916's chassis, headless; `node tests/browser/at-the-bike.mjs`, three runs):
-  stopped and riding, F: the stand down, off and standing 7.8-8.3 s later; walked away and back, F:
-  walked round and seated 12.9-14.4 s later, riding with both grips and her left foot down, and
-  riding off - the residual 87-102 N m mean, 378-404 N m at most. The stand holds the parked bike
-  at −12 … −14°, not −10° (below).
+* **Browser** (the 916's chassis, headless; `node tests/browser/at-the-bike.mjs`): stopped and
+  riding, F: the stand down, off and standing 7.8-8.3 s later; walked away and back, F: walked
+  round and seated 12.9-14.4 s later, riding with both grips and her left foot down, and riding
+  off - the residual 87-104 N m mean, 378-404 N m at most (four runs). After a low-side crash at
+  12 m/s: up, to the bike, F: round to its upper side and the bike lifted onto its stand 16.2 s
+  later (the lift assist 470 N m mean, 1000 N m at most), F: seated 19.7 s later and riding off
+  (one run through; the runs before it found the rear wheel's spin, the hand points and the lift's
+  push in turn). The stand holds the parked bike at −12 … −14°, not −10° (below).
 * **Not yet / known**: running is a fast walk (no flight phase) - told 3 m/s she falls; the
   swinging foot lands 5-8 cm from its aim. Holding the bike up, the declared residual does about
   three times what her own contacts do (standing it up off its stand, four times), and her left

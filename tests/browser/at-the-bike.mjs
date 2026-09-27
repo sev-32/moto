@@ -44,16 +44,23 @@ async function scenario(name, session) {
       };
       const roll = () => (v5bodyAngles(f.q).rollRad * 180) / Math.PI;
       const mode = () => (P.fallen ? P.mode + (P.mode === "script" ? ":" + G.script.name : "") + (G.goal ? ":goto" : "") : "ride");
-      const note = (what) => ev.push(`t ${t.toFixed(2)} ${what.padEnd(14)} ${mode().padEnd(16)} bike roll ${roll().toFixed(1)} v ${Math.hypot(f.v[0], f.v[1]).toFixed(2)} pelvis z ${R.body.p[2].toFixed(2)}${G.script.failed ? " failed " + JSON.stringify(G.script.failed) : ""}${G.error ? " error " + G.error : ""}`);
+      const hands = () => { const T = G.scriptT; if (P.mode !== "script" || !T) return ""; return " hands " + ["L", "R"].map((S) => (T.hands?.[S] ? R.helpers.len(R.helpers.sub(R.body.toWorld(R.hand[S].link, R.hand[S].p), T.hands[S])).toFixed(2) : "-")).join("/") + " pelvis off " + R.helpers.len(R.helpers.sub(T.pelvis.p, R.body.p)).toFixed(2); };
+      const note = (what) => ev.push(`t ${t.toFixed(2)} ${what.padEnd(14)} ${mode().padEnd(16)} bike roll ${roll().toFixed(1)} v ${Math.hypot(f.v[0], f.v[1]).toFixed(2)} pelvis z ${R.body.p[2].toFixed(2)}${hands()}${G.script.failed ? " failed " + JSON.stringify(G.script.failed) : ""}${G.error ? " error " + G.error : ""}`);
       const press = () => { G.ui.interact = true; frame(1); };
       // (DETAIL: a line every quarter second while waiting)
       const until = (cond, maxS, fn) => { const t0 = t; let k = 0; while (!cond() && t - t0 < maxS) { frame(1, fn); if (DETAIL && ++k % 15 === 0) note(".." + (P.mode === "script" ? G.script.i : "") + (PL_stand() ? " stand" : "")); } return cond(); };
       const PL_stand = () => !!P.sideStand;
       // (as a player walks her to it: towards its seat until F would do something - the prompt)
+      // (towards its seat until F would act - the prompt - and a little closer, as a player does
+      // who sees it: at the prompt's edge, settling on her feet she can drift back out of reach)
+      const seatDist = () => { const p = R.internal.bikeToWorld(B.bikeAdapter(), [0, -0.3, 0]); return Math.hypot(p[0] - G.com[0], p[1] - G.com[1]); };
       const approach = (want, maxS) => {
-        const ok = until(() => G.action(B.bikeAdapter()) === want, maxS, () => { const bk = B.bikeAdapter(), p = R.internal.bikeToWorld(bk, [0, -0.3, 0]), d = [p[0] - R.body.p[0], p[1] - R.body.p[1]], n = Math.hypot(d[0], d[1]); G.setIntent([d[0] / n, d[1] / n]); });
-        frame(30, () => G.setIntent([0, 0]));
-        return ok;
+        const t0 = t;
+        do {
+          until(() => G.action(B.bikeAdapter()) === want && seatDist() < G.P.reachBikeM - 0.4, maxS - (t - t0), () => { const bk = B.bikeAdapter(), p = R.internal.bikeToWorld(bk, [0, -0.3, 0]), d = [p[0] - R.body.p[0], p[1] - R.body.p[1]], n = Math.hypot(d[0], d[1]); G.setIntent([d[0] / n, d[1] / n]); });
+          frame(20, () => G.setIntent([0, 0]));
+        } while (G.action(B.bikeAdapter()) !== want && t - t0 < maxS);
+        return G.action(B.bikeAdapter()) === want;
       };
       const ride = () => { o.riding = true; frame(90, () => { const c = cmd(); if (c) { c.clutch = 1; c.throttle = 0.2; c.frontBrakeBar = 0; c.gear = 1; } }); };
       if (name === "off-on") {

@@ -1287,8 +1287,12 @@
         { T: 0.45, feet: { [Rh]: M([-0.92, -0.26, 0]) }, via: { [Rh]: M([-1.05, -0.26, 0.08]) }, stance: [Fh], yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.1 },
         { T: 0.35, over: Rh, pelvisZ: 0.74, yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.06, waitS: 0.6 },
         { T: 0.45, feet: { [Fh]: M([-0.9, -0.04, 0]) }, via: { [Fh]: M([-1.03, -0.04, 0.08]) }, stance: [Rh], yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.1 },
-        // (up, and over to lean on its side stand - on its left: past upright if it lay on its right)
-        { T: 0.9, pelvis: M([-0.68, -0.15, 0.85]), yawDeg, pitchDeg: 20, chestPitchDeg: 25, hands, liftRoll: P.standDeg + 2 },
+        // (up; then over to lean on its side stand - on its left. Lying on its right, it goes over
+        // away from her: she lets go as it passes upright and stands back into balance - leaning on
+        // it she would follow it down; from its left it comes towards her and she eases it onto the
+        // stand with her hands)
+        { T: 0.9, pelvis: M([-0.68, -0.15, 0.85]), yawDeg, pitchDeg: 20, chestPitchDeg: 25, hands, liftRoll: 0 },
+        { T: 0.6, pelvis: M([-0.76, -0.15, 0.86]), yawDeg, pitchDeg: 10, chestPitchDeg: 12, hands: sd < 0 ? hands : { L: null, R: null }, liftRoll: P.standDeg + 2 },
         { T: 0.6, pelvis: M([-0.8, -0.15, 0.86]), yawDeg, pitchDeg: 10, chestPitchDeg: 10, hands: sd < 0 ? hands : { L: null, R: null }, onStart: () => { G.lift.active = false; onStand?.(); } },
         { T: 0.5, pelvis: M([-0.88, -0.15, 0.885]), yawDeg, pitchDeg: 0, chestPitchDeg: 0, hands: { L: null, R: null } },
       ], bk, () => { G.lift.active = false; G.enterFoot(psi); }, () => { G.lift.active = false; onFail?.(); }, F), () => { onFail?.(); G.enterFoot(); }, 0.12, 25, [...around(F, G.com, M([-1.65, -0.15, 0]), liftBox(sd)), A], 0);
@@ -1559,9 +1563,8 @@
       const tl = tyreLine(free);
       G.startLift(BIO.bikeAdapter(), () => { PL.sideStand = true; }, null, null, tl ? hp.scl(hp.add(tl[0], tl[1]), 0.5) : null);
     }
-    // the declared lift assist: a force at the points she holds, square to the bike and its tyre
-    // line, of the size that turns it about that line with the roll moment asked for (towards the
-    // roll she asks for, capped at liftMaxNm) - her hands' push, supplied, not her strength
+    // the declared lift assist: a roll moment on the bike about its heading towards the roll she
+    // asks for, capped at liftMaxNm - her lift, supplied, not her strength
     const CH = CORE.chassis;
     if (CH?.wrenches && typeof v5bodyAngles === "function") {
       CH.wrenches.push(riderHoldWrench);
@@ -1571,15 +1574,9 @@
         const fw = v5qrot(F.q, V5_Y), hh = v5norm([fw[0], fw[1], 0]);
         const roll = v5bodyAngles(F.q).rollRad, rollRate = v5dot(v5qrot(F.q, F.w), hh);
         const tau = clamp(-(LP.liftK * (roll - Lf.target) + LP.liftC * rollRate), -LP.liftMaxNm, LP.liftMaxNm);
-        const tl = tyreLine(F), pts = (Lf.points || []).map((v) => v5add(F.p, v5qrot(F.q, v)));
-        if (tl && pts.length) {
-          const x = v5mul(v5add(pts[0], pts[1] || pts[0]), pts.length > 1 ? 0.5 : 1), d = v5norm(v5sub(tl[1], tl[0]));
-          let r = v5sub(x, tl[0]);
-          r = v5sub(r, v5mul(d, v5dot(r, d)));
-          const r2 = Math.max(0.05, v5dot(r, r)), force = v5mul(v5cross(v5mul(hh, tau), r), 1 / r2);
-          CH.addBodyForce(F, Q, force, x);
-          Lf.N = Math.hypot(force[0], force[1], force[2]);
-        } else CH.addBodyMoment(F, Q, v5mul(hh, tau));
+        // (a roll moment on the bike, not a force: a force square to it at her hands carried much of
+        // its weight off its tyres and pushed it sideways - part way up it slid out of her hands)
+        CH.addBodyMoment(F, Q, v5mul(hh, tau));
         const dts = F.S?.dt || 1 / 540, st = Lf.stats;
         Lf.Nm = tau; st.NmSum += Math.abs(tau) * dts; st.n += dts; st.maxNm = Math.max(st.maxNm, Math.abs(tau));
       });

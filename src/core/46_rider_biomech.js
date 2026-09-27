@@ -898,6 +898,12 @@
       // elbows stay nearly straight); reachLean is that correction
       elbowPrefDeg: 15, reachGain: 4, reachLean: 0, reachLeanMaxDeg: [-10, 12],
       gFilt: null, gFF: null, aFilt: [0, 0, 0], tauG: 0.6, tauFF: 0.25, lastV: null, targets: null, lookYaw: 0,
+      // riding on the whole-body load path (rideLoad): on or off; planned every rideLpEveryS; her
+      // pelvis's orientation (kg m^2, 1/s^2, 1/s) - declared priors. CANDIDATE, off: measured in a
+      // steady 1-1.2 g turn hung off, it left the outside leg and arms working as hard as without it
+      // (knee 62-64 %, arms 75-100 %) and the contacts squeezing her (seat and pegs 1.6 x her felt
+      // weight) - see docs/PHYSICS.md
+      rideLoadPath: false, rideLpEveryS: 1 / 135, rideLpI: 8, rideLpKr: 36, rideLpCr: 12, rideLP: false,
       pelvisK: [9000, 9000, 6000], pelvisC: [700, 700, 500], pelvisKr: [700, 500, 400], pelvisCr: [45, 35, 30], pegPressN: 40, vmcMaxN: 900, footK: 4000, footC: 60, footMaxN: 220, brace: 0, braceDir: 0, braceStiffen: 2,
       // hands on the clip-ons (declared priors): she leans on the bars with handSupport of her
       // upper body's felt weight (along the bike's up axis) and, braced, her arms take
@@ -917,6 +923,12 @@
       // full hang-off: pelvis this far across the seat (the 916's seat is narrow: about half a
       // buttock off it), the trunk and head lean in further (planTargets)
       hangOffsetM: 0.09,
+      // hung off (full hang): the pelvis rolled and turned towards the inside, the chest rolled
+      // further in and lower, the inside knee out and down (deg, deg, deg, deg, m, m) - declared.
+      // (Deeper - the pelvis 0.15 m across, the knee 0.2 m out - she slid off the seat's inside edge
+      // in a 1-1.2 g turn, as she did with a pull on her inside elbow down and out: nothing holds
+      // her at the seat's edge yet)
+      hangPelvisRollDeg: 12, hangPelvisYawDeg: 14, hangChestRollDeg: 15, hangTuckDeg: 0, hangKneeOutM: 0.12, hangKneeDownM: 0.06,
       // braced under braking: planned pelvis this much further forward / pitched forward
       braceForwardM: 0.02, braceForwardPitchDeg: 4,
       // feet down at a standstill / walking pace: below feetDownOnMps her feet leave the pegs for
@@ -1010,7 +1022,7 @@
       const bf = PL.brace * (PL.braceDir > 0 ? 1 : 0);
       const pel = R.pelvisPoseBike({
         x: hang * PL.hangOffsetM + fd * fsx * PL.footPelvisShiftM, y: PL.seatY + P.foreAft * 0.05 + stand * 0.06 + bf * PL.braceForwardM, z: PL.seatZ + stand * 0.19 - Math.abs(hang) * 0.012,
-        pelvisPitchDeg: PL.pelvisPitchDeg - stand * 14 + P.tuck * 4 + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hang * 12 + fd * fsx * PL.footPelvisRollDeg, pelvisYawDeg: -hang * 14,
+        pelvisPitchDeg: PL.pelvisPitchDeg - stand * 14 + P.tuck * 4 + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hang * PL.hangPelvisRollDeg + fd * fsx * PL.footPelvisRollDeg, pelvisYawDeg: -hang * PL.hangPelvisYawDeg,
       });
       // (feet down: sideways and fore/aft from the bike held upright, the height from the seat as it
       // is - she stays seated, pressing it, so the seat carries her push to the bike)
@@ -1021,8 +1033,8 @@
       // a standstill shakes the seat but the rider keeps her trunk on the true vertical
       const up = unit(scl(PL.gFilt, -1)), ub = mtv(Rb, up), rollFelt = Math.atan2(ub[0], ub[2]);
       const wb = mtv(Rb, WUP), rollWorld = Math.atan2(wb[0], wb[2]);
-      const lean = (PL.leanDeg + (P.tuck >= 0 ? P.tuck * 10 : P.tuck * 16) - stand * 22) * DEG + PL.reachLean;
-      const roll = rollFelt + hang * 15 * DEG;
+      const lean = (PL.leanDeg + (P.tuck >= 0 ? P.tuck * 10 : P.tuck * 16) - stand * 22 + Math.abs(hang) * PL.hangTuckDeg) * DEG + PL.reachLean;
+      const roll = rollFelt + hang * PL.hangChestRollDeg * DEG;
       T.chest = mm(Rb, mm(Rz(-hang * 10 * DEG), mm(Ry(roll), mm(Rx(-lean), M2B))));
       // head: closer to the true horizon than the trunk, eyes along the path
       const hroll = 0.55 * rollWorld + 0.45 * rollFelt + hang * 6 * DEG;
@@ -1034,12 +1046,12 @@
       T.feet = {};
       for (const [S, side, sx] of [["L", "left", -1], ["R", "right", 1]]) {
         const pg = SURF.pegs[side], mid = scl(add(pg.a, pg.b), 0.5), inside = sx * hang > 0;
-        const ky = -0.03 + stand * 0.02, kz = 0.02 - stand * 0.1 - (inside ? Math.abs(hang) * 0.06 : 0);
+        const ky = -0.03 + stand * 0.02, kz = 0.02 - stand * 0.1 - (inside ? Math.abs(hang) * PL.hangKneeDownM : 0);
         // the knee rests on the tank's flank: target = where the knee sphere meets the tank surface
         // (measured on the field); the grip itself is a force (pelvisVMC); the inside knee comes
         // off the tank when she hangs off
         let kx = kneeOnTank(sx, ky, kz) + sx * 0.005;
-        if (inside) kx += sx * Math.abs(hang) * 0.12;
+        if (inside) kx += sx * Math.abs(hang) * PL.hangKneeOutM;
         T.feet[S] = { p: W([mid[0], mid[1] - 0.005, mid[2] + pg.radiusM + 0.003]), forward: mv(Rb, unit([sx * 0.2, 1, -0.15])), knee: W([kx, ky, kz]) };
         if (fd > 0 && S !== PL.footSide) {
           // the other foot rests just above its peg (loaded, it would lever the bike over that side)
@@ -1364,7 +1376,8 @@
       for (const S of legs) {
         const pw = b.toWorld(foot[S].link, foot[S].ball);
         const share = pushers.includes(S) ? 1 / pushers.length : 0;
-        const Fpelvis = add(scl(Fw, share), scl(up, PL.pegPressN * (1 - fd))); // the pelvis gets this; the foot pushes -that (feet down: neither presses a peg)
+        // (riding on the load path, how hard each foot bears on its peg is planned there)
+        const Fpelvis = add(scl(Fw, share), scl(up, PL.rideLP ? 0 : PL.pegPressN * (1 - fd))); // the pelvis gets this; the foot pushes -that (feet down: neither presses a peg)
         for (const { li, j } of Jcol(foot[S].link, pw, S === "L" ? CH.legL : CH.legR)) R.tauVF[li] -= dot(j, Fpelvis);
       }
       R.telemetry.vmc = { F: Fw, legs: legs.join(""), knees: { ...kneeOut }, want, tanDone, sideDone, Fd, walkF };
@@ -1451,6 +1464,12 @@
       const vh = [bk.v[0], bk.v[1], 0], V = len(vh), aTurn = V > 0.5 ? scl(cross([0, 0, bk.w[2]], vh), 1) : [0, 0, 0];
       const gp = sub(body.gravity, aTurn);
       if (!PL.gFilt) { PL.gFilt = gp.slice(); PL.gFF = gw.slice(); }
+      // (both filtered in the frame of her heading: turning steadily, the sustained acceleration
+      // turns with her - filtered in the world frame it would lag her heading and read as a push
+      // along it: 0.37 g of false drive at 1 g and 0.65 rad/s of yaw)
+      const yaw = Math.atan2(-bk.R[1], bk.R[4]), dYaw = PL.lastYaw == null ? 0 : Math.atan2(Math.sin(yaw - PL.lastYaw), Math.cos(yaw - PL.lastYaw));
+      PL.lastYaw = yaw;
+      if (dYaw) { const c = Math.cos(dYaw), s = Math.sin(dYaw), rot = (v) => [c * v[0] - s * v[1], s * v[0] + c * v[1], v[2]]; PL.gFilt = rot(PL.gFilt); PL.gFF = rot(PL.gFF); }
       PL.gFilt = add(PL.gFilt, scl(sub(gp, PL.gFilt), Math.min(1, dt / PL.tauG)));
       PL.gFF = add(PL.gFF, scl(sub(gw, PL.gFF), Math.min(1, dt / PL.tauFF)));
       R.gApp = PL.gFF;
@@ -1590,6 +1609,7 @@
         solveTargets(T);
         reach(1 / PL.hz);
       }
+      PL.rideLP = rideLoadOn();
       pelvisVMC(bk);
       stanceLegRates(bk, dt);
     };
@@ -1685,6 +1705,8 @@
     // contact step's), a load her joints carry like her weight; leaning her hip into the bike is a
     // posture, and the force it makes is then counted.
     const passiveOn = (s) => (s.bike.on && s.bike.n && s.kind !== "palm") || (s.ground.on && s.kind !== "sole");
+    // (on the seat: the sitting band and the thighs, resting on it from above)
+    const seatSphere = (s) => s.bike.on && s.bike.n && s.bike.n[2] > 0.5 && (s.at === "sit" || /Thigh$/.test(s.seg)) && s.kind !== "palm";
     // o: { feet: ["L","R"] allowed to carry (default both), bike: her hands' contacts with the bike
     //      count, aDes: her centre of mass's acceleration wanted (world), LdotDes: rate of her angular
     //      momentum about it, bikeRow: { M, o, h } roll moment on the bike about the line through o
@@ -1704,6 +1726,11 @@
         for (const s of spheres) {
           if (s.kind === "palm" && s.bike.on && s.bike.n && !R.grips[s.seg[0]].held) C.push({ link: s.link, x: s.bike.x, dirs: pyramid(s.bike.n, s.bike.mu ?? PRIORS.mu.bike), kind: "palm", seg: s.seg, bike: true });
           if (s.peg.on && s.peg.n) C.push({ link: s.link, x: s.peg.x, dirs: pyramid(s.peg.n, s.peg.mu ?? PRIORS.mu.peg), kind: "peg", seg: s.seg, bike: true });
+          // (riding, her seat on the seat - what carries her - is hers to load, not a given)
+          // (moving over on it she takes her weight off it - the seat only bears up, and at most
+          // what she leaves on it: her legs and hands lift and push her across, its friction does
+          // not carry her there)
+          if (o.seat && seatSphere(s)) C.push({ link: s.link, x: s.bike.x, dirs: o.seat.moving ? [s.bike.n] : pyramid(s.bike.n, s.bike.mu ?? PRIORS.mu.bike), ub: o.seat.moving ? o.seat.maxN / Math.max(1, spheres.filter(seatSphere).length) : undefined, kind: "seat", seg: s.seg, bike: true });
         }
       }
       const com = comWorld(), W = riderMassKg * 9.81, aD = o.aDes || [0, 0, 0];
@@ -1713,7 +1740,7 @@
       let bikeM = br ? br.M : 0;
       const rest = [];
       for (const s of spheres) {
-        if (!passiveOn(s)) continue;
+        if (!passiveOn(s) || (o.seat && o.bike && seatSphere(s))) continue;
         const onBike = s.bike.on && s.bike.n && s.kind !== "palm";
         const F = onBike ? s.bike.F : s.ground.F, x = onBike ? s.bike.x : s.ground.x;
         if (!x) continue;
@@ -1749,7 +1776,7 @@
         spec.wJoint = w; spec.warm = res.beta;
         res = b.contactForcePlan(spec);
       }
-      LOAD.key = key; LOAD.warm = res.beta;
+      LOAD.key = key; LOAD.warm = res.beta; LOAD.seat = !!(o.seat && o.bike);
       LOAD.forces = [];
       const sum = { feet: { L: [0, 0, 0], R: [0, 0, 0] }, grips: { L: null, R: null }, bike: [0, 0, 0], bikeParts: {} };
       C.forEach((c, i) => {
@@ -1770,7 +1797,7 @@
       const b = body, save = b.gravity;
       b.clearForces(); b.gravity = g || save; b.applyGravity(); b.gravity = save;
       for (const f of LOAD.forces) b.applyForce(f.link, f.F, b.toWorld(f.link, f.local));
-      for (const s of spheres) if (passiveOn(s)) { const onBike = s.bike.on && s.bike.n && s.kind !== "palm", x = onBike ? s.bike.x : s.ground.x; if (x) b.applyForce(s.link, onBike ? s.bike.F : s.ground.F, x); }
+      for (const s of spheres) if (passiveOn(s) && !(LOAD.seat && seatSphere(s))) { const onBike = s.bike.on && s.bike.n && s.kind !== "palm", x = onBike ? s.bike.x : s.ground.x; if (x) b.applyForce(s.link, onBike ? s.bike.F : s.ground.F, x); }
       const tau = b.inverseDynamicsStatic(false);
       for (let i = 0; i < L.length; i++) R.tauFF[i] = tau[i];
       // (less what her tissues give at this posture: the servos add the rest)
@@ -1779,6 +1806,33 @@
     }
     R.loadPlan = loadPlan;
     R.loadFeedForward = loadFeedForward;
+    // ---- riding on the load path: seated and riding (feet on the pegs, nothing on the ground), her
+    // contacts - the pegs and her grips, what the seat and the tank take as it is - carry her felt
+    // weight (gravity and the bike's sustained acceleration: R.gApp) and hold her pelvis's
+    // orientation with the least joint effort; the joint torques that carry those forces are her
+    // feed-forward. Where she is on the seat stays the pelvis controller's (pelvisVMC: moving over,
+    // she lifts off the seat - here it bears at most what she leaves on it). Hung off the inside of
+    // the seat in a turn, the peg under her weight line takes it - not her hips and the outside leg
+    // holding her against it.
+    const RLP = { acc: 0 };
+    const rideLoadOn = () => PL.rideLoadPath && !PL.fallen && !((PL.targets?.feetDown || 0) > 0.02) && !(PL.dab > 0.05) && PL.posture.stand < 0.3 && !PL.walk;
+    function rideLoad(bk, dt) {
+      const b = body, T = PL.targets, gA = R.gApp || b.gravity;
+      if (!T) { feedForward(gA); return; }
+      RLP.acc += dt;
+      if (RLP.acc >= PL.rideLpEveryS || !LOAD.forces.length) {
+        RLP.acc = 0;
+        // (the support: her felt weight carried and its moment balanced, her pelvis turned to its
+        // orientation; where she is on the seat - moving over, fore and aft - is the pelvis
+        // controller's, through her legs)
+        const eR = logSO3(mm(T.pelvis.R, mt(b.R))), wRel = sub(mv(b.R, [b.vb[0], b.vb[1], b.vb[2]]), bk.w || [0, 0, 0]);
+        const Ld = [0, 1, 2].map((k) => PL.rideLpI * (PL.rideLpKr * eR[k] - PL.rideLpCr * wRel[k]));
+        const moving = (PL.shift || 0) > 0.05, Wf = riderMassKg * len(gA);
+        loadPlan({ feet: [], bike: true, seat: { moving, maxN: (1 - (PL.shift || 0) * PL.shiftLiftFrac) * Wf }, aDes: [0, 0, 0], LdotDes: Ld, gravity: gA });
+      }
+      loadFeedForward(gA);
+    }
+    R.rideLoad = { on: rideLoadOn, state: RLP };
 
     // ------------------------------------------------------------------ step
     // forces(bike, ground, dt): contact + servo forces at the current state; returns the reactions
@@ -1789,7 +1843,7 @@
       b.kinematics();
       if (R.planner) R.planner(R, bk, dt);
       // (off the bike the mode chooses: none - limp - or its own, computed in the planner)
-      if (!PL.fallen) feedForward(R.gApp || b.gravity);
+      if (!PL.fallen) { if (PL.rideLP) rideLoad(bk, dt); else feedForward(R.gApp || b.gravity); }
       else if (PL.ff !== "custom") R.tauFF.fill(0);
       b.clearForces();
       b.applyGravity();
