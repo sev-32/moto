@@ -1,5 +1,5 @@
 // Run the rider-in-the-loop maneuver library headless and print metrics (and traces).
-//   node tests/browser/maneuvers.mjs [build.html] [--only a,b] [--trace] [--json out.json] [--rider bio|legacy]
+//   node tests/browser/maneuvers.mjs [build.html] [--only a,b] [--trace] [--json out.json] [--rider bio|legacy] [--motors] [--plan json]
 import { openBuild, ROOT } from "./lib.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -39,12 +39,18 @@ function check(name, m) {
   return fails;
 }
 
-const { browser, page, logs } = await openBuild(file, { width: 480, height: 320 });
+// (--motors: the rider's servos as joint motors while riding, the pre-muscle rider, for comparison)
+const { browser, page, logs } = await openBuild(file + (args.includes("--motors") ? "?muscles=0" : ""), { width: 480, height: 320 });
 await page.waitForFunction(() => window.LUCID_CORE?.maneuvers && window.__LUCID_V1300_READY__, null, { timeout: 120000 }).catch(() => {});
 const rider = args.includes("--rider") ? args[args.indexOf("--rider") + 1] : null;
 if (rider) {
   const on = await page.evaluate((r) => window.LUCID_CORE.riderBio?.setActive(r === "bio") ?? null, rider);
   console.log(`rider: ${rider} (physical LUCID rider ${on ? "on" : "off"})`);
+}
+// (--plan '{"k": v}': planner values set on the rider before the runs - posture experiments)
+if (args.includes("--plan")) {
+  const plan = JSON.parse(args[args.indexOf("--plan") + 1]);
+  console.log("plan:", JSON.stringify(await page.evaluate((p) => { const R = window.LUCID_CORE.riderBio?.rider; if (!R) return null; Object.assign(R.plan, p); R.calibration = R.calibrateSeat(); return p; }, plan)));
 }
 const names = await page.evaluate(() => window.LUCID_CORE.maneuvers.names());
 const results = {};

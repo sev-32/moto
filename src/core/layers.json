@@ -42,6 +42,14 @@
       "description": "Articulated-body dynamics (Featherstone ABA, floating base + revolute hinges, stable-PD armature, RNEA) for the physical rider"
     },
     {
+      "id": "rider-muscles",
+      "file": "46_rider_muscles.js",
+      "inline": {
+        "/*@@MUSCLE_ASSET@@*/ null": "/assets/character/lucid_muscles_r1_5.json"
+      },
+      "description": "The rider's muscles: the R1.5 musculotendon proxies (84; the triceps as a declared candidate split into the three Holzbaur heads with an olecranon point: 88) on her skeleton - path lengths and virtual-work moment arms, MuJoCo's muscle force-length-velocity and activation dynamics, and the allocation of joint-torque intent to activations inside what one step can reach (parity with the package: tests/rider_muscles.test.mjs)"
+    },
+    {
       "id": "rider-biomech",
       "file": "46_rider_biomech.js",
       "inline": {

@@ -5,6 +5,9 @@ import path from "node:path";
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 await import(path.join(ROOT, "src/core/44_lucid_character.js"));
 await import(path.join(ROOT, "src/core/45_rider_multibody.js"));
+await import(path.join(ROOT, "src/core/46_rider_muscles.js"));
+// (the browser build inlines the muscle asset into the module; here it is read from the file)
+globalThis.LUCID_MUSCLES.asset = JSON.parse(fs.readFileSync(path.join(ROOT, "assets/character/lucid_muscles_r1_5.json"), "utf8"));
 await import(path.join(ROOT, "src/core/46_rider_biomech.js"));
 export const asset = JSON.parse(fs.readFileSync(path.join(ROOT, "assets/character/lucid_female_v4_2.json"), "utf8"));
 export const surfaces = JSON.parse(fs.readFileSync(path.join(ROOT, "assets/bike/ducati916_rider_surfaces.json"), "utf8"));

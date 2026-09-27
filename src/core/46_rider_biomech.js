@@ -10,16 +10,23 @@
 //     measured"), clavicles 0.05 kg each taken from the chest (as physbody.py)
 //   * collision: spheres fitted inside her own skin, per physical segment (segment points as
 //     physbody._segment_points: dominant Skin78 cluster, purity filter, proximal trims)
-//   * actuation: JOINT TORQUES (servo motors), torque-limited. This is a motor-driven body, not
-//     the R1.5 muscle-driven body. Lower-body limits = the R1.5 capacity ledger; trunk/neck
-//     gains = physbody STANCE; arm gains/limits and all contact parameters are declared
-//     engineering priors (see PRIORS), not measurements
+//   * actuation, riding: HER MUSCLES (46_rider_muscles.js, the R1.5 musculotendon proxies, the
+//     triceps as a declared candidate split). The servo law below is her intent - the torque each
+//     joint should have (PD on the IK targets, capped at a neural bandwidth for the inertia each
+//     hinge moves; trunk and head as orientation tasks; a reaching hand pulled to its grip; gravity /
+//     contact feed-forward; virtual-model forces) - and only muscle force (allocated to that intent
+//     inside what the activation dynamics can reach) and passive tissue act on the joints.
+//     Off the bike (48_rider_onfoot.js) the servos still act as JOINT MOTORS, torque-limited: that is
+//     a motor-driven body there, declared (R.muscles.onFoot off). Servo limits: lower body = the R1.5
+//     capacity ledger; trunk/neck gains = physbody STANCE; arm gains/limits and all contact
+//     parameters are declared engineering priors (see PRIORS), not measurements
 //   * passive tissue: the R1.5 passive priors (k, d, end-range exponential) on every hinge
 //   * contacts: soft-tissue spheres against the 916 envelope (signed distance field from the
 //     GLB), footpeg cylinders, a grip attachment per hand (bilateral, strength-limited), the
 //     ground; anchored Coulomb friction (sticks without creep, slides at mu N)
 //   * control: planner (posture intent, apparent vertical, reactions) -> damped least-squares IK
-//     on the Semantic51 chains -> stable-PD servos + gravity/inertial feed-forward (RNEA)
+//     on the Semantic51 chains -> the servo law (stable PD + gravity/inertial feed-forward, RNEA):
+//     riding, the intent her muscles are allocated to; off the bike, joint motors
 // Pure JS core (runs in the Node tests with a stub bike); the browser coupling to the V5 bike
 // is at the end of the file.
 (function (global) {
@@ -74,6 +81,31 @@
     pegK: 6e4, pegC: 380, gripK: 2.5e4, gripC: 150, gripRotK: 30, gripRotC: 0.6, gripTwistK: 12, gripStrengthN: 450, gripSettleS: 0.12,
     mu: { seat: 0.6, bike: 0.45, peg: 1.0, ground: 0.55, sole: 0.8 },
     clavicleMassKg: 0.05, // physbody.py CLAVICLE_MASS, taken from the chest
+    // muscle drive (46_rider_muscles.js): allocation of the intent torques to the 84 muscles -
+    // activation effort weight (per hinge the torque error counts in units of its capacity) and the
+    // projected Gauss-Seidel sweeps per step (warm-started); resting tone (lucid_bcr.neuro: 0.01)
+    muscleReg: 0.001, muscleSweeps: 12, muscleTone: 0.01,
+    // her intent's stiffness when her muscles drive: a joint's servo gains, but no faster than a
+    // neural bandwidth (rad/s, critically damped) for the inertia that joint actually moves (the
+    // articulated inertia about it). The servo gains were set for joint motors with implicit
+    // integration; about light segments they are rigid locks (ankle 190-520 rad/s, knee and shoulder
+    // axial rotation 100-270 rad/s at the seated pose) - a command no nervous system sends, which
+    // the muscles cannot follow (declared prior)
+    intentOmegaMax: 30, intentZeta: 1,
+    // (the hand's own joints - wrist, forearm twist - keep their servo gains up to intentOmegaHand:
+    // a light hand needs a relatively stiff command to be placed on a grip at all; explicit-stable
+    // at 540 Hz for its inertia, kd dt / D ~ 0.25)
+    intentOmegaHand: 80,
+    // riding on her muscles, her trunk and head are commanded as orientation tasks (as the R1.5
+    // whole-body muscle controller does, lucid_bcr.neuro: pelvis / thorax / head orientation, weak
+    // joint posture): a moment between pelvis and chest (N m/rad, N m s/rad) carried by every spine
+    // hinge, one between chest and head by every neck hinge. Per-joint servos on the spine ask its
+    // two segments to bend opposite ways (a zig-zag the long trunk muscles cannot make - the package
+    // R1.4 notes) and fight each other; the joint posture term keeps only taskPostScale of the servo
+    // stiffness (declared priors: chest ~ the old spine servos in series, 0.2 Hz below them)
+    chestTaskK: 260, chestTaskC: 40, headTaskK: 22, headTaskC: 1, taskPostScale: 0.15,
+    // a reaching hand's pull to its grip (N/m, N s/m, N): ~2 Hz for the arm's ~2 kg at the hand, damped
+    reachTaskK: 400, reachTaskC: 40, reachTaskMaxN: 120,
   };
   // physbody.py tables
   const PARTS = { Spine02: 10, Spine01: 6, Hip: 8, Head: 3, NeckTwist01: 2, Clavicle: 0, Upperarm: 4, Forearm: 3, Hand: 2, Thigh: 5, Calf: 4, Foot: 4 };
@@ -260,6 +292,9 @@
     const M = buildModel(ch);
     M.spec.limitFailsafe = 0.35; // rad past the hard range: only a numerical failsafe, the passive stops act first
     const body = MB.createArticulatedBody(M.spec), ikb = MB.createArticulatedBody(M.spec);
+    // her muscles (46_rider_muscles.js): the 84 R1.5 musculotendon units on this body
+    const MU = global.LUCID_MUSCLES, MUA = opts.muscleAsset || (MU && MU.asset);
+    const MUS = MU && MUA ? MU.createMuscles(MUA, M, body) : null;
     const SURF = createSurfaces(surfacesJson), L = M.links, H = M.hinges, NH = H.length, TI = M.TI, B = M.B;
     const hingeOfLink = new Int32Array(L.length).fill(-1);
     H.forEach((h, i) => (hingeOfLink[h.link] = i));
@@ -342,6 +377,12 @@
       model: M, body, ikb, spheres, hand, foot, surfaces: SURF, M2B, priors: PRIORS,
       qT: new Float64Array(L.length), qdT: new Float64Array(L.length), tauFF: new Float64Array(L.length), tauVF: new Float64Array(L.length),
       activation: 0.5, servo: true, time: 0,
+      // muscle drive: on, the servos are her intent (the torque each joint should have) and only her
+      // muscles act on the joints (+ passive tissue); off, the servos act as joint motors
+      // (riding: her muscles; off the bike - standing, walking, getting up, getting on and off, lifting
+      // the bike - still the servos as joint motors: those controllers are not yet converted, so
+      // onFoot is off. The drive in use is R.muscles.active, reported in telemetry)
+      muscles: { on: !!MUS && opts.muscles !== false, ride: true, onFoot: false, active: false, M: MUS, tauDes: new Float64Array(L.length), tauMus: new Float64Array(L.length), damp: new Float64Array(L.length), stats: null },
       grips: { L: mkGrip("L"), R: mkGrip("R") },
       last: { forces: [], bikeWrench: null },
       telemetry: {},
@@ -726,14 +767,58 @@
       passiveOut.k = p.k + (p.A / p.w) * (ea + eb);
       return passiveOut;
     }
-    function servoTorques(dt) {
-      const b = body, act = R.activation, gain = 0.45 + 0.55 * act;
+    // trunk and head orientation tasks (muscle drive, riding): joint torques of a moment between the
+    // chest and the pelvis (every spine hinge carries it) and between the head and the chest
+    const taskTau = new Float64Array(L.length), taskHinge = new Uint8Array(NH);
+    for (const i of [...CH.spine, ...CH.neck]) taskHinge[i] = 1;
+    function orientationTasks(gain, bk) {
+      taskTau.fill(0);
+      const T = PL.targets;
+      if (!T || PL.fallen || !PL.taskPrev) return false;
+      const b = body, age = PL.acc;
+      // a hand reaching for its grip (not yet closed on it): its palm pulled to the grip - a reach is
+      // one movement of the arm, not a set of joint angles (the joint targets, IK'd from where the
+      // trunk was, lag a trunk still settling)
+      if (bk) for (const S of ["L", "R"]) {
+        const gr = R.grips[S];
+        if (gr.held || !gr.reach) continue;
+        const pw = b.toWorld(hand[S].link, hand[S].p), vw = b.pointVelocity(hand[S].link, hand[S].p);
+        const tgt = R.gripWorld(bk, S).c, vt = bikePointVel(bk, pw);
+        let F = add(scl(sub(tgt, pw), PRIORS.reachTaskK * gain), scl(sub(vt, vw), PRIORS.reachTaskC * Math.sqrt(gain)));
+        const fl = len(F);
+        if (fl > PRIORS.reachTaskMaxN) F = scl(F, PRIORS.reachTaskMaxN / fl);
+        for (const { li, j } of Jcol(hand[S].link, pw, S === "L" ? CH.armL : CH.armR)) taskTau[li] += dot(j, F);
+      }
+      for (const [k, link, idx, K, C] of [["chest", M.linkOf.Spine02, CH.spine, PRIORS.chestTaskK, PRIORS.chestTaskC], ["head", M.linkOf.Head, CH.neck, PRIORS.headTaskK, PRIORS.headTaskC]]) {
+        const tp = T[k];
+        if (!tp) continue;
+        // (the target as it moves between plans, and how fast)
+        const wT = PL.taskW[k], tgt = mm(expRV(scl(wT, age)), tp), Rc = b.Rw[link];
+        const e = logSO3(mm(tgt, mt(Rc))), vc = b.v[link], w = mv(Rc, [vc[0], vc[1], vc[2]]);
+        const Mw = add(scl(e, K * gain), scl(sub(wT, w), C * Math.sqrt(gain)));
+        for (const i of idx) { const li = H[i].link, a = mv(b.Rw[li], L[li].axis); taskTau[li] += dot(a, Mw); }
+      }
+      return true;
+    }
+    function servoTorques(dt, bk) {
+      const b = body, act = R.activation, gain = 0.45 + 0.55 * act, RM = R.muscles;
+      const MD = RM.on && (PL.fallen ? RM.onFoot : RM.ride) ? RM : null;
+      // (taking over from the motors, her muscles start already holding what the motors held)
+      if (MD && !RM.active) RM.snap = true;
+      RM.active = !!MD;
+      const tasks = MD && R.servo ? orientationTasks(gain, bk) : false;
       for (let i = 0; i < NH; i++) {
         const h = H[i], li = h.link, q = b.q[li], qd = b.qd[li], P = passiveTau(h, q, qd);
-        let tau = P.tau, arm = 0;
+        let tau = P.tau, arm = 0, want = 0;
         if (R.servo && R.servoOn[i]) {
-          const kp = h.kp * gain * R.servoScale[i], kd = h.kd * Math.sqrt(gain) * R.servoScale[i];
-          let u = kp * (R.qT[li] - q - dt * qd) + kd * (R.qdT[li] - qd) + R.tauFF[li] + R.tauVF[li];
+          let kp = h.kp * gain * R.servoScale[i], kd = h.kd * Math.sqrt(gain) * R.servoScale[i];
+          if (MD) {
+            // (neural bandwidth: kp <= D w^2, kd <= 2 zeta D w, D the articulated inertia about the hinge)
+            const D = b.Dart[li], w = h.base === "Hand" ? PRIORS.intentOmegaHand : PRIORS.intentOmegaMax;
+            if (D > 0 && kp > D * w * w) { kp = D * w * w; kd = Math.min(kd, 2 * PRIORS.intentZeta * D * w); }
+            if (tasks && taskHinge[i]) kp *= PRIORS.taskPostScale;
+          }
+          let u = kp * (R.qT[li] - q - dt * qd) + kd * (R.qdT[li] - qd) + R.tauFF[li] + R.tauVF[li] + (tasks ? taskTau[li] : 0);
           // at its torque limit a servo keeps its damping (implicit): a saturated muscle still
           // resists being stretched quickly (force-velocity), and a light segment (a foot, a
           // hand) held at the limit against a stiff contact would otherwise ring step to step
@@ -741,11 +826,40 @@
           if (u > lim) { u = lim; arm = kd * dt; }
           else if (u < -lim) { u = -lim; arm = kd * dt; }
           else arm = kd * dt + kp * dt * dt;
-          tau += u;
+          if (MD) { want = u; arm = 0; } // intent only: the muscles make it (below)
+          else tau += u;
         }
+        if (MD) MD.tauDes[li] = want;
         b.tau[li] = tau;
         b.armature[li] = arm + h.passive.d * dt + P.k * dt * dt;
       }
+      if (MD) muscleDrive(MD, dt);
+    }
+    // ---- muscle drive: the activations whose torques come closest to the intent, inside what one
+    // step of MuJoCo's activation dynamics can reach (lucid_bcr.neuro: reachable box, excitation
+    // planned exactly, actearly); limp (no servo), resting tone. The joints get the muscles' torque;
+    // their force-velocity damping enters the step implicitly (MuJoCo implicitfast does the same).
+    function muscleDrive(MD, dt) {
+      const b = body, MU_ = MD.M, tone = PRIORS.muscleTone;
+      MU_.geometry(); MU_.muscleState();
+      if (MD.snap) {
+        // placed mid-life (a reset, a snap to her targets): she is already holding the posture she
+        // is in, not relaxed - the activations of that intent over their whole range, at once
+        MD.snap = false;
+        MU_.lo.fill(0); MU_.hi.fill(1);
+        MU_.allocate(MD.tauDes, { reg: PRIORS.muscleReg, sweeps: 300, tone, warm: MU_.act });
+        MU_.act.set(MU_.aDes); MU_.u.set(MU_.aDes);
+      } else {
+        MU_.reachable(dt);
+        if (R.servo) MU_.allocate(MD.tauDes, { reg: PRIORS.muscleReg, sweeps: PRIORS.muscleSweeps, tone });
+        else for (let i = 0; i < MU_.n; i++) MU_.aDes[i] = clamp(tone, MU_.lo[i], MU_.hi[i]);
+        MU_.excitation(MU_.aDes, dt);
+        MU_.stepActivation(dt);
+      }
+      MD.tauMus.fill(0);
+      MU_.forces(MD.tauMus);
+      MU_.damping(MD.damp);
+      for (let i = 0; i < NH; i++) { const li = H[i].link; b.tau[li] += MD.tauMus[li]; b.armature[li] += MD.damp[li] * dt; }
     }
     R.servoOn = new Uint8Array(NH).fill(1);
     R.servoScale = new Float64Array(NH).fill(1);
@@ -892,12 +1006,16 @@
     // the tank. Joint targets come from the IK at plannerHz; servos track them at every step.
     const PL = (R.plan = {
       hz: 60, acc: 0, posture: { hang: 0, foreAft: 0, tuck: 0, stand: 0 }, rates: { hang: 1.8, foreAft: 2, tuck: 2, stand: 2.2 },
-      seatZ: 0.239, seatY: -0.34, leanDeg: 52, pelvisPitchDeg: 8, headPitchDeg: 12,
+      // pelvis pitch: forward of her standing pelvis. With her muscles driving (R.muscles.on) 18 deg
+      // is where holding the seated posture costs the least activation (sum a^2 over the 84 muscles,
+      // static, on a still bike: 8 deg 3.0 - the lumbar extensors near 0.9, 15-20 deg 1.5, 25 deg
+      // 3.4, 35 deg 8.0 - iliopsoas and the lumbar extensors saturated)
+      seatZ: 0.239, seatY: -0.34, leanDeg: 52, pelvisPitchDeg: 18, headPitchDeg: 12, pelvisLevelShare: 0.5,
       // reach: the trunk leans (within reachLeanMaxDeg) until the elbows keep elbowPrefDeg of bend
       // (declared prior; the 916's clip-ons are a long reach for her 0.54 m arm: seated, her
       // elbows stay nearly straight); reachLean is that correction
       elbowPrefDeg: 15, reachGain: 4, reachLean: 0, reachLeanMaxDeg: [-10, 12],
-      gFilt: null, gFF: null, aFilt: [0, 0, 0], tauG: 0.6, tauFF: 0.25, lastV: null, targets: null, lookYaw: 0,
+      gFilt: null, gFF: null, aFilt: [0, 0, 0], tauG: 0.6, tauFF: 0.25, lastV: null, targets: null, lookYaw: 0, taskPrev: null, taskW: { chest: [0, 0, 0], head: [0, 0, 0] },
       // riding on the whole-body load path (rideLoad): on or off; planned every rideLpEveryS; her
       // pelvis's orientation (kg m^2, 1/s^2, 1/s) - declared priors. CANDIDATE, off: measured in a
       // steady 1-1.2 g turn hung off, it left the outside leg and arms working as hard as without it
@@ -1020,18 +1138,25 @@
       // braced against braking she lets herself settle forward against the tank, pelvis rolled
       // forward onto it (she does not fight to stay back: the tank, knees and arms hold her)
       const bf = PL.brace * (PL.braceDir > 0 ? 1 : 0);
+      // felt vertical for posture: gravity plus the sustained turning acceleration (V x yaw rate,
+      // filtered), NOT the instantaneous acceleration of the seat: a bike rocking under a rider at
+      // a standstill shakes the seat but the rider keeps her trunk on the true vertical
+      const up = unit(scl(PL.gFilt, -1)), ub = mtv(Rb, up), rollFelt = Math.atan2(ub[0], ub[2]);
+      // her pelvis levels partly towards the felt vertical when the bike rolls under her (her hips,
+      // abductors and adductors, roll it on the seat): her lumbar spine alone could not keep her trunk
+      // up - its side-bend muscles are small (R1.5 quadratus lumborum < 10 N m per part, Phillips 2008)
+      // and, leaning forward to the bars, already stretched by the flexion. In a balanced turn the
+      // felt vertical is the bike's own: no levelling. (Feet down, the pelvis is already referenced
+      // to the bike held upright.)
+      const level = (1 - fd) * PL.pelvisLevelShare * rollFelt / DEG;
       const pel = R.pelvisPoseBike({
         x: hang * PL.hangOffsetM + fd * fsx * PL.footPelvisShiftM, y: PL.seatY + P.foreAft * 0.05 + stand * 0.06 + bf * PL.braceForwardM, z: PL.seatZ + stand * 0.19 - Math.abs(hang) * 0.012,
-        pelvisPitchDeg: PL.pelvisPitchDeg - stand * 14 + P.tuck * 4 + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hang * PL.hangPelvisRollDeg + fd * fsx * PL.footPelvisRollDeg, pelvisYawDeg: -hang * PL.hangPelvisYawDeg,
+        pelvisPitchDeg: PL.pelvisPitchDeg - stand * 14 + P.tuck * 4 + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hang * PL.hangPelvisRollDeg + fd * fsx * PL.footPelvisRollDeg + level, pelvisYawDeg: -hang * PL.hangPelvisYawDeg,
       });
       // (feet down: sideways and fore/aft from the bike held upright, the height from the seat as it
       // is - she stays seated, pressing it, so the seat carries her push to the bike)
       const pelW = fd > 0 ? (() => { const a = toBikeFrame(bk, WU(pel.pos)); a[2] = pel.pos[2]; return W(a); })() : W(pel.pos);
       const T = { pelvis: { p: pelW, R: mm(RU, pel.R) }, bike: bk, feetDown: fd, pelvisUp: fd > 0 ? pel.pos : null };
-      // felt vertical for posture: gravity plus the sustained turning acceleration (V x yaw rate,
-      // filtered), NOT the instantaneous acceleration of the seat: a bike rocking under a rider at
-      // a standstill shakes the seat but the rider keeps her trunk on the true vertical
-      const up = unit(scl(PL.gFilt, -1)), ub = mtv(Rb, up), rollFelt = Math.atan2(ub[0], ub[2]);
       const wb = mtv(Rb, WUP), rollWorld = Math.atan2(wb[0], wb[2]);
       const lean = (PL.leanDeg + (P.tuck >= 0 ? P.tuck * 10 : P.tuck * 16) - stand * 22 + Math.abs(hang) * PL.hangTuckDeg) * DEG + PL.reachLean;
       const roll = rollFelt + hang * PL.hangChestRollDeg * DEG;
@@ -1597,6 +1722,13 @@
       if (PL.acc + 1e-9 >= 1 / PL.hz || !PL.targets) {
         PL.acc = 0;
         PL.targets = planTargets(bk);
+        // how fast the chest and head targets turn (world rad/s, from plan to plan): the orientation
+        // tasks of the muscle drive carry them on between plans and damp towards that motion
+        for (const k of ["chest", "head"]) {
+          const now = PL.targets[k], prev = PL.taskPrev?.[k];
+          PL.taskW[k] = now && prev ? scl(logSO3(mm(now, mt(prev))), PL.hz) : [0, 0, 0];
+        }
+        PL.taskPrev = { chest: PL.targets.chest, head: PL.targets.head };
         // the per-step controllers use the targets in the bike frame (the bike moves ~V/60 m
         // between plans: world-frame targets would lag it)
         const T = PL.targets;
@@ -1667,7 +1799,7 @@
     // controller memory back to rest (a placement or reset starts her fresh)
     R.resetControl = () => {
       SN.tauF = 0; SN.trim = 0;
-      Object.assign(PL, { shift: 0, shake: 0, shakeRate: 0, brace: 0, braceDir: 0, targets: null, targetsB: null, lastV: null, aFilt: [0, 0, 0], acc: 0, feetDown: 0, feetDownWant: 0, accelF: 0, lastVh: null, walk: 0, dab: 0, dabWant: 0, dabCueS: 0, dabOffS: 0, pushOff: false, fallen: false, fallenS: 0, mode: "ride", modeS: 0, ff: "rnea", holdingBike: false, sideStand: false });
+      Object.assign(PL, { taskPrev: null, taskW: { chest: [0, 0, 0], head: [0, 0, 0] }, shift: 0, shake: 0, shakeRate: 0, brace: 0, braceDir: 0, targets: null, targetsB: null, lastV: null, aFilt: [0, 0, 0], acc: 0, feetDown: 0, feetDownWant: 0, accelF: 0, lastVh: null, walk: 0, dab: 0, dabWant: 0, dabCueS: 0, dabOffS: 0, pushOff: false, fallen: false, fallenS: 0, mode: "ride", modeS: 0, ff: "rnea", holdingBike: false, sideStand: false });
       Object.assign(PL.step, { phase: "none", s: 0, fromW: null, plantW: null }); PL.footMode = "none";
       PL.reachLean = R.calibration?.reachLean ?? PL.reachLean;
       PL.handPlan.L = PL.handPlan.R = null;
@@ -1852,7 +1984,7 @@
       // means them to do)
       if (!PL.fallen) steerNeutral(bk, dt);
       if (PL.fallen && R.postContacts) R.postContacts(bk, dt, reactions);
-      servoTorques(dt);
+      servoTorques(dt, bk);
       R.last.reactions = reactions;
       return reactions;
     };
@@ -1880,11 +2012,13 @@
       b.kinematics();
       if (PL) { PL.lastV = null; PL.aFilt = [0, 0, 0]; }
     };
-    R.snapToTargets = () => { for (let i = 0; i < L.length; i++) { body.q[i] = R.qT[i]; body.qd[i] = 0; } body.p = ikb.p.slice(); body.R = ikb.R.slice(); body.kinematics(); };
+    // (aba() there only refreshes the articulated inertias the intent's bandwidth uses: nothing is integrated)
+    R.snapToTargets = () => { for (let i = 0; i < L.length; i++) { body.q[i] = R.qT[i]; body.qd[i] = 0; } body.p = ikb.p.slice(); body.R = ikb.R.slice(); body.kinematics(); body.aba(); R.muscles.snap = true; };
     R.helpers = { toBikeFrame, bikeToWorld, bikePointVel, gripBody, logSO3, expRV, Rx, Ry, Rz, sub, add, scl, len, unit, cross, dot, mv, mtv, mm, mt, clamp, lerp, smooth01 };
     R.sittingSpheres = addSittingSpheres();
     R.pelvisFrontSpheres = addPelvisFrontSpheres();
     R.seedIK();
+    body.kinematics(); body.aba(); // (articulated inertias for the muscle intent's bandwidth)
     R.calibrateSeat = calibrateSeat;
     R.calibration = calibrateSeat();
     // the machinery the off-the-bike layer (48_rider_onfoot.js) builds on
@@ -1944,7 +2078,9 @@
     if (!CORE.character) { console.warn("LUCID rider biomech: character not loaded"); return; }
     const F0 = free, FP = Object.getPrototypeOf(F0);
     let R;
-    try { R = createRider(CORE.character, SURF_JSON); } catch (e) { console.error("LUCID rider biomech: build failed", e); return; }
+    // (?muscles=0: the servos as joint motors while riding too - the pre-muscle rider, for comparison)
+    const muscles = !(typeof location !== "undefined" && /[?&]muscles=0\b/.test(location.search));
+    try { R = createRider(CORE.character, SURF_JSON, { muscles }); } catch (e) { console.error("LUCID rider biomech: build failed", e); return; }
     const SET = presettle(R);
     const h = R.helpers, DEG = Math.PI / 180;
     let DEFAULT_ON = true;

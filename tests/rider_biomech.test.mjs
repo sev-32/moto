@@ -1,6 +1,8 @@
 // The physical LUCID rider (src/core/46_rider_biomech.js) on a kinematically driven stub bike:
 // static balance, the floating trunk on a rocking bike, braking, acceleration and a steady turn.
-// Bands are physical sanity bounds for this joint-torque model, not measured rider data.
+// Bands are physical sanity bounds, not measured rider data. They were set for the motor-driven
+// rider; riding is now muscle-driven (46_rider_muscles.js) and the bands are kept as they were: the
+// scenarios her muscles do not yet meet fail, as measured (see docs/PHYSICS.md).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { character, surfaces, BIO, stubBike } from "./lib/rider-harness.mjs";

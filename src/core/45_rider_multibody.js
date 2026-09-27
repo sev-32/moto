@@ -150,6 +150,9 @@
       p: [0, 0, 0], R: [1, 0, 0, 0, 1, 0, 0, 0, 1], vb: [0, 0, 0, 0, 0, 0],
       q: new Float64Array(n), qd: new Float64Array(n), qdd: new Float64Array(n), ab: [0, 0, 0, 0, 0, 0],
       tau: new Float64Array(n), armature: new Float64Array(n),
+      // articulated inertia about each hinge at the last aba() (kg m^2, armature excluded): the
+      // inertia a torque at that hinge moves, the rest of the tree free
+      Dart: new Float64Array(n),
       // per-link world state (updated by kinematics())
       Rw: L.map(f9), ow: L.map(f3), v: L.map(f6), E: L.map(f9), fext: L.map(f6),
       gravity: [0, 0, -9.81],
@@ -296,6 +299,7 @@
         for (let r = 0; r < 6; r++) Ui[r] = Ia[6 * r] * a[0] + Ia[6 * r + 1] * a[1] + Ia[6 * r + 2] * a[2];
         const Di = a[0] * Ui[0] + a[1] * Ui[1] + a[2] * Ui[2] + S.armature[i];
         D[i] = Di;
+        S.Dart[i] = Di - S.armature[i];
         const ui = S.tau[i] - (a[0] * pAi[0] + a[1] * pAi[1] + a[2] * pAi[2]);
         u[i] = ui;
         const inv = 1 / Di;

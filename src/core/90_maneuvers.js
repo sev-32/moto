@@ -100,12 +100,16 @@
       },
     },
     brakeMax: {
-      speed: 25, T: 4, gear: 3, about: "threshold braking: front lever modulated on front slip (-6..-9 %), rear light",
+      speed: 25, T: 4, gear: 3, about: "threshold braking: front lever modulated on front slip (-6..-9 %) and on the rear going light (a rider feels it unload and eases the lever, as rear-lift mitigation does), rear light",
       control(c) {
         if (c.t > 0.3) {
           c.cmd.throttle = 0;
-          const slip = -c.s.kF, tgt = slip > 0.12 ? 8 : slip > 0.07 ? c.cmd.frontBrakeBar : 30;
-          c.cmd.frontBrakeBar = toward(c.cmd.frontBrakeBar, tgt, slip > 0.12 ? 400 : 120, c.dt);
+          // (the rear unloading - under 300 N, near lifting under 120 N - eases the lever: the
+          // threshold is the front's grip or the bike's pitch-over limit, whichever comes first;
+          // where the rider sits moves the second)
+          const slip = -c.s.kF, light = c.s.NR < 120 ? 2 : c.s.NR < 300 ? 1 : 0;
+          const tgt = slip > 0.12 || light === 2 ? 8 : slip > 0.07 || light === 1 ? Math.min(c.cmd.frontBrakeBar, 30) - (light ? 2 : 0) : 30;
+          c.cmd.frontBrakeBar = toward(c.cmd.frontBrakeBar, tgt, slip > 0.12 || light === 2 ? 400 : 120, c.dt);
           c.cmd.rearBrakeBar = c.s.NR > 400 ? 3 : 0;
         }
         if (c.s.speed < 0.5) c.cmd.frontBrakeBar = 4;
@@ -285,6 +289,8 @@
           kF: +s2.kF.toFixed(3), kR: +s2.kR.toFixed(3), aF: +s2.aF.toFixed(2), aR: +s2.aR.toFixed(2), fork: +(F.forkTravel * 1000).toFixed(1),
           liftF: +(s2.liftF * 1000).toFixed(0), liftR: +(s2.liftR * 1000).toFixed(0), thr: +(cmd.throttle || 0).toFixed(2), fb: +(cmd.frontBrakeBar || 0).toFixed(1),
           rb: +(cmd.rearBrakeBar || 0).toFixed(1), rpm: Math.round(ptl?.engine?.rpm || 0), gear: cmd.gear,
+          // (opts.extra: a probe's own fields - e.g. the rider's state - at each sample)
+          ...(opts.extra ? opts.extra(t) : {}),
         });
       }
       if (Math.abs(v5bodyAngles(F.q).rollRad) > 1.45) { M.crashT = M.crashT ?? +t.toFixed(3); break; }

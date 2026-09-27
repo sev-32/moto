@@ -57,12 +57,79 @@ Suspension rates vs the v2.6 reconstruction (VOLUMETRICS build, `data/v2_6`):
 
 The default rider is the LUCID character itself as an articulated body: the floating pelvis plus
 46 revolute hinges that are the Semantic51 DOFs of the canonical rig (same joints, axes, order and
-hard ranges; toes not simulated). Mass: the R1.5 17-body profile (75 kg). It is a **joint-torque
-(motor-driven) body, not the R1.5 muscle-driven body**: stable-PD servos with torque limits (lower
-body: the R1.5 capacity ledger; trunk/neck: physbody stance gains; arms and all contact
-parameters: declared engineering priors in `PRIORS`), plus the R1.5 passive tissue priors as soft
-joint stops. Her state is Semantic51 commands + a placement, drawn every frame through the
-canonical skin path (nothing writes bones or skin).
+hard ranges; toes not simulated). Mass: the R1.5 17-body profile (75 kg). Her state is Semantic51
+commands + a placement, drawn every frame through the canonical skin path (nothing writes bones or
+skin). The R1.5 passive tissue priors act on every hinge as soft joint stops.
+
+**Riding, her muscles move her** (`46_rider_muscles.js`; `R.muscles.active`, telemetry). Nothing
+but muscle force and passive tissue acts on her joints while she rides:
+
+* **The muscles** are the R1.5 musculotendon proxies of `lucid_bcr.muscles` on her own skeleton:
+  each a polyline carried by her joints, fitted to her mesh in the package (84), with lengths and
+  virtual-work moment arms about every hinge they span, MuJoCo's muscle model as the package
+  compiles it (`PhysicsBody(muscles=True)`: force = a Fmax FL(l) FV(v), fibre calibration of
+  `physbody._calibrate_lengthrange`, rest pose = optimal fibre length) and MuJoCo's activation
+  dynamics (10 ms × (0.5 + 1.5a) rising, 40 ms / (0.5 + 1.5a) falling, actearly). Parity with the
+  package: `tests/rider_muscles.test.mjs` - paths, lengths and moment arms within 1e-8 mm of the
+  proxies at 13 lawful poses (4234 muscle-hinge pairs), MuJoCo's gain / bias / activation
+  functions to 1e-10. Asset and fixture: `tools/character/extract_muscles.py` (writes nothing into
+  the package).
+* **CANDIDATE refinement (declared, not R1.5): the triceps.** R1.5 has one triceps along the long
+  head's path (scapular origin; 2047 N = the Holzbaur 2005 sum of TRIlong 798.5 + TRIlat 624.3 +
+  TRImed 624.3 N) with no wrap at the elbow. Measured on her: its elbow moment arm falls from
+  1.7 cm straight to 0.2 cm at 90° and turns flexor past ~110°, and with the shoulder flexed 110°
+  (riding) the whole muscle sits at 0.5-0.6 of its force-length peak - her elbow extension was
+  22 N m straight and 1 N m at 90°: she could not brace on the bars (1 g braking folded her arms
+  from 12° to 83°). The runtime splits it into the three Holzbaur heads (lateral and medial from the
+  humerus) sharing an olecranon point that turns with half the elbow flexion - the package's own
+  patella device - placed by the package's `MuscleSystem.place` on her mesh; the point's depth is
+  fitted to a ~2 cm moment arm (Murray, Delp & Buchanan 1995: 1.5-2.3 cm): 2.04 / 2.11 / 1.88 /
+  1.65 cm at 0 / 45 / 90 / 120°. 88 muscles; the other 82 are R1.5 verbatim. Owner decision.
+* **Intent → muscles** (the servos are her intent, "the feeling"; the muscles hold it): each step
+  the joint torque her servo law asks for (PD on the IK posture targets + gravity / contact
+  feed-forward + the virtual-model forces) is allocated to activations - least squares on the
+  torque error per hinge (in units of the hinge's servo capacity) plus 0.001 Σa² - inside the box
+  one step of the activation dynamics can reach, by warm-started projected Gauss-Seidel (12 sweeps,
+  ~0.1 ms per step); the excitation that reaches the planned activation is sent (as
+  `lucid_bcr.neuro`). The muscles' force-velocity damping enters the step implicitly (MuJoCo
+  implicitfast does the same). What the muscles cannot make is not made.
+* **What her muscles showed about the motor-era intent** (each measured, each fixed in the
+  intent, not in the muscles):
+  - *rigid-lock gains*: the servo gains about light segments were 190-520 rad/s (ankle, knee and
+    shoulder axial rotation; damping ratios up to 17) - a command the muscles cannot follow; its
+    chatter through the gastrocnemius opened her knees 30° and lifted her 5.7 cm off the seat. Her
+    intent's stiffness is now capped at a neural bandwidth for the inertia each hinge moves
+    (articulated inertia; 30 rad/s, hands 80 rad/s, critically damped).
+  - *a slumped posture*: seated at the old 8° pelvis pitch her lumbar extensors were at 1.27 of
+    optimal length (force-length 0.6) and 0.94 activation just to sit; the static muscle effort
+    Σa² over pelvis pitch is 3.0 at 8°, 1.5 at 15-20°, 3.4 at 25°, 8.0 at 35°: she now sits at 18°.
+  - *zig-zag spine demands*: joint servos on lumbar and thoracic segments asked them to bend
+    opposite ways (the package's R1.4 note: long trunk muscles cannot make that); her trunk and head
+    are now orientation tasks (a moment on the chest carried by every spine hinge, on the head by
+    every neck hinge; weak joint posture terms), as the package's whole-body controller does.
+  - *reaching for a grip*: the joint targets of a reach lag a trunk still settling; a reaching
+    hand is now pulled to its grip (400 N/m, ~2 Hz for the arm).
+  - *starting relaxed*: placed on the bike (a reset, taking over from the motors) she starts with
+    the activations that hold the posture she is in, not at resting tone.
+* **Limits of the package's muscles seen riding** (reported, not changed): lumbar side-bend is
+  weak when leaning to the bars (quadratus lumborum is small by design, < 10 N m per part; the
+  stretched extensors lose force); the shoulder girdle has only pectoralis major, latissimus and
+  upper trapezius (no serratus anterior - protraction is weak and the trapezius's elevation drags it
+  back); wrist muscles cross the wrist with ~2 mm arms (2-4 N m); no pronator / supinator.
+* **Her posture uses her strength** (planner priors): pelvis pitch 18°; her pelvis levels by half
+  towards the felt vertical when the bike rolls under her (the hips do it; in a balanced turn the
+  felt vertical is the bike's and nothing changes).
+* **Measured, muscle-driven** (`tests/rider_biomech.test.mjs`, bands kept from the motor era): 7 of 11
+  pass - pre-settled, 0.8 g acceleration, 0.8 g steady turn, low-side dab, a slide ridden through,
+  foot down left and right. Open: static (her chest settles 1.5-3° to one side; band 1°); the bike
+  rocking ±8° under her (chest 13°: the lumbar side-bend limit above); 1 g braking (she rises 5.05 cm
+  sliding into the tank; band 5 cm); creeping with a foot down (the planted leg locks straight and
+  drags: the feet-down stepping is on-foot logic, not yet converted).
+* **Off the bike she is still motor-driven** (`R.muscles.onFoot` off): standing, walking, getting
+  up, getting on / off and lifting the bike use the servos as joint motors - those controllers
+  are not yet converted. The hand-over is clean both ways (all 16 at-the-bike tests pass).
+* `?muscles=0` in the browser (and `--motors` in the maneuver suite) runs the pre-muscle rider
+  (servos as joint motors while riding too), for comparison.
 
 * **Contacts** (soft-tissue spheres fitted inside her skin, anchored Coulomb friction): the 916's
   envelope (a signed-distance field built from the GLB's visual hull), footpeg cylinders, a
@@ -190,8 +257,8 @@ canonical skin path (nothing writes bones or skin).
 
 ## Off the bike (`48_rider_onfoot.js`)
 
-The same body, contacts and joint-torque servos (motor-driven, not muscle-driven); this layer
-plans for them while she is off the bike. Everything here is CANDIDATE: gains and timings are
+The same body, contacts and joint-torque servos (motor-driven, not muscle-driven: her muscles
+drive her only while she rides - see above); this layer plans for them while she is off the bike. Everything here is CANDIDATE: gains and timings are
 declared priors, and three declared assists (below) carry part of her balance - measured and
 reported, not hidden.
 
@@ -459,15 +526,27 @@ on the flat reference road unless they ask for the world.
 
 ## Maneuver suite (`npm run test:maneuvers`)
 
-| Maneuver | Current result |
-| --- | --- |
-| coast 20 m/s hands off | self-stable (|roll| < 0.2°), 0.13 g engine braking + drag |
-| coastSlow 6 m/s | capsizes (below the self-stable band: physical) |
-| brakeFirm 16 / 5 bar | 0.81 g, stops in 4.05 s |
-| brakeMax (front slip -6…-9 %) | 1.07 g, 43.7 m |
-| brakeGrab 40 bar step, no ABS | front lock and a low-side — no numeric explosion |
-| brakeAbs 55 bar | 1.69 g peak, rear lift ≤ 59 mm, stops |
-| stoppie | rear lifted ~16 cm and set down |
-| launch / wheelie | 1.14 g launch; clutch-up wheelie held at ~25° |
-| lean35, radius60, slalom | steady 35° lean; 40° at 0.68 g on a 60 m radius with hang-off; slalom reaches ±17.5° of the ±22° target every 1.2 s |
-| burnout | stationary, rear spinning at ~8700 rpm, 40+ kW sliding |
+Riding muscle-driven (default) against the pre-muscle rider (`--motors`: servos as joint motors),
+the same build, headless:
+
+| Maneuver | Her muscles | Joint motors |
+| --- | --- | --- |
+| coast 20 m/s hands off | self-stable (|roll| 0.5°), 0.13 g engine braking + drag | |roll| 0.2°, 0.13 g |
+| coastSlow 6 m/s | capsizes (below the self-stable band: physical), to 29° | capsizes, to 50° |
+| standstill | foot down, bike at 3.7° | 2.8° |
+| brakeFirm 16 / 5 bar | 0.81 g, stops in 4.05 s | 0.81 g, 4.05 s |
+| brakeMax (front slip -6…-9 %, eased as the rear goes light) | 0.95 g, 50.4 m, rear down | 0.97 g, 49.9 m |
+| brakeGrab 40 bar step, no ABS | front lock, over the bars — no numeric explosion | the same |
+| brakeAbs 55 bar | 1.70 g peak, rear lift ≤ 52 mm, stops in 3.6 s | 1.73 g, 57 mm, 3.55 s |
+| stoppie | rear lifted ~17 cm and set down | ~17 cm |
+| launch | 1.14 g; the bike rolls to 17.9° under her (motors 3.6°) - open | 1.15 g |
+| wheelie | held at ~26° | ~27° |
+| lean35 | steady 35° lean | 35.8° |
+| radius60 (0.68 g, hang-off) | **fails**: her pelvis moves over 2 cm of the planned 5.4 (her legs straighten under the push that unweights the seat), the bike weaves from ~7 s and falls at 8.5 s - open | 39.9°, steady |
+| slalom ±22° / 1.2 s | ±17.1° | ±16.8° |
+| burnout | stationary, rear spinning | the same |
+
+(brakeMax: threshold braking with her pelvis at the muscle-efficient 18° pitch put her weight far
+enough forward that braking on front slip alone went over the bars - motors too; the maneuver's
+rider now also eases the lever as the rear goes light, as a rider does and rear-lift mitigation
+does.) Muscle-driven riding costs ~45 % more simulation time (~0.1 ms per rider step for the muscles).
