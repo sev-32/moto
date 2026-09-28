@@ -316,12 +316,35 @@
       v[2] = d[2] * de * dsdt + (s < 0.9 ? (h * Math.PI * Math.cos(Math.PI * u)) / 0.9 : 0) * dsdt - (s > 0.7 ? (0.015 * 6 * w * (1 - w)) / 0.3 : 0) * dsdt;
       return { p, v };
     }
+    // ---- where she looks on foot (R.gaze, 46): walking to the bike, at it once near it; walking, at
+    // the ground ahead on her way (2.5 m + 1 s of her speed); standing, ahead. At the bike, at what
+    // her hand is reaching for (else at the bike). The head carries its share (46: PRIORS.gaze), her
+    // eyes the rest; its pitch is the dip below the look she stands with (8 m ahead, at her hip's
+    // height).
+    const GZ = I.PRIORS.gaze;
+    function gazeAt(p, what, fw, dt) {
+      const e = R.eyeWorld(), bb = R.bearing(e, p, fw, [0, 0, 1]), g = R.gaze;
+      g.p = p; g.what = what; g.yaw = bb.yaw; g.pitch = bb.pitch;
+      R.gazeHead(bb.yaw, bb.pitch - Math.atan2(0.6, 8), GZ.footMaxYawDeg, dt);
+      R.telemetry.gaze = { what, yawDeg: +(bb.yaw / DEG).toFixed(1), pitchDeg: +(bb.pitch / DEG).toFixed(1), headYawDeg: +(g.headYaw / DEG).toFixed(1) };
+      return g;
+    }
+    // (the way she means to go - the stick, before her body has turned: the gaze leads)
+    function gazeOnFoot(bk, psi, dt) {
+      const e = R.eyeWorld(), fw = fwdOf(psi), vw = Math.hypot(G.vDes[0], G.vDes[1]) > 0.1 ? G.vDes : G.vCmd, v = Math.hypot(vw[0], vw[1]);
+      if (G.goal && bk?.p && Math.hypot(bk.p[0] - e[0], bk.p[1] - e[1]) < 6) return gazeAt(bk.p, "bike", fw, dt);
+      if (v > 0.1) { const dir = [vw[0] / v, vw[1] / v, 0], d = 2.5 + v, p = [e[0] + dir[0] * d, e[1] + dir[1] * d, 0]; p[2] = groundZ(p[0], p[1]); return gazeAt(p, "path", fw, dt); }
+      const p = [e[0] + fw[0] * 8, e[1] + fw[1] * 8, 0];
+      p[2] = groundZ(p[0], p[1]) + 0.9;
+      return gazeAt(p, "ahead", fw, dt);
+    }
     // ---- targets and joint set-points
     function plan(dtp, bk = null) {
       const run = G.run, psi = pelvisYaw();
       G.psiP = psi;
       const lean = (run ? P.leanDeg.run : P.leanDeg.walk) * smooth01(Math.hypot(G.vCmd[0], G.vCmd[1]) / P.walkMps);
-      const rp = risePitch(), Rp = pelvisR(psi, rp), Rc = pelvisR(psi, lean * DEG + 0.6 * rp), Rh = pelvisR(psi, -2 * DEG + 0.3 * rp);
+      const rp = risePitch(), Rp = pelvisR(psi, rp), Rc = pelvisR(psi, lean * DEG + 0.6 * rp);
+      const gz = gazeOnFoot(bk, psi, dtp), Rh = pelvisR(psi + gz.headYaw, -2 * DEG + 0.3 * rp + gz.headPitch);
       // legs: stance from the planned pelvis orientation at its planned height (the servos hold
       // them there); swing from the pelvis as it is, the foot where it is sent
       // (standing still the pelvis is planned where her centre of mass is over the middle of her
@@ -802,11 +825,16 @@
         out.hands[S] = hd === "grip" && s >= 1 ? R.gripWorld(bk, S).c : toW(F, path(A0.hands[S], A1.hands[S], k.handVia?.[S]));
         if (hd === null) out.hands[S] = null;
       }
+      // (where she looks: at what a hand is reaching for - a grip, a point of the bike - else at the
+      // bike; the head turned from her chest's facing)
+      const reachS = ["L", "R"].find((S) => k.hands?.[S] && !R.grips[S].held && out.hands[S]);
+      const chestPsi = F.yaw + (yaw + twist) * DEG, gz = gazeAt(reachS ? out.hands[reachS] : bk.p, reachS ? "hand " + reachS : "bike", fwdOf(chestPsi), SC.lastDt || 1 / 540);
+      out.headR = pelvisR(chestPsi + gz.headYaw, 0.5 * chest * DEG - 5 * DEG + gz.headPitch);
       return out;
     }
     R.modes.script = (bk, dt) => {
       if (!bk?.p || !SC.keys) { G.enterFoot(); return; }
-      SC.t += dt;
+      SC.t += dt; SC.lastDt = dt;
       const k = SC.keys[SC.i];
       const T = scriptTargets(bk);
       G.scriptT = T;

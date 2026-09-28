@@ -43,12 +43,12 @@ wrapped original.
 | 05 boot-order guards | – | hides two rider APIs until their boots finish (V1.30 boot race) |
 | 10 rtt-tire | `tires` | real-time pneumatic brush tire (geometric contact, 3×10 brush, carcass, thermal grip ratio) |
 | 20 realtime-integration | `realtime` | RTT inside the V5 free-road step, terrain road frame and collisions, fixed-step real-time loop (540 Hz), lite telemetry, settle |
-| 30 chassis-dynamics | `chassis` | implicit wheel spin, reverse-spin guard, suspension end-of-travel + friction, chain force routing, aero, feet-down support, steering damper, rear-lift mitigation, chock, impulse joint limits |
+| 30 chassis-dynamics | `chassis` | implicit wheel spin, reverse-spin guard, suspension end-of-travel + friction, chain force routing, aero, feet-down support, side stand (a one-sided strut), steering damper, rear-lift mitigation, chock, impulse joint limits; a reset clears what its settle reads (`onBeforeReset` hooks) |
 | 40 rider-body | `rider` | legacy two-mass compliant rider (pelvis/torso servos), reactions at the rider masses, posture, auto rider, drives the legacy rider pose; steps aside while the physical rider is active (`?rider=legacy` brings it back) |
 | 44 lucid-character | `character` | canonical LUCID female-skin-v4.2 path: Semantic51 compile, canonical helper clusters, Skin78 LBS (parity-tested against the R1.5 Python reference), hand layer + grip synergies, 75 kg 17-segment profile |
 | 45 rider-multibody | – (`LUCID_MULTIBODY`) | articulated-body engine: floating base + revolute hinges, Featherstone ABA, RNEA, stable-PD armature (allocation-free) |
 | 46 rider-muscles | – (`LUCID_MUSCLES`) | her muscles: the R1.5 musculotendon proxies on her skeleton (84; the triceps as a declared candidate split: 88) - path lengths, virtual-work moment arms, MuJoCo's force-length-velocity and activation dynamics, allocation of joint-torque intent to activations (parity with the package: `tests/rider_muscles.test.mjs`; asset from `tools/character/extract_muscles.py`) |
-| 46 rider-biomech | `riderBio` | the physical rider: the LUCID character as an articulated body (46 Semantic51 hinges + floating pelvis) on the 916's contact surfaces; riding, her muscles move her (the servo law is her intent, orientation / reach tasks, neural-bandwidth gains, neural elastic holds); off the bike, torque-limited servos; her feet as tripods on her own sole (pads, toe flap, what the soles feel - `R.feel` - and the ankle's roll worked from it); IK planner, virtual-model lower body, contacts; coupled into the V5 multibody (bike-only mass matrix) |
+| 46 rider-biomech | `riderBio` | the physical rider: the LUCID character as an articulated body (46 Semantic51 hinges + floating pelvis) on the 916's contact surfaces; riding, her muscles move her (the servo law is her intent, orientation / reach tasks, neural-bandwidth gains, neural elastic holds); off the bike, torque-limited servos; her feet as tripods on her own sole (pads, toe flap, what the soles feel - `R.feel` - and the ankle's roll worked from it); where she looks (`R.gaze`: fixations, the head's share); her fatigue (`R.fatigue`: three-compartment motor units per muscle and grip); IK planner, virtual-model lower body, contacts; coupled into the V5 multibody (bike-only mass matrix, her lumped legacy inertia removed as authored) |
 | 47 rider-render | `riderRender` | draws her every frame through the canonical skin path from her body's commands + placement; hides the legacy mannequin while she is active |
 | 48 rider-onfoot | `riderBio.rider.onFoot` | the same body off the bike: standing, walking and step-turning (capture-point stepping, centre-of-pressure control, declared balance assists), getting up after a fall, getting on / off and lifting the bike (F / pad X); the third-person camera and controls while she is off it |
 | 50 world | `world` | proving ground: shared height / signed-distance / grip fields for physics and GPU, terrain + sky, shadows, minimap, lap timer, clean ride view |
@@ -58,7 +58,7 @@ wrapped original.
 | 65 nimbus | `nimbus` | NIMBUS volumetric rear-tire smoke (worker solver + raymarcher), sim-time locked |
 | 68 audio-env | `audioEnv` | tire squeal, road roar, wind, mixed into the V1.22 graph |
 | 70 feel-hud | `feelHud` | friction circles, loads, slip, suspension, posture, inputs (T) |
-| 90 maneuvers | `maneuvers`, `burnoutRig` | rider-in-the-loop maneuver library, burnout rig |
+| 90 maneuvers | `maneuvers`, `burnoutRig` | rider-in-the-loop maneuver library (each run from the bike at ambient temperature: repeatable), burnout rig |
 
 ### Extension points
 

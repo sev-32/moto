@@ -136,10 +136,49 @@
     // stiffness (declared priors: chest ~ the old spine servos in series; head firmer than the old neck
     // servos in series - at 22 N m/rad the other neck and shoulder muscles tilted it 1.5 deg, at 40 0.5)
     chestTaskK: 260, chestTaskC: 40, headTaskK: 40, headTaskC: 2, taskPostScale: 0.15,
+    // where she looks (R.gaze): riding, the road ahead on the arc her bike is taking, aheadS ahead
+    // (minM..maxM); her head carries headShare of the gaze's turn and pitchShare of its dip, her eyes
+    // the rest (her rig has no eyes to show); the head turns at most rateDegS (a head saccade), within
+    // rideMaxYawDeg of the bike riding and footMaxYawDeg of her chest on foot (declared priors)
+    // She fixes on a point in the world and holds it as she moves (her head kept on it - gaze held in
+    // space, not carried by the bike's wobble), and jumps to a new one (a saccade) once it is under
+    // refixNear of the look-ahead distance away or the path's point has moved refixOff of it; the
+    // turn she sees coming is the bike's curvature over curveS
+    gaze: { aheadS: 2, minM: 15, maxM: 60, headShare: 0.7, pitchShare: 0.6, rateDegS: 250, rideMaxYawDeg: 40, footMaxYawDeg: 60, refixNear: 0.7, refixOff: 0.1, curveS: 0.5 },
+    // fatigue (R.fatigue): each muscle, and each hand's grip on the bars, is a pool of motor units -
+    // shares active (MA), fatigued (MF) and resting (MR), summing to 1 - in the three-compartment
+    // controller model (3CC: Xia & Frey-Law 2008). A controller recruits resting units towards the
+    // load asked of the pool (TL: the muscle's activation; for a grip, the share of her fresh grip
+    // strength it holds with) at LD and relaxes active ones at LR; active units fatigue at F and
+    // fatigued ones recover at R, r times faster while the pool rests - TL under restA (3CC-r: Looft
+    // et al. 2018). Fatigued units make no force: a muscle reaches at most 1 - MF of its activation, a
+    // hand 1 - MF of its grip strength, and her intent asks no more of them. F, R (1/s): fitted per
+    // joint region to endurance times of sustained efforts by Frey-Law et al. 2012 - F from 0.00589
+    // (ankle) to 0.0182 (shoulder), R from 0.00058 to 0.00168; those two F are used, every other region
+    // takes the geometric middle of each range (the per-region table was not verifiable here:
+    // CANDIDATE priors). r: 15 for ankle, knee, elbow (Looft et al. 2018) and shoulder (Looft & Frey-Law
+    // 2020), 30 for hand / grip (Looft et al. 2018), 15 elsewhere (prior). LD = LR = 10 (the model's
+    // predictions do not depend on them over 10-100: Xia & Frey-Law 2008). Off the bike her joints
+    // are driven by motors, not muscles: her muscles count as resting there (declared). timeScale:
+    // fatigue time per second of simulation (1; a test shortens minutes into seconds). Placed afresh
+    // (a reset, a respawn) she starts rested (freshOnPlace).
+    fatigue: { on: true, LD: 10, LR: 10, F: { ankle: 0.00589, shoulder: 0.0182, other: 0.0104 }, R: 0.00099, r: { grip: 30, other: 15 }, restA: 0.05, timeScale: 1, freshOnPlace: true },
     // a reaching hand's pull to its grip (N/m, N s/m, N): ~2 Hz for the arm's ~2 kg at the hand, damped
     // (it brings the hand roughly over the bar; the fingers closing do the rest - R.canCloseGrip)
     reachTaskK: 400, reachTaskC: 40, reachTaskMaxN: 120,
   };
+  // one step of the three-compartment controller with rest recovery (3CC-r, PRIORS.fatigue) for a
+  // pool of motor units s = { MA, MF, MR } asked to hold TL (share of its maximum): the controller
+  // recruits resting units towards the load - as many as are left - and relaxes the ones not needed
+  function fatigueStep(s, TL, F, Rr, r, dt, P = PRIORS.fatigue) {
+    const MA = s.MA, MF = s.MF, MR = s.MR;
+    const C = MA < TL ? P.LD * Math.min(TL - MA, MR) : P.LR * (TL - MA);
+    const Re = TL <= P.restA ? r * Rr : Rr;
+    s.MA = Math.min(1, Math.max(0, MA + dt * (C - F * MA)));
+    s.MF = Math.min(1, Math.max(0, MF + dt * (F * MA - Re * MF)));
+    s.MR = Math.max(0, 1 - s.MA - s.MF);
+    return s;
+  }
   // physbody.py tables
   const PARTS = { Spine02: 10, Spine01: 6, Hip: 8, Head: 3, NeckTwist01: 2, Clavicle: 0, Upperarm: 4, Forearm: 3, Hand: 2, Thigh: 5, Calf: 4, Foot: 4 };
   const TRIM = { Upperarm: 0.22, Forearm: 0.06, Thigh: 0.14, Calf: 0.06 };
@@ -436,6 +475,21 @@
       last: { forces: [], bikeWrench: null },
       telemetry: {},
     };
+    // her fatigue (PRIORS.fatigue): a pool of motor units per muscle and per hand's grip; cap: the
+    // share of each muscle's activation its unfatigued units can still make
+    const fatRegion = (g) => (/^ankle/.test(g) ? "ankle" : /^shoulder|^girdle/.test(g) ? "shoulder" : /^wrist/.test(g) ? "grip" : "other");
+    const pool = () => ({ MA: 0, MF: 0, MR: 1 });
+    R.fatigue = {
+      muscles: MUS ? MUS.muscles.map((m) => ({ ...pool(), region: fatRegion(m.group || "") })) : [],
+      grip: { L: pool(), R: pool() },
+      cap: MUS ? new Float64Array(MUS.n).fill(1) : null,
+      reset() {
+        for (const s of [...this.muscles, this.grip.L, this.grip.R]) Object.assign(s, pool());
+        if (this.cap) this.cap.fill(1);
+      },
+    };
+    // her grip strength now: what its unfatigued units hold (N)
+    R.gripStrength = (S) => PRIORS.gripStrengthN * (PRIORS.fatigue.on ? 1 - R.fatigue.grip[S].MF : 1);
     function mkGrip(S) {
       const g = S === "L" ? SURF.grips.left : SURF.grips.right;
       return { side: S, held: true, want: true, geom: g, tOff: 0, F: [0, 0, 0], T: [0, 0, 0], overloadS: 0, twist0: null };
@@ -890,6 +944,7 @@
         b.armature[li] = arm + h.passive.d * dt + P.k * dt * dt;
       }
       if (MD) muscleDrive(MD, dt);
+      tire(dt, MD);
     }
     // ---- muscle drive: the activations whose torques come closest to the intent, inside what one
     // step of MuJoCo's activation dynamics can reach (lucid_bcr.neuro: reachable box, excitation
@@ -901,12 +956,12 @@
     // that way, whatever it does elsewhere (measured: a lumbar side-bend demand past its strength drove
     // the hip adductors to -90 N m and turned the inside hip's torques against their own intent)
     function withinStrength(MD) {
-      const MU_ = MD.M, share = PRIORS.intentStrengthShare;
+      const MU_ = MD.M, share = PRIORS.intentStrengthShare, fc = PRIORS.fatigue.on ? R.fatigue.cap : null;
       for (let i = 0; i < NH; i++) {
         const li = H[i].link, d = MD.tauDes[li];
         if (!d || (PRIORS.intentStrengthTrunkOnly && !taskHinge[i])) continue;
         let cap = 0;
-        for (const { i: m, k } of MU_.byHinge[li]) { const r = MU_.muscles[m].r[k]; if (r * d > 0) cap += Math.abs(r) * MU_.gain[m]; }
+        for (const { i: m, k } of MU_.byHinge[li]) { const r = MU_.muscles[m].r[k]; if (r * d > 0) cap += Math.abs(r) * MU_.gain[m] * (fc ? fc[m] : 1); }
         const c = share * cap;
         if (Math.abs(d) > c) MD.tauDes[li] = Math.sign(d) * c;
       }
@@ -962,6 +1017,42 @@
         MU_.lo[i] = Math.max(MU_.lo[i], a);
       }
     }
+    // ---- fatigue (PRIORS.fatigue): no muscle is asked for more than its unfatigued units make
+    function capFatigue(MU_) {
+      const c = R.fatigue.cap;
+      if (!c || !PRIORS.fatigue.on) return;
+      for (let i = 0; i < MU_.n; i++) { if (MU_.hi[i] > c[i]) MU_.hi[i] = c[i]; if (MU_.lo[i] > MU_.hi[i]) MU_.lo[i] = MU_.hi[i]; }
+    }
+    // each step: every pool towards the load it holds - a muscle its activation (resting while her
+    // joints are motor-driven), a hand the share of its fresh grip strength it holds with
+    function tire(dt, MD) {
+      const P = PRIORS.fatigue, FA = R.fatigue;
+      if (!P.on) return;
+      const h = dt * (P.timeScale ?? 1), n = Math.max(1, Math.ceil((h * Math.max(P.LD, P.LR)) / 0.25)), hs = h / n;
+      const act = MD ? MD.M.act : null;
+      for (let i = 0; i < FA.muscles.length; i++) {
+        const s = FA.muscles[i], F = P.F[s.region] ?? P.F.other, r = P.r[s.region] ?? P.r.other, TL = act ? act[i] : 0;
+        for (let k = 0; k < n; k++) fatigueStep(s, TL, F, P.R, r, hs, P);
+        FA.cap[i] = 1 - s.MF;
+      }
+      for (const S of ["L", "R"]) {
+        const g = R.grips[S], TL = g.held ? Math.min(1, (g.Fm || 0) / PRIORS.gripStrengthN) : 0;
+        for (let k = 0; k < n; k++) fatigueStep(FA.grip[S], TL, P.F.grip ?? P.F.other, P.R, P.r.grip ?? P.r.other, hs, P);
+      }
+      // (telemetry, ~20 Hz: what each body region can still make, its weakest muscle, her grips)
+      if ((FA.telK = (FA.telK || 0) + 1) % 27 === 0 && MUS) {
+        const sum = {}, cnt = {};
+        let low = 1, lowId = "";
+        for (let i = 0; i < FA.muscles.length; i++) {
+          const rg = REGION.find(([, re]) => re.test(MUS.ids[i]))[0], c = FA.cap[i];
+          sum[rg] = (sum[rg] || 0) + c; cnt[rg] = (cnt[rg] || 0) + 1;
+          if (c < low) { low = c; lowId = MUS.ids[i]; }
+        }
+        const regions = {};
+        for (const rg in sum) regions[rg] = +(sum[rg] / cnt[rg]).toFixed(3);
+        R.telemetry.fatigue = { regions, weakest: [lowId, +low.toFixed(3)], grip: { L: +(1 - FA.grip.L.MF).toFixed(3), R: +(1 - FA.grip.R.MF).toFixed(3) } };
+      }
+    }
     function muscleDrive(MD, dt) {
       const b = body, MU_ = MD.M, tone = PRIORS.muscleTone;
       MU_.geometry(); MU_.muscleState();
@@ -971,10 +1062,12 @@
         MD.snap = false;
         qSettled.fill(NaN);
         MU_.lo.fill(0); MU_.hi.fill(1);
+        capFatigue(MU_);
         MU_.allocate(MD.tauDes, { reg: PRIORS.muscleReg, sweeps: 300, tone, warm: MU_.act });
         MU_.act.set(MU_.aDes); MU_.u.set(MU_.aDes);
       } else {
         MU_.reachable(dt);
+        capFatigue(MU_);
         if (R.servo && PRIORS.intentWithinStrength) withinStrength(MD);
         const toneOf = PRIORS.hold ? holdTones(MD) : null;
         // (the holds' recruitment adds to what her intent drives, as a spinal reflex adds to the
@@ -986,6 +1079,9 @@
         else for (let i = 0; i < MU_.n; i++) MU_.aDes[i] = clamp(tone, MU_.lo[i], MU_.hi[i]);
         MU_.excitation(MU_.aDes, dt);
         MU_.stepActivation(dt);
+        // (units fatigued while active stop making force)
+        const fc = PRIORS.fatigue.on ? R.fatigue.cap : null;
+        if (fc) for (let i = 0; i < MU_.n; i++) if (MU_.act[i] > fc[i]) MU_.act[i] = fc[i];
       }
       MD.tauMus.fill(0);
       MU_.forces(MD.tauMus);
@@ -1128,7 +1224,8 @@
         const vref = mv(bk.R, mv(gb.Rs, g.twist0)), tw = dot(cross(vol, vref), aw);
         T = add(T, scl(aw, PRIORS.gripTwistK * tw - 0.3 * dot(wrel, aw)));
         const Fm = len(F);
-        g.overloadS = Fm > PRIORS.gripStrengthN ? g.overloadS + 1 : Math.max(0, g.overloadS - 1);
+        g.Fm = Fm;
+        g.overloadS = Fm > R.gripStrength(g.side) ? g.overloadS + 1 : Math.max(0, g.overloadS - 1);
         if (g.overloadS > 20) { g.held = false; g.F = [0, 0, 0]; g.T = [0, 0, 0]; continue; } // the grip is torn open
         applyContact(hd.link, F, pw);
         const lh = hd.link, Tl = mtv(b.Rw[lh], T), fe = b.fext[lh];
@@ -1194,7 +1291,7 @@
       // (declared prior; the 916's clip-ons are a long reach for her 0.54 m arm: seated, her
       // elbows stay nearly straight); reachLean is that correction
       elbowPrefDeg: 15, reachGain: 4, reachLean: 0, reachLeanMaxDeg: [-10, 12],
-      gFilt: null, gFF: null, aFilt: [0, 0, 0], tauG: 0.6, tauFF: 0.25, lastV: null, targets: null, lookYaw: 0, taskPrev: null, taskW: { chest: [0, 0, 0], head: [0, 0, 0] },
+      gFilt: null, gFF: null, aFilt: [0, 0, 0], tauG: 0.6, tauFF: 0.25, lastV: null, targets: null, taskPrev: null, taskW: { chest: [0, 0, 0], head: [0, 0, 0] },
       // riding on the whole-body load path (rideLoad): on or off; planned every rideLpEveryS; her
       // pelvis's orientation (kg m^2, 1/s^2, 1/s) - declared priors. CANDIDATE, off: measured in a
       // steady 1-1.2 g turn hung off, it left the outside leg and arms working as hard as without it
@@ -1312,6 +1409,62 @@
     // the bike's forward axis; positive = towards +x of the bike, her right)
     // (pulling away she pushes the bike upright with that foot first)
     const footRoll = () => (PL.feetDownWant && !PL.pushOff ? 1 : 0) * (PL.footSide === "R" ? 1 : -1) * PL.footLeanDeg * DEG;
+    // ---- where she looks (R.gaze): a point in the world and what it is, its bearing from her eyes
+    // relative to her heading (yaw + to her left, pitch + down), and the head's share of it, turning
+    // at most PRIORS.gaze.rateDegS. Gaze leads: the head turns towards what she is about to do.
+    R.gaze = { p: null, what: "", yaw: 0, pitch: 0, headYaw: 0, headPitch: 0 };
+    const eyeLocal = [0, 0.09, -0.08]; // (her eyes from the head joint, rest frame: up, forward)
+    R.eyeWorld = () => body.toWorld(M.linkOf.Head, eyeLocal);
+    // bearing of world point p from world point e, in a frame whose forward is fw and up is up
+    R.bearing = (e, p, fw, up) => {
+      const d = sub(p, e), left = unit(cross(up, fw)), f = dot(d, fw), l = dot(d, left), u = dot(d, up);
+      return { yaw: Math.atan2(l, f), pitch: Math.atan2(-u, Math.hypot(f, l)), dist: len(d) };
+    };
+    // the head's share of the gaze, turned at most rateDegS towards it, within maxYaw
+    R.gazeHead = (yaw, pitch, maxYawDeg, dt) => {
+      const G_ = PRIORS.gaze, r = G_.rateDegS * DEG * dt, g = R.gaze, my = maxYawDeg * DEG;
+      g.headYaw += clamp(clamp(G_.headShare * yaw, -my, my) - g.headYaw, -r, r);
+      g.headPitch += clamp(G_.pitchShare * pitch - g.headPitch, -r, r);
+      return g;
+    };
+    // riding: a hand reaching for its grip - at the grip; else the road ahead on the arc her bike is
+    // taking: its yaw rate, and at speed its lean (a leaned bike turns - g tan(lean) / v^2), aheadS
+    // ahead. (The head's pitch is the dip below the nearest look-ahead, minM, that her base riding
+    // posture was set for: stopped or creeping the gaze changes nothing.)
+    function gazeRiding(bk) {
+      const G_ = PRIORS.gaze, g = R.gaze, e = R.eyeWorld(), Rb = bk.R, dtp = 1 / PL.hz;
+      const upW = [0, 0, 1], fb = [Rb[1], Rb[4], Rb[7]], hf = unit([fb[0], fb[1], 0]);
+      const reach = ["L", "R"].find((S) => R.grips[S].reach && !R.grips[S].held);
+      let yaw = 0, pitch = 0;
+      // (her eyes' height over the ground)
+      const gz = e[2] - (R.lastGround ? R.lastGround.height(e[0], e[1]) : e[2] - 1.2);
+      if (reach) {
+        const p = R.gripWorld(bk, reach).c, bb = R.bearing(e, p, hf, upW);
+        g.p = p; g.what = "grip " + reach; g.fix = p; g.fixWhat = "grip"; yaw = bb.yaw; pitch = bb.pitch;
+      } else {
+        const v = Math.max(0, dot(bk.v, hf)), d = clamp(v * G_.aheadS, G_.minM, G_.maxM);
+        const left = unit(cross(upW, hf)), ub = [Rb[2], Rb[5], Rb[8]], lean = Math.asin(clamp(dot(ub, left), -1, 1));
+        const kYaw = v > 0.5 ? dot(bk.w, upW) / v : 0, kLean = (9.81 * Math.tan(lean)) / Math.max(v * v, 25), wl = smooth01((v - 3) / 5);
+        // (the turn she sees coming: the bike's curvature, smoothed over curveS)
+        g.k = (g.k ?? 0) + (1 - Math.exp(-dtp / G_.curveS)) * (clamp(wl * kLean + (1 - wl) * kYaw, -0.5, 0.5) - (g.k ?? 0));
+        const ya = clamp((g.k * d) / 2, -1.2, 1.2); // (the chord to a point d along a circle of curvature k)
+        const want = add(e, add(scl(hf, d * Math.cos(ya)), scl(left, d * Math.sin(ya))));
+        want[2] -= gz;
+        // (fixed on a point of the road: held until it comes near or the path leaves it, then the next)
+        const fx = g.fix, onRoad = fx && Math.abs(fx[2] - want[2]) < 0.1;
+        if (!onRoad || g.fixWhat !== "road" || len(sub(fx, e)) < G_.refixNear * d || len(sub(fx, want)) > G_.refixOff * d) { g.fix = want; g.fixWhat = "road"; }
+        const bb = R.bearing(e, g.fix, hf, upW);
+        yaw = bb.yaw; pitch = bb.pitch;
+        g.p = g.fix; g.what = "road " + bb.dist.toFixed(0) + " m";
+      }
+      g.yaw = yaw; g.pitch = pitch;
+      // (her head turns its share of the gaze's bearing - on the level, whatever the bike's lean -
+      // on her neck, and dips its share below her default look, minM ahead on the ground; within
+      // rideMaxYawDeg, at most rateDegS)
+      R.gazeHead(yaw, pitch - Math.atan2(gz, G_.minM), G_.rideMaxYawDeg, dtp);
+      R.telemetry.gaze = { what: g.what, yawDeg: +(yaw / DEG).toFixed(1), pitchDeg: +(pitch / DEG).toFixed(1), headYawDeg: +(g.headYaw / DEG).toFixed(1) };
+      return g;
+    }
     function planTargets(bk) {
       const P = PL.posture, Rb = bk.R, W = (xb) => bikeToWorld(bk, xb);
       const fd = R.lastGround ? smooth01(PL.feetDown) : 0;
@@ -1351,10 +1504,11 @@
       // leaning to the bars - is not asked to bend between them when the bike rolls under her)
       const roll = PL.chestLevelShare * rollFelt + hang * PL.hangChestRollDeg * DEG;
       T.chest = mm(Rb, mm(Rz(-hang * 10 * DEG), mm(Ry(roll), mm(Rx(-lean), M2B))));
-      // head: closer to the true horizon than the trunk, eyes along the path
+      // head: closer to the true horizon than the trunk, turned and dipped towards where she looks
       const hroll = 0.55 * rollWorld + 0.45 * rollFelt + hang * 6 * DEG;
-      const hpitch = (PL.headPitchDeg + P.tuck * 6 - stand * 4) * DEG;
-      T.head = mm(Rb, mm(Rz(PL.lookYaw - hang * 12 * DEG), mm(Ry(hroll), mm(Rx(-hpitch), M2B))));
+      const gz = gazeRiding(bk);
+      const hpitch = (PL.headPitchDeg + P.tuck * 6 - stand * 4) * DEG + gz.headPitch;
+      T.head = mm(Rb, mm(Rz(gz.headYaw - hang * 12 * DEG), mm(Ry(hroll), mm(Rx(-hpitch), M2B))));
       T.hands = {};
       // (a hand reaching for its grip - just sat down, the grip not yet taken - goes there too)
       for (const S of ["L", "R"]) if (R.grips[S].held || R.grips[S].reach) { const g = R.gripWorld(bk, S); T.hands[S] = { p: g.c, axis: g.a, volar: mv(Rb, unit([0, 0.35, -1])) }; }
@@ -1940,12 +2094,12 @@
         if (nl < 1) continue;
         const sh = body.toWorld(M.linkOf[S + "_Upperarm"], [0, 0, 0]), gp = body.toWorld(hand[S].link, hand[S].p), u = unit(sub(sh, gp));
         const c = dot(u, scl(need, 1 / nl));
-        let mag = Math.min(nl / Math.max(0.35, c), 0.8 * PRIORS.gripStrengthN);
+        let mag = Math.min(nl / Math.max(0.35, c), 0.8 * R.gripStrength(S));
         // the strut must not lift her off the seat: its share along the bike's up axis stays
         // within the lean-on-the-bars support plus a braced margin
         const upB = dot(u, mv(bk.R, [0, 0, 1])), upMax = (PL.handSupport * upperKg * Math.abs(gb[2])) / held + PL.braceUpN * PL.brace;
         if (upB > 1e-3) mag = Math.min(mag, upMax / upB);
-        PL.handPlan[S] = c > 0 ? scl(u, mag) : scl(need, Math.min(1, (0.3 * PRIORS.gripStrengthN) / nl));
+        PL.handPlan[S] = c > 0 ? scl(u, mag) : scl(need, Math.min(1, (0.3 * R.gripStrength(S)) / nl));
         if (barSide) PL.handPlan[S] = sub(PL.handPlan[S], mv(bk.R, [barSide / held, 0, 0])); // the bar's reaction on her hand
       }
       // sagittal leg stiffness: relaxed when seated, firmer braced, full stance gain standing
@@ -2047,10 +2201,45 @@
       SN.tauF = 0; SN.trim = 0;
       Object.assign(PL, { taskPrev: null, taskW: { chest: [0, 0, 0], head: [0, 0, 0] }, shift: 0, shake: 0, shakeRate: 0, brace: 0, braceDir: 0, targets: null, targetsB: null, lastV: null, aFilt: [0, 0, 0], acc: 0, feetDown: 0, feetDownWant: 0, accelF: 0, lastVh: null, walk: 0, dab: 0, dabWant: 0, dabCueS: 0, dabOffS: 0, pushOff: false, fallen: false, fallenS: 0, mode: "ride", modeS: 0, ff: "rnea", holdingBike: false, sideStand: false });
       Object.assign(PL.step, { phase: "none", s: 0, fromW: null, plantW: null }); PL.footMode = "none";
+      Object.assign(R.gaze, { fix: null, fixWhat: "", k: 0, headYaw: 0, headPitch: 0 });
       PL.reachLean = R.calibration?.reachLean ?? PL.reachLean;
       PL.handPlan.L = PL.handPlan.R = null;
       R.tauVF.fill(0);
       R.servoScale.fill(1);
+    };
+    // placed afresh (on the bike after a reset): nothing she felt, held or settled into carries over -
+    // her muscles start with the activations that hold the posture she is placed in, her soles and
+    // toes as untouched, her holds settled into the posture as it is
+    R.resetState = () => {
+      // (the placing solve starts from resting tone, not from whatever she last did: the same
+      // placement gives the same activations)
+      R.muscles.snap = true;
+      if (R.muscles.M) { R.muscles.M.act.fill(PRIORS.muscleTone); R.muscles.M.aDes.fill(PRIORS.muscleTone); R.muscles.M.u.fill(PRIORS.muscleTone); }
+      qSettled.fill(NaN);
+      for (const S of ["L", "R"]) { R.grips[S].slip = null; legVel[S] = null; armVel[S] = null; }
+      Object.assign(PL.step, { airS: 0, waitS: 0 });
+      for (const S of ["L", "R"]) {
+        const f = R.feel.feet[S];
+        Object.assign(f, { N: 0, cop: [0, 0], fore: 0, lat: 0.5, n: [0, 0, 1], on: "", felt: { N: 0, cop: [0, 0], fore: 0, lat: 0.5 } });
+        for (const k of PADS) f.pads[k] = 0;
+        if (foot[S].toes) Object.assign(foot[S].toes, { q: 0, M: 0, K: 0 });
+        if (foot[S].feelRoll) foot[S].feelRoll.tau = 0;
+      }
+      PL.feel.dz = PL.feel.hip = 0;
+      // (and her load path plans afresh: no contact forces carried from before)
+      LOAD.forces = []; LOAD.warm = null; LOAD.key = ""; LOAD.out = null; RLP.acc = 0;
+      R.qdT.fill(0); R.tauFF.fill(0); R.tauVF.fill(0);
+      PL.lastYaw = null;
+      // (what she meant and the posture she was easing into are not carried either: the intent is
+      // set afresh from here - measured: a hang-off intent left from a turn eased her posture on the
+      // next run's first steps)
+      Object.assign(R.intent, { hang: 0, foreAft: 0, tuck: 0, stand: 0, walk: 0 });
+      PL.posture = { hang: 0, foreAft: 0, tuck: 0, stand: 0 };
+      // (placed afresh - a reset, a respawn - she starts rested: PRIORS.fatigue.freshOnPlace)
+      if (PRIORS.fatigue.freshOnPlace) R.fatigue.reset();
+      // (the inertia each joint moves, for the posture she is placed in - her intent's bandwidth
+      // cap reads it before the step's own dynamics: not the last posture's, nor its damping)
+      body.tau.fill(0); body.armature.fill(0); body.clearForces(); body.kinematics(); body.aba();
     };
 
     // ------------------------------------------------------------------ load path: whole-body contact forces
@@ -2097,7 +2286,7 @@
         for (const s of soleOf[S]) if (s.ground.on && s.ground.n) C.push({ link: s.link, x: s.ground.x, dirs: pyramid(s.ground.n, s.ground.mu), kind: "foot", side: S });
       }
       if (o.bike) {
-        for (const S of ["L", "R"]) { const gr = R.grips[S]; if (gr.held) C.push({ link: hand[S].link, x: b.toWorld(hand[S].link, hand[S].p), dirs: AXES6, ub: LOAD.gripShare * PRIORS.gripStrengthN, kind: "grip", side: S, bike: true }); }
+        for (const S of ["L", "R"]) { const gr = R.grips[S]; if (gr.held) C.push({ link: hand[S].link, x: b.toWorld(hand[S].link, hand[S].p), dirs: AXES6, ub: LOAD.gripShare * R.gripStrength(S), kind: "grip", side: S, bike: true }); }
         for (const s of spheres) {
           if (s.kind === "palm" && s.bike.on && s.bike.n && !R.grips[s.seg[0]].held) C.push({ link: s.link, x: s.bike.x, dirs: pyramid(s.bike.n, s.bike.mu ?? PRIORS.mu.bike), kind: "palm", seg: s.seg, bike: true });
           if (s.peg.on && s.peg.n) C.push({ link: s.link, x: s.peg.x, dirs: pyramid(s.peg.n, s.peg.mu ?? PRIORS.mu.peg), kind: "peg", seg: s.seg, bike: true });
@@ -2411,7 +2600,7 @@
     return { rel: { p: h.sub(b.p, bk.p), R: b.R.slice(), q: Float64Array.from(b.q), qT: Float64Array.from(R.qT) }, reactions: avg, weightN: avg.reduce((a, e) => a + (e.F ? e.F[2] : 0), 0) };
   }
 
-  const api = { createRider, buildModel, segmentPoints, fitSpheres, presettle, PRIORS };
+  const api = { createRider, buildModel, segmentPoints, fitSpheres, presettle, PRIORS, fatigueStep };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   global.LUCID_RIDER_BIO = api;
 
@@ -2434,7 +2623,6 @@
     const h = R.helpers, DEG = Math.PI / 180;
     let DEFAULT_ON = true;
     try { const m = /[?&]rider=(bio|legacy)\b/.exec(global.location?.search || ""); if (m) DEFAULT_ON = m[1] === "bio"; } catch (_) {}
-    const legacyMass = () => global.LUCID_RIDER_DYNAMICS_V12852?.mass;
     const BIO = (CORE.riderBio = {
       // on by default (the maneuver suite passes with her); ?rider=legacy or setActive(false)
       // brings back the two-mass rider
@@ -2443,8 +2631,12 @@
         legacyRiderKg: 75.337, // V1.28.5.2 mass authority: the rider lumped into the V5 sprung mass
         balanceAssist: 0.4, // share of the chassis' virtual standstill roll support kept while her foot holds the bike
         footContactN: 150, footContactS: 0.3, // (her foot "holds" it once it carries this load, filtered)
-        sideStandDeg: 10, // parked on its side stand (off the bike): the virtual support holds it leaning this far left (declared)
+        sideStandDeg: 10, // parked on its side stand (off the bike): the stand (CH.sideStand) holds it leaning this far left (declared)
         subtractRiderInertia: true, // the V5 inertiaBody is not bike-only (V1.28.5.2 note); remove her intrinsic inertia
+        // (V1.28.5.2's authored MASS.inertiaAboutComKgM2 diagonal, kg m^2, body frame - the same
+        // authority as legacyRiderKg. V1.28.5.3 overwrites that field from its mannequin's live
+        // pose while the page runs, which made the bike's inertia drift with the time the page had been open.)
+        legacyRiderInertiaDiag: [7.699308409728404, 6.398818804587141, 5.809905718083106],
         auto: { style: 0.9, hangStartG: 0.2, hangFullG: 0.95, filterS: 1.2, minLeanDeg: 4, tuckStartMps: 33, tuckFullMps: 55, sitUpDecelG: 0.55, sitUpMinMps: 30 },
       },
       stats: { stepMs: 0, steps: 0 },
@@ -2476,6 +2668,7 @@
       b.kinematics();
       R.matchVelocity(bk);
       R.resetControl();
+      R.resetState();
       R.plan.gFilt = [0, 0, -9.81]; R.plan.gFF = [0, 0, -9.81];
       BIO.placed = true;
     }
@@ -2526,12 +2719,16 @@
         if (on && R.plan.feetDown > 0) for (const s of R.spheres) if (s.ground.on && s.link === R.foot[R.plan.footSide].link) load += s.ground.F[2];
         filt.footContact += (clamp(load / BIO.config.footContactN, 0, 1) - filt.footContact) * Math.min(1, dt / BIO.config.footContactS);
         const f = on ? smooth01(R.plan.feetDown) * filt.footContact : 0;
-        // (off the bike she is not holding it up - unless it stands on its side stand, leaning
-        // sideStandDeg to the left, or she holds it)
-        const off = on && R.plan.fallen, stand = off && (R.plan.sideStand || R.plan.holdingBike);
-        CH.feetDown.scale = off ? (stand ? 1 : 0) : 1 - (1 - BIO.config.balanceAssist) * f;
+        // (off the bike she is not holding it up - unless she holds it; on its side stand the stand
+        // holds it, leaning sideStandDeg to the left: CH.sideStand, a strut, not this support)
+        const off = on && R.plan.fallen, held = off && R.plan.holdingBike && !R.plan.sideStand;
+        CH.feetDown.scale = off ? (held ? 1 : 0) : 1 - (1 - BIO.config.balanceAssist) * f;
         // (aimed at the lean onto her foot as soon as it goes down: upright, she could not reach the ground)
-        CH.feetDown.targetRollRad = stand ? (R.plan.sideStand ? -BIO.config.sideStandDeg * (Math.PI / 180) : 0) : on && !off && R.plan.feetDownWant && !R.plan.pushOff ? smooth01(R.plan.feetDown) * (R.plan.footSide === "R" ? 1 : -1) * R.plan.footLeanDeg * (Math.PI / 180) : 0;
+        CH.feetDown.targetRollRad = held ? 0 : on && !off && R.plan.feetDownWant && !R.plan.pushOff ? smooth01(R.plan.feetDown) * (R.plan.footSide === "R" ? 1 : -1) * R.plan.footLeanDeg * (Math.PI / 180) : 0;
+      }
+      if (CH.sideStand) {
+        CH.sideStand.down = BIO.active && BIO.placed && R.plan.fallen && !!R.plan.sideStand;
+        CH.sideStand.angleDeg = -BIO.config.sideStandDeg;
       }
       if (!BIO.active) return;
       if (BIO.skipIntegrate) { place(F); return; } // held/settling bike moved: she moves with it
@@ -2550,8 +2747,7 @@
     // ---- bike-only mass matrix and gravity (the legacy lumps her into the sprung body)
     const baseMass = FP._massMatrixAndBias, prevMass = CH.massMatrix, prevGrav = CH.sprungGravityMassKg;
     function riderInertiaDiag() {
-      const I = legacyMass()?.inertiaAboutComKgM2;
-      return BIO.config.subtractRiderInertia && Array.isArray(I) ? [I[0][0], I[1][1], I[2][2]] : [0, 0, 0];
+      return BIO.config.subtractRiderInertia ? BIO.config.legacyRiderInertiaDiag.slice() : [0, 0, 0];
     }
     CH.massMatrix = function (F) {
       if (!BIO.active) return prevMass ? prevMass(F) : F._massMatrixAndBias();

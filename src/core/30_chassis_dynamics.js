@@ -74,6 +74,14 @@
       posture: { tuck: 0.3, hang: 0 }, // written by the rider layer
     },
     feetDown: { enabled: true, fullBelowMps: 0.8, noneAboveMps: 2.0, kNmPerRad: 4000, cNmsPerRad: 900, maxNm: 450, fullBelowLeanDeg: 25, noneAboveLeanDeg: 40 },
+    // the side stand, down (written by the rider layer): a strut on the bike's left that stops it
+    // leaning further left than angleDeg - one-sided: leaning less, its foot is off the ground. Its
+    // foot meets the ground as the bike comes to that lean: put down with the bike lying further
+    // over (lifting it off its side), it takes the bike once the bike has come up to it. A stiff
+    // roll stop about the heading (declared: the strut and its foot on the ground). The parked bike
+    // used to rest on the feet-down support, capped at a rider's 450 N m and fading past 25 deg:
+    // a seated rider letting it lean over onto the stand pushed it past the cap and it went down.
+    sideStand: { down: false, angleDeg: -10, kNmPerRad: 40000, cNmsPerRad: 2000, maxNm: 5000, engaged: false },
     // the 916 carries a frame-mounted hydraulic steering damper; the legacy model only had head
     // bearing damping (1.2 N m s/rad), which leaves the wobble mode lightly damped
     steeringDamper: { enabled: true, cNmsPerRad: 7 },
@@ -120,6 +128,15 @@
   CH.resetRlm = () => { rlm.factor = 1; rlm.nrStatic = 0; };
   const prevReset = FP.reset;
   FP.reset = function (...args) {
+    // (before the reset's settle: nothing the settle's wrenches read is left from before - the
+    // rear-lift factor, the chock, and what the other layers keep (CH.onBeforeReset: her posture
+    // for the aero, ...). Left, the settle converged to a slightly different equilibrium after each
+    // run and the same maneuver did not repeat.)
+    rlm.factor = 1; rlm.nrStatic = 0;
+    CH.chock.anchor = null;
+    CH.aero.posture = { tuck: 0.3, hang: 0 };
+    Object.assign(CH.sideStand, { down: false, engaged: false });
+    for (const fn of CH.onBeforeReset) try { fn(this, args); } catch (e) { console.warn("LUCID chassis pre-reset hook", e); }
     const r = prevReset.apply(this, args);
     rlm.factor = 1;
     rlm.nrStatic = Math.max(800, this.tr?.loadN || 1500); // settled static rear load
@@ -324,6 +341,19 @@
     Object.assign(out, { active: true, weight: wl, torqueNm: tau });
   }
 
+  function sideStandWrench(F, Q) {
+    const S = CH.sideStand, out = { active: false };
+    CH.last.sideStand = out;
+    if (!S.down) { S.engaged = false; return; }
+    const fw = v5qrot(F.q, V5_Y), h = v5norm([fw[0], fw[1], 0]);
+    const roll = v5bodyAngles(F.q).rollRad, rollRate = v5dot(v5qrot(F.q, F.w), h), a = S.angleDeg * DEG;
+    // (its foot reaches the ground once the bike is at - or comes up to - its lean)
+    if (!S.engaged && roll >= a - DEG) S.engaged = true;
+    if (!S.engaged || roll >= a) return;
+    const tau = clamp(S.kNmPerRad * (a - roll) - S.cNmsPerRad * rollRate, 0, S.maxNm);
+    addBodyMoment(F, Q, v5mul(h, tau));
+    Object.assign(out, { active: true, torqueNm: tau, pastDeg: (a - roll) / DEG });
+  }
   function chockWrench(F, Q) {
     const C = CH.chock;
     if (!C.active || !F.FK) return;
@@ -339,8 +369,9 @@
     F._addExternalForce(Q, f, F.FK.hubW, F.FK, "front");
     CH.last.chock = { forceN: f };
   }
-  CH.wrenches = [chainWrench, rotorSwingarmShare, aeroWrench, feetDownWrench, chockWrench];
+  CH.wrenches = [chainWrench, rotorSwingarmShare, aeroWrench, feetDownWrench, sideStandWrench, chockWrench];
   CH.onReset = []; // callbacks (free, resetArgs) after every free-road reset
+  CH.onBeforeReset = []; // callbacks (free, resetArgs) before it (before the reset's settle)
   // extension points (rider body layer): optional mass-matrix provider, gravity mass of the
   // sprung body, callbacks after the chassis state has been advanced
   CH.massMatrix = null;
@@ -466,7 +497,7 @@
     if (M && !this.__rttLite && CH.enabled) {
       M.chassis = {
         schema: "lucid.core.chassis.v1",
-        chain: CH.last.chain || null, aero: CH.last.aero || null, feetDown: CH.last.feetDown || null, jointLimitImpulses: CH.last.jointLimits || [],
+        chain: CH.last.chain || null, aero: CH.last.aero || null, feetDown: CH.last.feetDown || null, sideStand: CH.last.sideStand || null, jointLimitImpulses: CH.last.jointLimits || [],
         suspension: this.internal
           ? { frontAirN: this.internal.frontAirN, frontLockN: this.internal.frontLockN, frontStopN: this.internal.frontStopN, frontTopOutN: this.internal.frontTopOutN, rearBumpN: this.internal.rearBumpN }
           : null,

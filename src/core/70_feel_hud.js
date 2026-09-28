@@ -20,7 +20,7 @@
   let on = false;
   try { on = global.localStorage?.getItem("lucid.feelHud") === "1"; } catch (_) {}
   const H = (CORE.feelHud = { get on() { return on; }, trail: { front: [], rear: [] }, frames: 0 });
-  const W = 348, HH = 212;
+  const W = 348, HH = 224;
   let cv = null, ctx = null, dpr = 1;
   function ensure() {
     if (cv) return true;
@@ -152,6 +152,12 @@
       line(10, 192, `MUSCLES legs ${Math.round(100 * (rg.legs || 0))}% trunk ${Math.round(100 * (rg.trunk || 0))}% arms ${Math.round(100 * (rg.arms || 0))}% neck ${Math.round(100 * (rg.neck || 0))}%  made ${Math.round(100 * mt.made)}%`);
       line(10, 204, mt.top.map(([id, a]) => `${short(id)} ${Math.round(100 * a)}%`).join("  "));
     } else if (RB) line(10, 192, "rider: servos (joint motors)");
+    // what her muscles can still make (fatigue): per region, her weakest muscle, her grips
+    const ft = RB?.telemetry?.fatigue;
+    if (ft) {
+      const rg = ft.regions, pc = (x) => Math.round(100 * (x ?? 1)), wk = ft.weakest[0].replace(/^left_/, "L ").replace(/^right_/, "R ").replace(/_/g, " ");
+      line(10, 216, `FRESH legs ${pc(rg.legs)}% trunk ${pc(rg.trunk)}% arms ${pc(rg.arms)}% neck ${pc(rg.neck)}%  grip ${pc(ft.grip.L)}/${pc(ft.grip.R)}%  low ${wk} ${pc(ft.weakest[1])}%`);
+    }
   }
   let acc = 0;
   function frame() {

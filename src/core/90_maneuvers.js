@@ -212,6 +212,23 @@
   };
 
   // ------------------------------------------------------------------ runner
+  // Each maneuver starts from the bike at ambient temperature. The V1.25-V1.27 thermal layers warm
+  // and cool the tyres, brakes and damper oil while the page runs, and the tyres' grip and
+  // pressure and the dampers' coefficients follow them, so without this a maneuver's outcome
+  // would depend on how long the page had been open. (opts.keepThermal keeps the bike's current
+  // temperatures.) V1.27's own reset() re-captures the dampers' authored coefficients from their
+  // current, temperature-scaled values, so the oil is cooled through V1.25 and V1.27 only
+  // re-applies its factor to the coefficients it captured when the suspension was set.
+  function coolToAmbient(F) {
+    const ORCH = global.LUCID_COMPONENT_ORCHESTRATOR, TM = global.LUCID_THERMAL_MATERIALS;
+    ORCH?.resetThermal?.(); // (V1.25 tyres, brakes, damper oil, exhaust; V1.26's tyre and brake feedback)
+    if (TM?.state?.wheels && ORCH?.state) {
+      const T = ORCH.state.ambientC ?? 22;
+      for (const w of Object.values(TM.state.wheels)) Object.assign(w, { hubC: T, rimC: T, rotorHeatW: 0, toTireAirW: 0, toTireCoreW: 0 });
+      TM.setDamperFeedback?.(TM.calibration?.damper?.enabled ?? true);
+    }
+    return F;
+  }
   function simulate(name, opts = {}) {
     const d = DEFS[name];
     if (!d) throw Error("unknown maneuver " + name);
@@ -237,6 +254,7 @@
     API.setAssistMode?.(opts.assist || d.assist || "RAW");
     const setup = { mode: "ENGINE", throttle: 0, gear: d.gear || 3, clutch: d.clutch ?? 1, frontBrakeBar: 0, rearBrakeBar: 0, absEnabled: !!d.abs, tcEnabled: !!d.tc, autoShift: false };
     if (pt) Object.assign(pt.states.free.command, setup);
+    if (!opts.keepThermal) coolToAmbient(F);
     F.reset(d.speed ?? 20, d.roll ?? 0);
     const cmd = pt ? pt.states.free.command : {};
     Object.assign(cmd, setup);

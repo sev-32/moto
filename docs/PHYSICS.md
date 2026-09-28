@@ -38,7 +38,8 @@ at a fixed 540 Hz.
 | Reverse-spin guard | the V1.21 driveline feeds its final-drive damper with \|ω_rear\|; for a wheel turning backwards that torque is replaced by a resisting one scaled by clutch engagement |
 | Aero | CdA 0.46 upright → 0.30 tucked, lift 0.05 / 0.03 m², centre of pressure moving with posture and hang-off |
 | Steering damper | 7 N m s/rad (the 916 carries a hydraulic damper; the legacy had head-bearing damping only) |
-| Feet down | below 0.8 m/s the rider's feet hold roll (4000 N m/rad, 900 N m s/rad, ≤ 450 N m), fading out by 2 m/s, and only near upright (full to 25° of lean, none past 40°: a bike lying on its side is not levered back up). With the physical rider off the bike it holds the bike only parked on its side stand (leaning 10° left, declared) or while she holds it |
+| Feet down | below 0.8 m/s the rider's feet hold roll (4000 N m/rad, 900 N m s/rad, ≤ 450 N m), fading out by 2 m/s, and only near upright (full to 25° of lean, none past 40°: a bike lying on its side is not levered back up). With the physical rider off the bike it holds the bike only while she holds it |
+| Side stand | down (the rider layer puts it down getting off, up getting on): a strut on the left that stops the bike leaning further than 10° (declared) - one-sided, 40 kN m/rad, 2000 N m s/rad, ≤ 5 kN m about the heading. Its foot meets the ground as the bike comes to that lean: put down with the bike lying further over, it takes the bike only once it has come up to it. (The parked bike used to rest on the feet-down support above: it sagged to −12…−14°, and a seated rider letting it lean onto the stand pushed it past the 450 N m cap - it went over.) |
 | Rear-lift mitigation | with ABS on, trims the front pressure while the rear is unloaded (IMU-less RLM) |
 | Chock | burnout-pit front-axle restraint (3 × 10⁵ N/m, 8000 N s/m, ≤ 12 kN), re-anchored on reset |
 
@@ -200,6 +201,43 @@ but muscle force and passive tissue acts on her joints while she rides:
     lift.)
   - *starting relaxed*: placed on the bike (a reset, taking over from the motors) she starts with
     the activations that hold the posture she is in, not at resting tone.
+* **Where she looks** (`R.gaze`, `PRIORS.gaze`, declared priors): her eyes fix a point in the world
+  and stay on it until it comes near (within 70 % of her look-ahead) or her path leaves it (by 10 %),
+  then jump to the next - a saccade. Her head carries its share of the look (70 % of its turn, 60 % of
+  its dip below her default look, the ground 15 m ahead), turning at most 250°/s; her eyes the rest
+  (her rig has no eyes to turn). Riding: the road ahead on the arc her bike is taking - 2 s ahead,
+  15-60 m, along the curvature she sees coming (from its lean at speed, its yaw rate slow; smoothed
+  over 0.5 s) - her head's turn within 40°; a hand reaching for its grip, the grip. On foot: the bike
+  she is walking to (within 6 m), else the path she is told to take (2.5 m + 1 m per m/s ahead), else 8
+  m ahead; her head's turn within 60°; in a motion at the bike, where her hand is going. Gaze leads:
+  her head turns to a new way before her body does. Measured (Node, `tests/rider_gaze.test.mjs`): in a
+  steady 0.8 g left turn at 15 m/s she fixes the road 29 m ahead, 29.8° left of her heading, and her
+  head is turned 43° on her neck (21° without the look - the rest keeps her head level on the leaned
+  bike); walking she looks 23° down at the path; told to go left, 0.25 s later her head has turned
+  43°, her pelvis 19°.
+* **Her fatigue** (`R.fatigue`, `PRIORS.fatigue`; CANDIDATE): each muscle, and each hand's grip on
+  the bars, is a pool of motor units - active, fatigued, resting - in the three-compartment
+  controller model (3CC, Xia & Frey-Law 2008) with rest recovery (3CC-r, Looft et al. 2018). The load
+  a muscle's pool holds is its activation; a grip's, the share of her fresh grip strength (450 N) it
+  holds with. Fatigued units make no force: a muscle reaches at most its unfatigued share of
+  activation (the allocation's bound; one already past it drops to it), her intent asks no hinge for
+  more than its muscles' unfatigued strength, and her grip holds - and is torn open - at its
+  unfatigued share of 450 N, her hand plan and load path planning with it. Rates (1/s): F 0.00589
+  ankle, 0.0182 shoulder and shoulder girdle, 0.0104 elsewhere; R 0.00099; recovery at rest ×30 for
+  the grips and wrist muscles, ×15 elsewhere; resting below 5 % activation; LD = LR = 10. Of these only
+  the two F (the ends of Frey-Law et al. 2012's fitted range, 0.00589-0.0182; R 0.00058-0.00168) and
+  the rest multipliers (15 ankle, knee, elbow - Looft et al. 2018; shoulder - Looft & Frey-Law 2020;
+  30 hand / grip) are from the papers; the other rates take the ranges' geometric middle - the
+  per-region table could not be checked here. Off the bike her joints are motor-driven: her muscles
+  count as resting there. Placed afresh (a reset) she starts rested (`freshOnPlace`). The HUD's FRESH
+  line shows what each region, her weakest muscle and her grips can still make. What it gives (Node,
+  `tests/rider_fatigue.test.mjs`): held at half its strength a shoulder pool fails after 57 s, an
+  ankle's after 186 s, the others' after 101 s (at 80 %: 14 / 43 / 24 s); the loads they hold
+  indefinitely are 5.2 / 14.4 / 8.7 %; a minute's rest recovers 59 % of the fatigue (6 % without the
+  rest multiplier). Riding a steady 0.8 g turn at 15 m/s: after 4 s her most loaded muscle (left upper
+  trapezius) keeps 94.6 %, her neck muscles 97.8 %; after 20 minutes of it (fatigue time ×300 in the
+  test) neck 36 %, trunk 49 %, legs 67 %, arms 70 %, her left grip 35 % - her right grip was torn open
+  - and she is still seated, no muscle past its cap.
 * **Limits of the package's muscles seen riding** (reported, not changed): lumbar side-bend is
   weak when leaning to the bars (quadratus lumborum is small by design, < 10 N m per part; the
   stretched extensors lose force); the shoulder girdle has only pectoralis major, latissimus and
@@ -216,15 +254,21 @@ but muscle force and passive tissue acts on her joints while she rides:
   effects elsewhere (the allocation, the other joints held) they make +15 of +20 N m asked, +23 of 40,
   +29 of 60 - an effective 20-25 N m; the stretched side weakens further as she bends. So a bike rocked
   ±8° at 0.5 Hz under her swings her trunk ±15-25° (the motor-driven rider used 35 N m there).
-* **Measured, muscle-driven** (`tests/rider_biomech.test.mjs`, bands kept from the motor era): 10 of
-  11 pass - pre-settled, static, 1 g braking, 0.8 g acceleration, 0.8 g steady turn, creeping with a
-  foot down (the planted foot stays put and steps as the bike rolls on - it had slipped 0.5-1 m/s),
-  low-side dab, a slide ridden through, foot down left and right. Open: the bike rocking ±8° at 0.5 Hz
-  under her (chest ±21°: the lumbar side-bend limit above).
+* **Measured, muscle-driven** (`tests/rider_biomech.test.mjs`, bands kept from the motor era): 9 of
+  11 pass - pre-settled, static, 1 g braking, 0.8 g acceleration, 0.8 g steady turn, low-side dab, a
+  slide ridden through, foot down left and right. Open: the bike rocking ±8° at 0.5 Hz under her
+  (chest ±22°: the lumbar side-bend limit above); creeping with a foot down, which sits on its bands:
+  small changes (the gaze's head share ±0.05) spread its largest lean over 5.5-6.5° and the planted
+  foot's slip over 0.15-0.23 m/s (bands 6° and 0.15 m/s; without the gaze 5.4-5.5° and 0.10-0.13
+  m/s - her look adds about half a degree), and this build lands at 0.22 m/s.
 * **Off the bike she is still motor-driven** (`R.muscles.onFoot` off): standing, walking, getting
   up, getting on / off and lifting the bike use the servos as joint motors - those controllers
   are not yet converted; her feet (pads, toes, feel, the tripod balanced by feel) are the same in
-  both. The hand-over is clean both ways (all 16 at-the-bike tests pass).
+  both. The hand-over is clean both ways in Node (15 of the 16 at-the-bike tests pass; the one open,
+  getting on a bike free to roll, is chaotic - see *Checks* below). In the game it was not: from the
+  muscle-driven riding on, getting off failed every time - the bike, let lean onto its side stand
+  under her, went over (the stand then was the feet-down support, capped at 450 N m; now a strut:
+  see *Side stand* above).
 * `?muscles=0` in the browser (and `--motors` in the maneuver suite) runs the pre-muscle rider
   (servos as joint motors while riding too), for comparison.
 
@@ -519,7 +563,12 @@ reported, not hidden.
   lifting it off either side, onto its stand with her standing, her own mean moment on it while it
   rises under 120 N m back down, and, off its right side, then getting on; shoved towards her
   (600 N m for 0.5 s) while she holds it up, her hip on it with over 300 N, the tip under 20° and
-  she gets on; shoved harder (900 N m), she lets it go.
+  she gets on; shoved harder (900 N m), she lets it go. Now 15 of 16 pass. Two of the bounds sit
+  inside what small changes do to a run (the gaze's head share ±0.01-0.05, her fatigue on or off -
+  none of them changing what she does, only the run's detail): the peak press getting on a bike free
+  to roll spreads over 224-400 N (fatigue off 230-282 N; this build 400 N - it fails), seated at
+  13.5-13.7 s every time; the 600 N m shove's hip force over 268-341 N (this build passes), the bike
+  saved every time.
 * **Measured** (Node, flat ground). Getting on (from 1.3 m away, the bike on its stand, bars
   straight / at full lock, the kinematic stub): seated after 10.9 s (6.6 s at the bike); getting
   off 5.8-5.9 s; the motion assist 94 N mean (≤ 300 N). Over the leg-over (2.6 s getting on, 2.5 s
@@ -544,25 +593,29 @@ reported, not hidden.
   directions: 3.3-3.7 s from rest to the squat, the get-up assist averaging 140 N and 150-165 N m.
   Before the hip-driven leg-over (the whole leg solved to a foot target) the swung ankle sat in its
   dorsiflexion end stop 97-100 % of the time at up to its full capacity.
-* **Browser** (the 916's chassis, headless; `node tests/browser/at-the-bike.mjs`; outcomes vary
-  from run to run). Getting off and on (4 runs): every run got her off - the stand down, off and
-  standing 7.8-8.3 s after F - and, walked away and back, on again and riding off, seated
-  12.3-17.7 s after F; in 2 of them she fell once on her feet on the way (once walking into the
-  bike as the test first walked her, once on the way to get on) and got up. The residual 83-117 N m
-  mean, at most 327-450 N m (at its cap once). After a low-side crash at 12 m/s (3 runs with the
-  lift as it now ends): in 2 she got up, walked to the bike, lifted it onto its stand (16.2 / 25.0 s
-  after F; the lift assist 467-470 N m mean, at most 1000-1066 N m) and got on (19.7 / 18.5 s after
-  F) and rode off; in 1 her hands lost the bike while she stepped in with it at 40° - she let go and
-  it fell back. The runs before these found the rear wheel's spin, the hand points and the lift's
-  push. The stand holds the parked bike at −12 … −14°, not −10° (below).
+* **Browser** (the 916's chassis, headless; `node tests/browser/at-the-bike.mjs`). Before the
+  muscle-driven riding (4 runs): every run got her off - the stand down, off and standing 7.8-8.3 s
+  after F - and, walked away and back, on again and riding off, seated 12.3-17.7 s after F; in 2 of
+  them she fell once on her feet on the way and got up. From the muscle-driven riding (615dc27) on,
+  getting off failed every time: seated, letting the bike lean over onto its stand, it went past the
+  stand and over, and her with it (the stand was the feet-down support, capped at 450 N m and fading
+  past 25°: under her weight the bike reached its cap at −14° and went on; riding on joint motors it
+  had stopped at −14.5° with 270-390 N m). With the stand a strut (chassis, *Side stand*), getting off
+  and on passes in all 3 runs since (builds of this change): off 6.0-6.8 s after F, the bike parked at
+  −10.3°, seated again 15.1-15.8 s after F and riding off; the hold residual 69-73 N m mean, at most
+  295-342 N m. After a low-side crash at 12 m/s (5 runs): once she got up, lifted the bike onto its
+  stand (24.2 s after F), got on (20.5 s after F) and rode off; once her hands lost the bike while she
+  stepped in with it at 40° - she let go and it fell back; once she had it up to 68° and it fell back;
+  once in 30 s she did not get it up; once the crash left the bike on its back (180°), which she
+  cannot lift. Which of these a run does turns on small changes (the first four: one build, only her
+  look's head share varied, 0.65-0.75, or her look off): the lift is not yet robust.
 * **Not yet / known**: running is a fast walk (no flight phase) - told 3 m/s she falls; the
   swinging foot lands 5-8 cm from its aim. Holding the bike up, the declared residual does about
   three times what her own contacts do (standing it up off its stand, four times), and her left
   arm - its clavicle, at a declared 40 N m - is at its capacity doing it: the load reaches her
   trunk and legs, but through an arm root far weaker than a real shoulder girdle. The hip brace
-  and letting go are measured in Node only. In the browser the side stand is the
-  chassis's virtual support aimed at −10° (a spring, 4000 N m/rad, from either side: it sags to
-  −12 … −14° under the bike's weight); in Node it is a hard one-sided stop. The lift is the
+  and letting go are measured in Node only. The side stand is a one-sided stop at −10° in both
+  (in the browser a stiff strut, in Node a hard stop). The lift is the
   declared assist's, not hers: her hands only press (palm contacts), they do not pull. At the end
   of getting off the motion assist is at its cap for 1-2 s as her right foot comes down behind the
   left. The catch assist does real work and is the first thing to reduce.
@@ -628,22 +681,38 @@ the same build, headless:
 
 | Maneuver | Her muscles | Joint motors |
 | --- | --- | --- |
-| coast 20 m/s hands off | self-stable (|roll| 0.4°), 0.13 g engine braking + drag | |roll| 0.2°, 0.13 g |
-| coastSlow 6 m/s | capsizes (below the self-stable band: physical) | capsizes |
-| standstill | foot down, bike at 4.2° | 2.8° |
+| coast 20 m/s hands off | self-stable (|roll| 0.4°), 0.13 g engine braking + drag | |roll| 0.06°, 0.13 g |
+| coastSlow 6 m/s | capsizes (below the self-stable band: physical) | leans to 10.5° by the end of the 4.6 s run |
+| standstill | foot down, bike at 3.8° | 2.5° |
 | brakeFirm 16 / 5 bar | 0.81 g, stops in 4.05 s | 0.81 g, 4.05 s |
-| brakeMax (front slip -6…-9 %, eased as the rear goes light) | 0.93 g, 49.9 m, rear down | 0.97 g, 49.9 m |
+| brakeMax (front slip -6…-9 %, eased as the rear goes light) | 0.95 g, 52.2 m in 4 s, rear down | 0.95 g, stops in 4.0 s, 49.3 m |
 | brakeGrab 40 bar step, no ABS | front lock, over the bars — no numeric explosion | the same |
-| brakeAbs 55 bar | 1.73 g peak, rear lift ≤ 58 mm, stops in 3.65 s | 1.73 g, 57 mm, 3.55 s |
-| stoppie | rear lifted ~17 cm and set down | ~17 cm |
-| launch | 1.14 g; the bike rolls to 13.3° under her (motors 3.6°) | 1.15 g |
-| wheelie | held at ~26° | ~27° |
-| lean35 | steady 35° lean | 35.8° |
-| radius60 (0.68 g, hang-off) | 39.6°, steady (it weaved and fell at 8.5-9.9 s before her feet and holds) | 39.9°, steady |
-| slalom ±22° / 1.2 s | ±17.6° | ±16.8° |
+| brakeAbs 55 bar | 1.53 g peak, rear lift ≤ 28 mm, stops in 3.65 s | 1.54 g, 31 mm, 3.55 s |
+| stoppie | rear lifted ~18 cm and set down | ~17 cm |
+| launch | 1.14 g | 1.14 g |
+| wheelie | held at ~26° | ~26° |
+| lean35 | steady 35.2° lean | 34.9° |
+| radius60 (0.68 g, hang-off) | 38.1°, steady | 38.3°, steady |
+| slalom ±22° / 1.2 s | ±17.1° | ±17.2° |
 | burnout | stationary, rear spinning | the same |
 
-14 of 14 within bands on her muscles (feet as tripods, neural elastic holds).
+14 of 14 within bands on her muscles (feet as tripods, neural elastic holds, her gaze and fatigue),
+14 of 14 on joint motors. At walking pace the maneuvers' own bar-torque steering (the maneuver's
+rider, not her) weaves the bike: after the stoppie's release at ~4 m/s ±16° (motors 1.5°), in the
+launch's first seconds ±15° (motors ±9°) - not banded, not yet addressed.
+
+**Runs repeat exactly**: the same maneuver gives the same numbers on any page, after any other run.
+The runner starts each maneuver from the bike at ambient temperature (the V1.25-V1.27 thermal layers
+warm and cool the tyres, brakes and damper oil while the page runs, and the tyres' grip and pressure
+and the dampers' coefficients follow them: a result depended on how long the page had been open;
+`opts.keepThermal` keeps the bike's temperatures). A reset clears what the chassis's settle reads (the
+rear-lift factor, the chock, the aero posture - `CH.onBeforeReset`) and her own state as she is
+placed (activations, feel, toes, grips, load path, intent - `R.resetState`). And the bike's inertia no
+longer follows the legacy mannequin: the V1.28.5.3 layer recomputes the lumped rider's inertia from its
+hidden mannequin's pose while the page runs, and the bike-only mass matrix subtracted that; it now
+subtracts V1.28.5.2's authored value, the authority `legacyRiderKg` comes from (roll 6.40 kg m² where
+the mannequin gave ~9.9: the bike's own roll inertia 11.6 kg m², was ~8.1 - every maneuver above was
+measured with it).
 
 (brakeMax: threshold braking with her pelvis at the muscle-efficient 18° pitch put her weight far
 enough forward that braking on front slip alone went over the bars - motors too; the maneuver's

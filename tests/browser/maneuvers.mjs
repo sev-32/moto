@@ -1,5 +1,5 @@
 // Run the rider-in-the-loop maneuver library headless and print metrics (and traces).
-//   node tests/browser/maneuvers.mjs [build.html] [--only a,b] [--trace] [--json out.json] [--rider bio|legacy] [--motors] [--plan json]
+//   node tests/browser/maneuvers.mjs [build.html] [--only a,b] [--trace] [--json out.json] [--rider bio|legacy] [--motors] [--plan json] [--priors json]
 import { openBuild, ROOT } from "./lib.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -46,6 +46,12 @@ const rider = args.includes("--rider") ? args[args.indexOf("--rider") + 1] : nul
 if (rider) {
   const on = await page.evaluate((r) => window.LUCID_CORE.riderBio?.setActive(r === "bio") ?? null, rider);
   console.log(`rider: ${rider} (physical LUCID rider ${on ? "on" : "off"})`);
+}
+// (--priors '{"k": v}': rider priors set before the runs - an object value merges into the prior of
+// that name, e.g. '{"gaze": {"headShare": 0}}' - experiments)
+if (args.includes("--priors")) {
+  const pri = JSON.parse(args[args.indexOf("--priors") + 1]);
+  console.log("priors:", JSON.stringify(await page.evaluate((p) => { const R = window.LUCID_CORE.riderBio?.rider; if (!R) return null; for (const [k, v] of Object.entries(p)) R.priors[k] = v && typeof v === "object" && !Array.isArray(v) ? { ...R.priors[k], ...v } : v; return p; }, pri)));
 }
 // (--plan '{"k": v}': planner values set on the rider before the runs - posture experiments)
 if (args.includes("--plan")) {
