@@ -485,15 +485,18 @@ reported, not hidden.
   where it ends), found offline by hill-climbing (`node tools/swing-path.mjs search
   mount|dismount`) with this leg's own hip reach and ranges (hip-only IK, the knee at its easy
   angle) against the 916's envelope, scored on the swung knee, calf and foot's clearance (to
-  3 cm), the knee reaching its targets, the standing leg reaching its foot, and - getting on -
-  her centre of mass over it and her left hand on its grip. `node tools/swing-path.mjs check`
-  re-measures the paths the game runs (kinematic, standing still: the dynamics add their own
-  error): getting on, the bike at −2°: knee, calf and foot ≥ 2.9 cm clear, the thigh 0.6 cm, the
-  knee within 3.0 cm of its targets, the standing foot within 0.5 cm, her centre of mass at most
-  2.7 cm past its allowance (5 cm either way of a point 5 cm towards the bike from the standing
-  foot's middle), her hand within 0.2 cm of its grip; getting off, over the bike on its stand at
-  −10°: 1.1 cm (where the knee starts, against the tank; her seat stays on the seat's edge), the
-  knee within 3.6 cm. Getting on, the path: leaning over the tank, the knee back and out, up
+  3 cm), the knee reaching its targets, the standing leg reaching its foot with its sole flat (its
+  heel planted - tilted 3° at most; the ankle bends only so far), and - getting on - her centre of
+  mass over it and her left hand on its grip; getting off, her hips turn towards the seat as the
+  leg goes over (yaw, up to 17°). `node tools/swing-path.mjs check` re-measures the paths the game
+  runs, from the pose each starts from (kinematic, standing still: the dynamics add their own
+  error): getting on, the bike at −2°: knee, calf and foot ≥ 3.1 cm clear, the thigh 0.6 cm, the
+  knee within 3.0 cm of its targets, the standing foot within 0.4 cm and flat (0.1°), her centre of
+  mass at most 1.9 cm past its allowance (5 cm either way of a point 5 cm towards the bike from the
+  standing foot's middle), her hand on its grip; getting off, the bike held at −2°: 1.1 cm (the
+  calf, as the leg comes down past the tail; the thigh slides over the seat), the knee within
+  5.2 cm, the standing foot on its spot and flat, her left hand within 3.3 cm of its grip. Getting
+  on, the path: leaning over the tank, the knee back and out, up
   behind her beside the tail, across over the seat's middle as the pelvis tilts right side up,
   on past its far edge, then down onto the seat.
 * **Holding the bike up** while getting on: she keeps it leaning 2° onto her side (−2°, her
@@ -515,11 +518,39 @@ reported, not hidden.
   Stopped and parked, the bars are at full lock with the left grip against the tank: with her hand
   at the grip she turns them straight - rate-controlled against the standing tyre's scrub,
   ≤ 60 N m about the steering axis.
-* **Getting off** (stopped, seated, left foot down): the side stand first - she lets the bike lean
-  over onto it and waits until it rests there (within 2° of −10°, ≤ 6°/s); then her right hand from
-  its grip to the tank, up off the seat onto her left leg as her right leg goes back over the tail
-  and down behind her left foot, her hands off the bike, and the walking controller steps her
-  clear. A leg caught on its way over goes back onto its peg and she sits again.
+* **Getting off** (stopped, seated, left foot down) - a short rider's way off a tall bike, holding it
+  up herself, barely leaning onto her side (−2°, as getting on; the declared residual as there),
+  her core and arms held firm throughout (their servos' gains doubled: `dismountBrace`):
+  - her right foot off its peg and down: both feet as wide as they reach (0.3 m either side), and
+    she waits until the bike is balanced between them (within 2° of that lean, ≤ 6°/s);
+  - her right hand from its grip to the tank (the 916's bars are a long reach: held there, it would
+    keep her from moving over);
+  - her right foot up off the ground (towards its peg - leaning to the bars further than planned she
+    carries it behind it): out on the ground it would hold her right thigh against the bike's side
+    and keep her from moving over;
+  - she settles onto her left foot until its heel is planted: over the seat's edge (her pelvis to
+    0.16 m left of the centre line), tilted down on that side, her chest upright - her weight back
+    over the heel - the bike let lean onto her a little further (−3°); and on by feel: the heel still
+    off the ground with that leg straight, she lowers (4 cm at most), with its knee bent she moves
+    back over the heel (0.1 m at most). Planted: its heel bearing a flat foot's share of what the
+    foot bears (a quarter, 20 N at least) for 0.2 s on end - a touch is not a plant - and that foot
+    bearing 45 % of her weight; then
+  - her right leg up and back over the tail - her hips turning towards the seat as it goes over -
+    and down behind her left foot, standing on that foot;
+  - standing beside the bike, the side stand down and the bike let over onto it (her places fixed on
+    the ground from there, whatever its lean); her hands off it, and the walking controller steps
+    her clear.
+  A leg caught on its way over goes back onto its peg and she sits again. Where she feels for the
+  ground (these keyframes' `feel`), a leg she stands on is solved from her pelvis turned as it is,
+  not as planned (the ground holds its foot): solved from the planned turn, her pelvis pitched 16°
+  further forward than planned - bent to the bars, her belly on the tank's rear - swept that foot
+  25 cm along the ground and its heel never came down. Her other leg stays the plan's: solved as it
+  is too, nothing held her pelvis's turn and it drifted 50° off its plan.
+  Work in progress (this commit): in Node getting off takes 10.4-10.6 s and her left heel bears
+  through 76-92 % of the leg-over (12-31 % of the settling); the full Node suite is 71 of 75 - the
+  three known bounds and, in that run, the kinematic getting-off test, which walked her only to
+  x = −0.53 (bound −0.6) inside its 30 s; in the browser (`at-the-bike.mjs off-on`) getting off
+  did not finish inside the scenario's window - the off-on check fails with this build.
 * **Lifting it off its side**: she walks round to its upper side and faces it, squats and holds its
   tank's and seat's top edges (on its side away from the ground), rises as it comes up to 35°,
   steps in twice, pushes it upright and over to lean on its side stand (on its left, at −10°) -

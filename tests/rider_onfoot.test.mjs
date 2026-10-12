@@ -103,11 +103,15 @@ function atTheBike({ T, steerDeg = 0, start = [-1.0, -0.8, 0], script, free = fa
     o.now = t;
     script(t, R, G, bk, o);
     if (P.mode === "script" && G.barsStraight) bk.steer -= Math.sign(bk.steer) * Math.min(Math.abs(bk.steer), 1.5 * dt);
-    if (G.hold.active) hs.standDeg = null;
+    // (getting on, holding it takes it off its stand - the game's onGrip; getting off she puts the stand
+    // down while she still holds it)
+    if (G.hold.active && G.script.name === "mount") hs.standDeg = null;
     if (!free) holdStub(bk, G, R, dt, hs);
 
     const rs = R.forces(bk, ground, dt);
     R.integrate(dt);
+    // (getting off: how much of the leg-over her left heel bears - over 20 N)
+    if (P.mode === "script" && G.script.name === "dismount" && G.script.keys?.[G.script.i]?.swing) { o.overN = (o.overN || 0) + 1; if (R.feel.feet.L.pads.heel > 20) o.heelOn = (o.heelOn || 0) + 1; }
     if (free) {
       if (o.seatedT == null || (o.off && P.fallen)) {
         // (a shove on the bike, towards her side, while o.shoveNm is set)
@@ -165,7 +169,7 @@ function swingEffort(run, S) {
   for (const K of Object.values(run.keys)) if (K.swing?.includes(S)) { T += K.T; a += K.g["ankle" + S]?.eSum || 0; k += K.g["knee" + S]?.eSum || 0; lim += K.g["ankle" + S]?.limS || 0; }
   return { T, ankle: a / Math.max(1e-9, T), knee: k / Math.max(1e-9, T), ankleLimPct: (100 * lim) / Math.max(1e-9, T) };
 }
-test("getting off (stopped, riding, left foot down): she climbs off to the left, stands, and walks away", () => {
+test("getting off (stopped, riding, left foot down): she climbs off to the left - her left heel planted through the leg-over - stands, and walks away", () => {
   const o = atTheBike({
     T: 30,
     script(t, R, G, bk, o) {
@@ -180,6 +184,8 @@ test("getting off (stopped, riding, left foot down): she climbs off to the left,
   assert.ok(!o.R.grips.L.held && !o.R.grips.R.held, "hands free");
   // (off to the bike's left, and further away after walking)
   assert.ok(o.R.body.p[0] < -0.6, `pelvis x ${o.R.body.p[0].toFixed(2)}`);
+  // (her left heel down, bearing, through most of the leg-over - she stands on that foot flat)
+  assert.ok(o.heelOn / o.overN > 0.5, `heel bearing ${((100 * (o.heelOn || 0)) / o.overN).toFixed(0)} % of the leg-over`);
 });
 
 // ---- the bike free to roll: she holds it up while she gets on - leaning onto her side, her legs
@@ -210,7 +216,7 @@ test("getting on the bike free to roll: she holds it up (her own moment on it, t
   // (her legs and body brush it at most - under 300 N - until she sits)
   assert.ok(o.maxPressN < 300, `pressed it with ${o.maxPressN.toFixed(0)} N`);
 });
-test("getting off with the bike free to roll: the side stand down and the bike on it, she climbs off, stands and walks away, and it stays on its stand", () => {
+test("getting off with the bike free to roll: she holds it up as she climbs off - her left heel planted through the leg-over - then the side stand down and the bike onto it; she walks away and it stays on its stand", () => {
   const o = atTheBike({
     T: 32, free: true,
     script(t, R, G, bk, o) {
@@ -226,6 +232,7 @@ test("getting off with the bike free to roll: the side stand down and the bike o
   assert.ok(o.R.body.p[0] < -0.6, `pelvis x ${o.R.body.p[0].toFixed(2)}`);
   // (the bike on its side stand, still)
   assert.ok(Math.abs(o.hs.phi / DEG + 10) < 0.5 && Math.abs(o.hs.w) < 0.05, `bike at ${(o.hs.phi / DEG).toFixed(1)} deg`);
+  assert.ok(o.heelOn / o.overN > 0.5, `heel bearing ${((100 * (o.heelOn || 0)) / o.overN).toFixed(0)} % of the leg-over`);
 });
 
 // ---- lifting the bike off its side: the stub free to roll with the declared lift assist as the

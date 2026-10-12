@@ -31,6 +31,8 @@
     const kneeDofs = { L: R.chains.legL.filter((i) => /Knee\./.test(H[i].id)), R: R.chains.legR.filter((i) => /Knee\./.test(H[i].id)) };
     const footDofs = { L: R.chains.legL.filter((i) => /Ankle\./.test(H[i].id)), R: R.chains.legR.filter((i) => /Ankle\./.test(H[i].id)) };
     const wristDofs = { L: R.chains.armL.filter((i) => /(Wrist|Forearm)\./.test(H[i].id)), R: R.chains.armR.filter((i) => /(Wrist|Forearm)\./.test(H[i].id)) };
+    // (her core and arms: what a motion at the bike holds firm - brace)
+    const braceDofs = R.chains.spine.concat(R.chains.neck, R.chains.armL, R.chains.armR);
 
     // ---- declared priors
     const P = {
@@ -55,6 +57,18 @@
       // the load path at the bike (on / off): her balance through her contacts (centre of mass 1/s^2, 1/s, at most m/s^2; pelvis orientation kg m^2 x 1/s^2, 1/s); planned every lpEveryS; her lean into what she pushes (1/s, at most m) with lpOuterShare of the pressure towards the outer foot; her own hold on the bike's lean (N m/rad, N m s/rad)
       standDeg: -10, scriptIkHz: 135, clearM: 0.015, swingClearM: 0.03, trunkClearM: 0.012, // motions at the bike: posture solved at this rate; limbs / trunk kept this clear of the bike (m)
       yieldExcessN: 200, yieldRate: 0.1, yieldMaxM: 0.03, yieldKneeDeg: 6, // a planted foot pushing this much more than meant (N), its leg locked straight (knee under yieldKneeDeg), gives: its target up at this rate (m/s), at most this far (m)
+      // getting off (a rider's way, holding the bike up): her feet this far out either side as she
+      // balances it between them; settling onto her standing foot until its heel is planted - its pad
+      // bearing at least plantHeelN and plantHeelShare of what the foot bears, as a flat foot's heel
+      // does, plantFeltS on end - and that foot bears plantBearShare of her weight (then she lifts
+      // the other leg over): at plantRate, over and down off the seat's edge at most plantMaxM while
+      // that leg is straight (its knee under plantKneeDeg), back over the heel at most plantBackM once
+      // it bends, her chest upright (plantChestDeg: her weight back over the heel); her core and arms
+      // held this much firmer through it (a share of their servos' gains) - declared priors
+      straddleM: 0.3, plantRate: 0.04, plantMaxM: 0.04, plantBackM: 0.1, plantKneeDeg: 15, plantHeelN: 20, plantHeelShare: 0.25, plantFeltS: 0.2, plantBearShare: 0.45, plantChestDeg: 12, dismountBrace: 2, plantLeanDeg: -3, plantS: 1.5, plantLoad: 1, plantSlide: 0.05,
+      // (a foot she means to stand on, not feeling the ground bear on it - under feelDownN - reaches
+      // down for it at feelDownRate, feelDownMaxM at most: in a keyframe with feel)
+      feelDownN: 60, feelDownRate: 0.15, feelDownMaxM: 0.05,
       braceStartDeg: 3, braceSpanDeg: 4, braceHipM: 0.14, letGoDeg: 20, stepAwayS: 1.2, stepNearBikeM: 0.3, scriptDownM: 0.25, scriptDownS: 0.3, liftLostM: 0.3, liftLostS: 0.5, // holding the bike up, it tipping towards her past braceStartDeg (+ braceSpanDeg to full) of the lean she keeps it at: her hip into it, her pelvis up to braceHipM further over (m); past letGoDeg she lets it go and steps away from it for stepAwayS; walking, a swinging foot this near the bike keeps its leg clear of it (m); a motion is over when her pelvis is this far under its planned height this long (m, s), a lift when a hand is this far from its point of the bike this long
       loadPath: true, lpK: 25, lpC: 10, lpAmax: 2.5, lpKz: 36, lpCz: 12, lpAzMax: 3, lpI: 8, lpKr: 36, lpCr: 12, lpEveryS: 1 / 135, lpLeanRate: 3, lpLeanMaxM: 0.2, lpForeMaxM: 0.15, lpForeDeadM: 0.05, lpOuterShare: 0.7, holdHerK: 3000, holdHerC: 400,
     };
@@ -757,7 +771,7 @@
       const up = mv(b.Rw[R.model.linkOf.Spine02], [0, 1, 0]);
       const from = { pelvis: toB(F, b.p), R: mm(mt(F.Ry), b.R), feet: {}, hands: {}, chest: Math.atan2(len(flat(up)), up[2]) / DEG, yaw: angWrap(headingOfBody() - F.yaw) / DEG };
       for (const S of ["L", "R"]) { from.feet[S] = toB(F, ballW(S)); from.hands[S] = toB(F, b.toWorld(hand[S].link, hand[S].p)); }
-      Object.assign(SC, { name, keys, i: 0, t: 0, onDone, onFail, from, done: false, failed: null, downS: 0, lostS: 0, prev: from, handFix: { L: [0, 0, 0], R: [0, 0, 0] }, footFix: { L: [0, 0, 0], R: [0, 0, 0] }, yield: { L: 0, R: 0 } });
+      Object.assign(SC, { name, keys, i: 0, t: 0, onDone, onFail, from, done: false, failed: null, downS: 0, lostS: 0, prev: from, handFix: { L: [0, 0, 0], R: [0, 0, 0] }, footFix: { L: [0, 0, 0], R: [0, 0, 0] }, yield: { L: 0, R: 0 }, plant: { dz: 0, dy: 0 }, planted: false });
       Object.assign(G.loadPathState, { acc: 1, cT: null, vT: [0, 0, 0], lean: [0, 0], p: null });
       R.loadPath.forces = []; R.loadPath.key = "";
       if (G.effort.run) G.effort.last = G.effort.run;
@@ -837,6 +851,27 @@
       SC.t += dt; SC.lastDt = dt;
       const k = SC.keys[SC.i];
       const T = scriptTargets(bk);
+      // (plant: settling onto one foot, a little at a time, until its heel feels the ground bear on
+      // it; felt, she stays there. The heel off the ground with that leg straight: the leg too short
+      // there - lower, over and down off the seat's edge towards that side; with the knee bent: her
+      // weight too far forward over the foot, the shin tipped past what the ankle bends - back over
+      // the heel)
+      if (k.plant) {
+        const S = k.plant, heel = R.feel.feet[S].pads.heel || 0, pl = SC.plant;
+        // (felt bearing for plantFeltS on end, she has it - a touch is not a plant)
+        pl.feltS = heel > Math.max(P.plantHeelN, P.plantHeelShare * R.feel.feet[S].felt.N) ? (pl.feltS || 0) + dt : 0;
+        SC.planted ||= pl.feltS >= P.plantFeltS;
+        // (further only once the keyframe's own way there is done, and only as far as her body
+        // follows - her pelvis within 2 cm of where it is planned: sat on the seat, moving the plan on
+        // would only fold the leg and lift the foot off the ground)
+        const Fp = SC.frame || bikeFrame(bk), sx = S === "L" ? -1 : 1, off = (d) => [sx * 0.5 * d.dz, -d.dy, -d.dz];
+        const e = mtv(Fp.Ry, sub(add(T.pelvis.p, mv(Fp.Ry, off(pl))), b.p));
+        if (!SC.planted && SC.t >= k.T) {
+          if (b.q[I.kneeLink[S]] < P.plantKneeDeg * DEG) { if (e[2] > -0.02) pl.dz = Math.min(P.plantMaxM, pl.dz + P.plantRate * dt); }
+          else if (e[1] > -0.02) pl.dy = Math.min(P.plantBackM, pl.dy + P.plantRate * dt);
+        }
+        T.pelvis.p = add(T.pelvis.p, mv(Fp.Ry, off(pl)));
+      }
       G.scriptT = T;
       measure();
       // posture (at scriptIkHz; the joint targets held between): legs from the planned pelvis to the
@@ -849,6 +884,13 @@
       if (doIK) ikb.q.set(b.q), (ikb.p = T.pelvis.p.slice()), (ikb.R = T.pelvis.R.slice()), ikb.kinematics();
       for (const S of doIK ? ["L", "R"] : []) {
         const onGround = T.stance.includes(S), sw = k.swing?.[S];
+        // (feeling for the ground - a keyframe's feel: the ground holds a foot she stands on, so its
+        // leg goes to it from her pelvis turned as it is - solved from the planned turn, her pelvis
+        // pitched 16 deg further forward than planned swept that foot 25 cm along the ground and its
+        // heel never came down. Where her pelvis is still comes from the plan, and a leg in the air
+        // from the planned turn: her other leg's turn holds her pelvis - solved as it is too, her
+        // pelvis drifted 50 deg off its plan)
+        ikb.R = (onGround && !sw && k.feel ? b.R : T.pelvis.R).slice(); ikb.kinematics();
         if (sw && T.knees[S]) {
           // a leg swung over the bike: the hip does it (with the pelvis's side tilt) - its three joints
           // solved to point the thigh at the knee target, turned so the lower leg trails towards the
@@ -881,6 +923,14 @@
           yl[S] = strut && felt > meant + P.yieldExcessN ? Math.min(P.yieldMaxM, yl[S] + P.yieldRate * ikDt) : Math.max(0, yl[S] - 0.5 * P.yieldRate * ikDt);
           if (yl[S] > 0) fc[2] += yl[S];
         } else yl[S] = 0;
+        // (feeling for the ground - a keyframe's feel: a foot she means to stand on that does not feel
+        // the ground bear on it reaches on down for it, ankle and knee, feelDownMaxM at most; once it
+        // bears, the reach eases back - as riding, 46's feel for the ground)
+        const rd = SC.reachDown || (SC.reachDown = { L: 0, R: 0 });
+        if (onGround && k.feel) {
+          rd[S] = R.feel.feet[S].felt.N < P.feelDownN ? Math.min(P.feelDownMaxM, rd[S] + P.feelDownRate * ikDt) : Math.max(0, rd[S] - 0.5 * P.feelDownRate * ikDt);
+          fc[2] -= rd[S];
+        } else rd[S] = 0;
         // (a foot planted on the ground keeps pointing the way it points - the ground holds it; the
         // leg is not twisted to re-aim it)
         const fdir = onGround && footLoad(S) > 20 ? flat(mv(b.Rw[foot[S].link], foot[S].forward)) : null;
@@ -971,6 +1021,11 @@
       // browser layer, as a capped torque; barsStraight says so)
       G.barsStraight = R.grips.L.held || len(sub(b.toWorld(hand.L.link, hand.L.p), R.gripWorld(bk, "L").c)) < 0.45;
       R.activation = 0.5; R.servoScale.fill(1);
+      // (sliding over on the seat, its friction under her pelvis is eased as when she moves over on it
+      // riding - 46: PL.shift, shiftSlide)
+      PL.shift = k.slide != null ? 1 : 0;
+      // (her core and arms held firm - brace: her trunk and her arms' servos that much stiffer)
+      if (k.brace) for (const i of braceDofs) R.servoScale[i] = k.brace;
       // (part tone where the joint is only carried along: a swung leg's knee and ankle, a foot on the
       // ground - its ankle placing the pressure, not holding an angle - and a hand on a grip, whose
       // wrist the grip holds)
@@ -1027,7 +1082,7 @@
         const eF = Math.max(0, ...sw.map((S) => (k.swing?.[S] && T.knees[S] ? len(sub(T.knees[S], b.toWorld(R.model.linkOf[S + "_Calf"], [0, 0, 0]))) : len(sub(T.feet[S], ballW(S))))));
         // (and a hand sent to its grip holding it; and - waitBike - the bike steady at the lean she
         // holds it at: she knows it is balanced before she stands on one foot and swings)
-        const gripsOk = ["L", "R"].every((S) => !(k.hands?.[S] === "grip" && T.grip[S]) || R.grips[S].held);
+        const gripsOk = ["L", "R"].every((S) => !(k.hands?.[S] === "grip" && T.grip[S]) || R.grips[S].held) && (!k.plant || (SC.planted && R.feel.feet[k.plant].felt.N > P.plantBearShare * m * g));
         const bikeOk = (!k.waitBike || (bikeErr < k.waitBike.tolDeg * DEG && Math.abs(bikeRollRate(bk)) < k.waitBike.rateDegS * DEG)) && (!k.waitRoll || (Math.abs(bikeRoll(bk) - k.waitRoll.deg * DEG) < k.waitRoll.tolDeg * DEG && Math.abs(bikeRollRate(bk)) < k.waitRoll.rateDegS * DEG));
         SC.err = { pelvis: eP, foot: eF, grips: gripsOk, bike: bikeOk };
         if ((eP < (k.reachM ?? 0.08) && eF < (k.reachM ?? 0.08) + 0.02 && gripsOk && bikeOk) || SC.t >= k.T + (k.waitS ?? 0.8)) {
@@ -1059,6 +1114,9 @@
             SC.keys = null; onFail ? onFail() : G.enterFoot(); return;
           }
           if (SC.i + 1 < SC.keys.length) {
+            // (the next keyframe starts from where the plant left her pelvis)
+            if (k.plant) { const pl = SC.plant, sx = k.plant === "L" ? -1 : 1; SC.end.pelvis = add(SC.end.pelvis, [sx * 0.5 * pl.dz, -pl.dy, -pl.dz]); }
+            SC.plant = { dz: 0, dy: 0 }; SC.planted = false;
             SC.prev = SC.end; SC.i++; SC.t = 0; SC.liftFrom = null; SC.holdFrom = null; SC.handFix = { L: [0, 0, 0], R: [0, 0, 0] };
             // (freeze: from here her places are fixed on the ground, whatever the bike does - it goes
             // onto its stand)
@@ -1112,7 +1170,9 @@
       LPS.acc += dt;
       if (LPS.acc >= P.lpEveryS || !R.loadPath.forces.length) {
         LPS.acc = 0;
-        R.loadPlan({ feet: T.stance, bike: true, aDes, LdotDes: Ld, bikeRow });
+        // (sliding over on the seat - slide: the share of her weight it may still bear - she takes her
+        // weight off it and moves herself across with her legs and hands, as 46's moving over on it)
+        R.loadPlan({ feet: T.stance, bike: true, aDes, LdotDes: Ld, bikeRow, seat: k.slide != null ? { moving: true, maxN: k.slide * m * g } : undefined });
         // (leaning into the push that holds the bike up: holding it by its bars from where she stands,
         // her weight's moment about her feet balances what the bike needs - m g lean = its roll moment,
         // her hands pushing at about the height of its tyre line's lever. From the bike's need, not
@@ -1173,8 +1233,10 @@
     // envelope, and checked or searched again from this data by tools/swing-path.mjs
     //   mount: from beside the tank on her left foot (stance), holding the bike up (grip / balance: the
     //     left hand on its grip, her centre of mass over the standing foot)
-    //   dismount: off the seat over the bike resting on its side stand (bikeRollDeg), her seat on the
-    //     seat's edge, the left foot down
+    //   dismount: holding the bike up at the lean she keeps it at (bikeRollDeg), from off the seat's
+    //     left edge - over and down until her left heel is planted - her right foot on its peg, standing
+    //     on her left foot (stance) with her left hand on its grip; her hips turning towards the seat
+    //     (yaw, - to her right) as the leg goes back over the tail
     const SWING_ON = {
       start: { pelvis: [-0.44, -0.16, 0.87], pitch: 30, roll: 0, chest: 30, twist: -15, knee: [-0.36, -0.24, 0.44], kneeDeg: 20, footOff: [-0.01, -0.05, -0.44] },
       stance: [-0.46, -0.05, 0], bikeRollDeg: P.holdLeanDeg, grip: true, balance: true,
@@ -1187,20 +1249,20 @@
       final: { T: 0.5, pelvis: [-0.08, -0.27, 0.95], pitch: 35, roll: -10, chest: 40, twist: -5, knee: [0.24, -0.2, 0.72], kneeDeg: 80, footOff: [0.06, -0.25, -0.2] },
     };
     const SWING_OFF = {
-      start: { pelvis: [-0.06, -0.3, 0.92], pitch: 18, roll: -4, chest: 35, twist: 0, knee: [0.235, -0.02, 0.64], kneeDeg: 100, footOff: [-0.015, -0.34, -0.21] },
-      stance: [-0.3, -0.28, 0], bikeRollDeg: -10, grip: false, balance: false,
+      start: { pelvis: [-0.16, -0.3, 0.87], pitch: 18, roll: -8, yaw: 0, chest: 35, twist: 0, knee: [0.235, -0.02, 0.64], kneeDeg: 100, footOff: [-0.015, -0.34, -0.21] },
+      stance: [-0.3, -0.28, 0], bikeRollDeg: P.holdLeanDeg, grip: true, balance: false,
       keys: [
-        { T: 0.7, pelvis: [-0.08, -0.349, 0.885], pitch: 32, roll: -48, chest: 27, twist: -5, knee: [0.44, -0.456, 0.923], kneeDeg: 46, footOff: [0.088, -0.492, 0.281] },
-        { T: 0.6, pelvis: [-0.235, -0.222, 0.903], pitch: 62, roll: -41, chest: 30, twist: -10, knee: [0.051, -0.629, 1.059], kneeDeg: 58, footOff: [-0.088, -0.343, 0.067], must: true, reachM: 0.12 },
-        { T: 0.6, pelvis: [-0.24, -0.267, 0.856], pitch: 74, roll: -48, chest: 45, twist: -15, knee: [-0.251, -0.725, 0.984], kneeDeg: 77, footOff: [-0.022, -0.119, 0.258], reachM: 0.12 },
+        { T: 0.7, pelvis: [-0.105, -0.306, 0.887], pitch: 44, roll: -42, yaw: -17, chest: 56, twist: -5, knee: [0.381, -0.428, 0.827], kneeDeg: 43, footOff: [0.1, -0.461, 0.198] },
+        { T: 0.6, pelvis: [-0.252, -0.207, 0.92], pitch: 58, roll: -48, yaw: 0, chest: 18, twist: -5, knee: [0.063, -0.57, 1.119], kneeDeg: 76, footOff: [-0.068, -0.176, 0.132], must: true, reachM: 0.12 },
+        { T: 0.6, pelvis: [-0.285, -0.316, 0.852], pitch: 73, roll: -36, yaw: -17, chest: 67, twist: -5, knee: [-0.308, -0.787, 0.97], kneeDeg: 77, footOff: [-0.031, -0.167, 0.34], reachM: 0.12 },
       ],
-      final: { T: 0.6, pelvis: [-0.3, -0.26, 0.87], pitch: 20, roll: 0, chest: 20, twist: -10, knee: [-0.36, -0.46, 0.46], kneeDeg: 30, footOff: [-0.08, -0.05, -0.46] },
+      final: { T: 0.6, pelvis: [-0.32, -0.27, 0.87], pitch: 20, roll: 0, yaw: -10, chest: 20, twist: -5, knee: [-0.38, -0.46, 0.46], kneeDeg: 30, footOff: [-0.08, -0.05, -0.46] },
     };
     G.swingPaths = { mount: SWING_ON, dismount: SWING_OFF };
     // a key of a leg-over as a script keyframe: the right leg swung (hip-driven, the knee eased to
     // kneeDeg), standing on the left
     const swingKey = (k, extra) => ({
-      T: k.T, pelvis: k.pelvis, pitchDeg: k.pitch, rollDeg: k.roll, chestPitchDeg: k.chest, twistDeg: k.twist,
+      T: k.T, pelvis: k.pelvis, pitchDeg: k.pitch, rollDeg: k.roll, ...(k.yaw != null ? { yawDeg: k.yaw } : {}), chestPitchDeg: k.chest, twistDeg: k.twist,
       knees: { R: k.knee }, feet: { R: add(k.knee, k.footOff) }, swing: { R: { kneeDeg: k.kneeDeg, footW: 2 } }, stance: ["L"],
       ...(k.must ? { mustReach: true } : {}), ...(k.reachM ? { reachM: k.reachM } : {}), ...extra,
     });
@@ -1266,31 +1328,50 @@
         { T: 0.6, pelvis: [-0.06, -0.3, 0.92], pitchDeg: 18, rollDeg: -4, chestPitchDeg: 42, twistDeg: 0, holdDeg: -2, feet: { L: [-0.3, -0.22, 0.06], R: PEG_R }, via: { R: [0.25, -0.34, 0.56] }, fix: { R: true }, knees: { R: KNEE_R }, kneeW: 20, seatQ: true, stance: [], load: 0, grip: { L: true }, lean: false },
       ], bk, () => onSeated?.(), onFail), () => G.enterFoot(), 0.12, 20, [...around(F, G.com, spot.approach), A], 0.55);
     };
-    // getting off to the left, stopped with her left foot down: the right hand to the tank, up off
-    // the seat onto her left leg, the right leg up the bike's right side, over the tail and seat
-    // and down behind her left foot, then the left foot a step out and her hand off the bar - the
-    // way on, backwards
-    // getting off to the left, stopped with her left foot down: the side stand first (onStand) - seated,
-    // her left foot on the ground, she lets the bike lean over onto it - then, the bike standing on its
-    // own, her right hand from its grip to the tank, up off the seat onto her left leg as her right leg
-    // goes back over the tail and down behind her left foot, and a step away. (The leg over: a path
-    // found offline over the bike leaning on its stand - the hip and the pelvis's side tilt, the knee
-    // easy, her seat on the seat's edge - clear of the envelope by 1.8 cm standing still:
-    // tools/swing-path.mjs)
+    // getting off to the left, stopped - a rider's way, holding the bike up herself (G.hold: balanced,
+    // barely leaning onto her side, holdLeanDeg), her core and arms held firm throughout (brace):
+    //   both feet down as wide as they reach (straddleM), the bike balanced between them;
+    //   over to the left off the seat's edge and down until her left heel is planted - she feels it
+    //   bear (plant) - her right foot back up onto its peg as it leaves the ground;
+    //   her right hand from its grip to the tank, her weight onto her left leg;
+    //   her right leg up and back over the tail, her hips turning towards the seat as it goes over,
+    //   and down behind her left foot (a path found offline over the bike held at that lean, clear of
+    //   its envelope standing still: tools/swing-path.mjs);
+    //   standing beside it, the side stand down (onStand) and the bike let over onto it; she lets go.
     G.startDismount = (bk, onOff, onStand) => {
       PL.fallen = true; PL.ff = "custom";
       for (const S of ["L", "R"]) { const gr = R.grips[S]; if (!gr.held) { gr.held = true; gr.overloadS = 0; gr.twist0 = null; } }
       G.hold.active = false;
+      const B = P.dismountBrace, lean = P.holdLeanDeg, W = P.straddleM, held = { holdDeg: lean, brace: B, lean: false };
       startScript("dismount", [
-        // (the stand down: seated, she lets the bike lean over onto it and waits till it rests there)
-        { T: 1.0, pelvis: [-0.06, -0.3, 0.92], pitchDeg: 18, rollDeg: -4, chestPitchDeg: 35, stance: ["L"], load: 0, grip: { L: true, R: true }, lean: false, waitRoll: { deg: P.standDeg, tolDeg: 2, rateDegS: 6 }, waitS: 2, onStart: () => onStand?.() },
-        { T: 0.5, pelvis: [-0.06, -0.3, 0.92], pitchDeg: 18, rollDeg: -4, chestPitchDeg: 35, hands: { R: TANK }, handVia: { R: [0.14, 0.22, 1.08] }, stance: ["L"], load: 0, grip: { L: true }, lean: false },
-        ...SWING_OFF.keys.map((k) => swingKey(k, { grip: { L: true }, lean: false })),
-        swingKey(SWING_OFF.final, { grip: { L: true }, lean: false }),
-        // (the right foot down behind the left, her hands off the bike, and up straight between her
-        // feet: from here she is on her feet - the walking controller has her, and steps her clear)
-        { T: 0.45, pelvis: [-0.34, -0.33, 0.86], pitchDeg: 12, chestPitchDeg: 12, feet: { R: [-0.46, -0.46, 0] }, fix: { R: true }, hands: { R: null }, stance: ["L"], grip: { L: true }, lean: false },
-        { T: 0.5, pelvis: [-0.4, -0.37, 0.88], pitchDeg: 0, chestPitchDeg: 0, twistDeg: 0, hands: { L: null, R: null }, stance: ["L", "R"], freeze: true, lean: false },
+        // (her right foot off its peg, out and down to the ground: her feet wide)
+        { T: 0.6, pelvis: [-0.02, -0.3, 0.915], pitchDeg: 18, rollDeg: 0, chestPitchDeg: 35, feet: { L: [-W, -0.24, 0], R: [W, -0.24, 0] }, via: { R: [W + 0.04, -0.32, 0.22] }, fix: { R: true }, stance: ["L"], load: 0.3, grip: { L: true, R: true }, ...held },
+        // (on both feet, the bike steady between them at the lean she holds it at)
+        { T: 0.5, stance: ["L", "R"], load: 0.35, feel: true, grip: { L: true, R: true }, waitBike: { tolDeg: 2, rateDegS: 6 }, waitS: 1.5, ...held },
+        // (her right hand from its grip to the tank - held on the bar it would keep her from moving over:
+        // the 916's bars are a long reach for her arms)
+        { T: 0.5, hands: { R: TANK }, handVia: { R: [0.14, 0.22, 1.08] }, stance: ["L", "R"], load: 0.35, feel: true, grip: { L: true }, ...held },
+        // (her right foot up off the ground towards its peg - out there it would hold her right thigh
+        // against the bike's side and keep her from moving over. Leaning forward to the bars further
+        // than planned, she carries it past the peg, behind it: she does not wait for it to land there
+        // - reachM - and, on it, the peg would take the weight her left leg is to take)
+        { T: 0.6, feet: { R: PEG_R }, via: { R: [0.3, -0.34, 0.3] }, fix: { R: true }, stance: ["L"], load: 0.35, feel: true, grip: { L: true }, waitBike: { tolDeg: 2.5, rateDegS: 6 }, waitS: 1.5, reachM: 0.3, ...held },
+        // (settling onto her left foot - over the seat's edge, her pelvis tilting down that side, her
+        // right thigh across the seat, her chest upright, the bike let lean onto her a little further
+        // (plantLeanDeg) - until her left heel is planted: she feels it bear)
+        { T: P.plantS, pelvis: SWING_OFF.start.pelvis, pitchDeg: SWING_OFF.start.pitch, rollDeg: SWING_OFF.start.roll, chestPitchDeg: P.plantChestDeg, feet: { L: SWING_OFF.stance }, knees: { R: SWING_OFF.start.knee }, stance: ["L"], load: P.plantLoad, slide: P.plantSlide, plant: "L", feel: true, grip: { L: true }, waitBike: { tolDeg: 2.5, rateDegS: 6 }, waitS: 1.5, reachM: 0.12, holdDeg: P.plantLeanDeg, brace: B, lean: false },
+        ...SWING_OFF.keys.map((k) => swingKey(k, { grip: { L: true }, watchBike: 8, ...held })),
+        swingKey(SWING_OFF.final, { grip: { L: true }, watchBike: 8, ...held }),
+        // (the right foot down behind the left, on both feet beside the bike, still holding it)
+        { T: 0.45, pelvis: [-0.34, -0.33, 0.86], pitchDeg: 12, chestPitchDeg: 12, yawDeg: -10, feet: { R: [-0.46, -0.46, 0] }, fix: { R: true }, stance: ["L"], grip: { L: true }, ...held },
+        // (the side stand down, and the bike let over onto it - standing beside it, her places fixed on
+        // the ground from here whatever its lean: freeze. What she waits for is the bike resting on
+        // its stand: her hand still on the bar - a long reach for her from beside the seat - holds
+        // her bent towards it, her pelvis well short of upright between her feet: reachM)
+        { T: 1.0, pelvis: [-0.4, -0.37, 0.88], pitchDeg: 5, chestPitchDeg: 8, yawDeg: 0, stance: ["L", "R"], grip: { L: true }, holdDeg: P.standDeg, brace: B, lean: false, waitRoll: { deg: P.standDeg, tolDeg: 2, rateDegS: 6 }, waitS: 1.5, reachM: 0.3, freeze: true, onStart: () => onStand?.() },
+        // (her hands off it, up straight between her feet: from here she is on her feet - the walking
+        // controller has her, and steps her clear)
+        { T: 0.5, pelvis: [-0.4, -0.37, 0.88], pitchDeg: 0, chestPitchDeg: 0, twistDeg: 0, yawDeg: 0, hands: { L: null, R: null }, stance: ["L", "R"], hold: false, onStart: () => { G.hold.active = false; }, freeze: true, lean: false },
       ], bk, () => { G.enterFoot(bikeYaw(bk)); onOff?.(); }, () => { onOff?.(); });
     };
     // ---- holding the bike up while she gets on or off. She keeps it leaning a little onto her side

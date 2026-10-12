@@ -14,7 +14,9 @@
 // and the foot towards its own - against the rider's own collision spheres and the 916's envelope:
 //   clearance  the swung leg's knee, calf and foot spheres (and, apart, the thigh's) to the envelope
 //   reach      how far the knee misses its target; hip joints within 3 deg of a limit
-//   standing   the left leg from the same pelvis to its foot on the ground: its reach, its hip's range
+//   standing   the left leg from the same pelvis to its foot on the ground: its reach, its hip's range,
+//              its sole flat - the heel planted - within the ankle's bend (from the path's start: the
+//              pose her lowering onto that foot ends in)
 //   balance    (mount) her centre of mass over the standing foot - allowed 5 cm either way of a
 //              point 5 cm towards the bike from the foot's middle, where she leans on the bars
 //   grip       (mount) her left hand on its grip with the chest and arms as the motion holds them
@@ -40,7 +42,7 @@ const STEPS = +opt("steps", 7), ROLL = +opt("roll", path0.bikeRollDeg);
 // bike; getting off its seat stays on the seat's edge, over the bike on its stand
 const BOUNDS = {
   mount: { x: [-0.44, -0.2], y: [-0.26, -0.05], z: [0.84, 0.97] },
-  dismount: { x: [-0.24, -0.08], y: [-0.36, -0.05], z: [0.84, 0.92] },
+  dismount: { x: [-0.3, -0.08], y: [-0.36, -0.05], z: [0.84, 0.92] },
 }[which];
 
 // the bike leaning ROLL deg (+ to its right) about its tyre line, as the stub bikes of the Node
@@ -54,6 +56,8 @@ const bk = stubBike();
 const SH = Math.abs(ROLL) < 30 ? Math.tan(ROLL * DEG) : 0;
 const W = (v) => [v[0] + v[2] * SH, v[1], v[2]];
 // the motion's pelvis and chest orientations (48: pelvisB, chestR): roll about y after yaw after pitch
+// (a key's yaw turns her hips, - to her right: towards the bike's seat, getting off; its twist turns
+// the chest on from there)
 const pelvisR = (pitch, roll, yaw = 0) => h.mm(h.expRV([0, roll * DEG, 0]), h.mm(h.Rz(yaw * DEG), h.mm(h.Rx(-pitch * DEG), A)));
 const chestR = (pitch, twist) => h.mm(h.Rz(twist * DEG), h.mm(h.Rx(-pitch * DEG), A));
 const legR = R.chains.legR, legL = R.chains.legL, hipR = legR.filter((i) => /Hip\./.test(H[i].id));
@@ -66,7 +70,7 @@ const TANK = [-0.04, 0, 0.99];
 // one pose of the path
 function pose(k, warm, stance) {
   ikb.q.set(warm || R.body.q);
-  ikb.p = W(k.pelvis); ikb.R = pelvisR(k.pitch, k.roll);
+  ikb.p = W(k.pelvis); ikb.R = pelvisR(k.pitch, k.roll, k.yaw || 0);
   ikb.q[kneeR] = k.kneeDeg * DEG;
   for (const i of legR) if (!/Hip\./.test(H[i].id) && H[i].link !== kneeR) ikb.q[H[i].link] = /dorsiPlantar/.test(H[i].id) ? -10 * DEG : 0;
   ikb.kinematics();
@@ -84,12 +88,14 @@ function pose(k, warm, stance) {
     if (ikb.q[kneeL] < 0.15) ikb.q[kneeL] = 0.15;
     for (let it = 0; it < 3; it++) I.ikSolve(ikb, [{ type: "pos", link: R.foot.L.link, local: R.foot.L.ball, target: stance, w: 100 }, { type: "dir", link: R.foot.L.link, local: [0, 1, 0], target: [0, 0, 1], w: 1 }], legL, {}, 6);
     out.stErr = h.len(h.sub(ikb.toWorld(R.foot.L.link, R.foot.L.ball), stance));
+    // (its heel planted: the sole's tilt from the ground - past the ankle's bend, the heel lifts)
+    out.stTilt = Math.acos(Math.min(1, h.mv(ikb.Rw[R.foot.L.link], R.foot.L.up)[2])) / DEG;
     out.stLim = legL.filter((i) => /Hip\./.test(H[i].id) && nearLimit(i, 2)).length;
     // the trunk and arms as the motion holds them: the chest pitched and twisted, the left hand on
     // its grip, the right on the tank
     for (const i of R.chains.armL.concat(R.chains.armR)) { const hh = H[i]; ikb.q[hh.link] = Math.min(hh.hi, Math.max(hh.lo, ikb.q[hh.link])); }
     ikb.kinematics();
-    I.ikSolve(ikb, [{ type: "rot", link: R.model.linkOf.Spine02, target: chestR(k.chest, k.twist), w: 1 }], R.chains.spine, {}, 6);
+    I.ikSolve(ikb, [{ type: "rot", link: R.model.linkOf.Spine02, target: chestR(k.chest, (k.yaw || 0) + k.twist), w: 1 }], R.chains.spine, {}, 6);
     const gL = R.gripWorld(bk, "L").c;
     I.ikSolve(ikb, [{ type: "pos", link: R.hand.L.link, local: R.hand.L.p, target: gL, w: 100 }], R.chains.armL, {}, 8);
     I.ikSolve(ikb, [{ type: "pos", link: R.hand.R.link, local: R.hand.R.p, target: W(TANK), w: 100 }], R.chains.armR, {}, 8);
@@ -102,12 +108,18 @@ function pose(k, warm, stance) {
 }
 const lerpA = (a, c, s) => a.map((x, i) => x + (c[i] - x) * s);
 const lerpN = (a, c, s) => a + (c - a) * s;
-const between = (a, c, s) => ({ pelvis: lerpA(a.pelvis, c.pelvis, s), pitch: lerpN(a.pitch, c.pitch, s), roll: lerpN(a.roll, c.roll, s), chest: lerpN(a.chest, c.chest, s), twist: lerpN(a.twist, c.twist, s), knee: lerpA(a.knee, c.knee, s), kneeDeg: lerpN(a.kneeDeg, c.kneeDeg, s), footOff: lerpA(a.footOff, c.footOff, s) });
+const between = (a, c, s) => ({ pelvis: lerpA(a.pelvis, c.pelvis, s), pitch: lerpN(a.pitch, c.pitch, s), roll: lerpN(a.roll, c.roll, s), yaw: lerpN(a.yaw || 0, c.yaw || 0, s), chest: lerpN(a.chest, c.chest, s), twist: lerpN(a.twist, c.twist, s), knee: lerpA(a.knee, c.knee, s), kneeDeg: lerpN(a.kneeDeg, c.kneeDeg, s), footOff: lerpA(a.footOff, c.footOff, s) });
 // the whole path, worst of each measure
 function evaluate(keys, verbose = false) {
   const stance = path0.stance, all = [...keys, path0.final];
-  const r = { low: 9, lowAt: "", thigh: 9, err: 0, hipLim: 0, stErr: 0, stLim: 0, comOff: -9, gripErr: 0 };
+  const r = { low: 9, lowAt: "", thigh: 9, err: 0, hipLim: 0, stErr: 0, stLim: 0, stTilt: 0, stTiltAt: "", comOff: -9, gripErr: 0 };
   let prev = path0.start, warm = null;
+  // (the start itself: where the lowering onto the standing foot ends - the leg-over starts from it)
+  {
+    const o = pose(path0.start, null, stance);
+    warm = o.q; r.stErr = o.stErr; r.stTilt = o.stTilt; r.stTiltAt = "start";
+    if (verbose) console.log(`  start: standing ${cm(o.stErr)} sole ${o.stTilt.toFixed(1)} deg`);
+  }
   all.forEach((k, ki) => {
     const fin = ki === all.length - 1;
     for (let st = 1; st <= STEPS; st++) {
@@ -118,9 +130,10 @@ function evaluate(keys, verbose = false) {
       r.thigh = Math.min(r.thigh, o.thigh); r.hipLim += o.hipLim ? 1 : 0;
       if (!fin) {
         r.err = Math.max(r.err, o.err); r.stErr = Math.max(r.stErr, o.stErr); r.stLim += o.stLim;
+        if (o.stTilt > r.stTilt) { r.stTilt = o.stTilt; r.stTiltAt = `key ${ki + 1}, step ${st}`; }
         r.comOff = Math.max(r.comOff, o.comOff); r.gripErr = Math.max(r.gripErr, o.gripErr);
       }
-      if (verbose) console.log(`  key ${ki + 1}${fin ? "f" : " "} step ${st}: clear knee/calf/foot ${cm(o.low)} (${o.lowAt}) thigh ${cm(o.thigh)} | knee off ${cm(o.err)} hip-limit ${o.hipLim}` + (fin ? "" : ` | standing ${cm(o.stErr)} lim ${o.stLim} | com ${cm(o.comOff)} grip ${cm(o.gripErr)}`));
+      if (verbose) console.log(`  key ${ki + 1}${fin ? "f" : " "} step ${st}: clear knee/calf/foot ${cm(o.low)} (${o.lowAt}) thigh ${cm(o.thigh)} | knee off ${cm(o.err)} hip-limit ${o.hipLim}` + (fin ? "" : ` | standing ${cm(o.stErr)} lim ${o.stLim} sole ${o.stTilt.toFixed(1)} deg | com ${cm(o.comOff)} grip ${cm(o.gripErr)}`));
     }
     prev = k;
   });
@@ -130,13 +143,15 @@ const cm = (x) => `${(100 * x).toFixed(1)} cm`;
 // the search's score: clearance of the knee, calf and foot up to 3 cm, then penalties (declared
 // weights): the thigh into the envelope (getting on only - getting off, the thigh slides off the
 // seat), the knee missing its target past 3 cm, the standing foot past 2 cm, hip joints at a limit,
-// her weight off her standing foot and her hand off its grip (getting on, where they hold the bike)
-const score = (r) => Math.min(r.low, 0.03) + (path0.balance ? 0.3 * Math.min(r.thigh, 0) : 0) - 3 * Math.max(0, r.err - 0.03) - 0.001 * r.hipLim - 2 * Math.max(0, r.stErr - 0.02) - 0.002 * r.stLim - (path0.balance ? Math.max(0, r.comOff) : 0) - (path0.grip ? Math.max(0, r.gripErr - 0.03) : 0);
+// her weight off her standing foot and her hand off its grip (getting on, where they hold the bike),
+// the standing sole tilted past 3 deg (its heel off the ground)
+const score = (r) => Math.min(r.low, 0.03) + (path0.balance ? 0.3 * Math.min(r.thigh, 0) : 0) - 3 * Math.max(0, r.err - 0.03) - 0.001 * r.hipLim - 2 * Math.max(0, r.stErr - 0.02) - 0.002 * r.stLim - 0.002 * Math.max(0, r.stTilt - 3) - (path0.balance ? Math.max(0, r.comOff) : 0) - (path0.grip ? Math.max(0, r.gripErr - 0.03) : 0);
 function report(r) {
   console.log(`${which}: ${path0.keys.length} keys and the last, ${STEPS} poses each, the bike leaning ${ROLL} deg`);
   console.log(`  clearance to the envelope: knee, calf and foot ${cm(r.low)} at worst - ${r.lowAt}; the thigh ${cm(r.thigh)}`);
   console.log(`  the knee off its target ${cm(r.err)} at worst; poses with a hip joint within 3 deg of its limit: ${r.hipLim}`);
   console.log(`  the standing leg: its foot off its spot ${cm(r.stErr)} at worst; hip joints within 2 deg of a limit (pose-joints): ${r.stLim}`);
+  console.log(`  its sole: tilted ${r.stTilt.toFixed(1)} deg at worst (${r.stTiltAt}) - flat, the heel planted, up to about 3 deg`);
   if (path0.balance) console.log(`  balance: her centre of mass past its allowance over the standing foot by ${cm(r.comOff)} at worst (<= 0: inside)`);
   if (path0.grip) console.log(`  grip: her left hand off its grip by ${cm(r.gripErr)} at worst`);
   console.log(`  score ${score(r).toFixed(4)}`);
@@ -159,6 +174,8 @@ if (cmd === "check") {
     k.pitch = cl(k.pitch + gauss() * 6, [20, 75]); k.roll = cl(k.roll + gauss() * 6, [-48, 0]);
     k.knee = k.knee.map((x) => x + gauss() * a); k.kneeDeg = cl(k.kneeDeg + gauss() * 8, [30, 110]);
     k.chest = cl(k.chest + gauss() * 5, [10, 70]); k.footOff = k.footOff.map((x) => x + gauss() * 0.04);
+    // (the hips turned towards the bike - its seat - as the leg goes over: yaw, - to her right)
+    if (k.yaw != null) k.yaw = cl(k.yaw + gauss() * 5, [-35, 0]);
     const r = evaluate(cand), s = score(r);
     if (s > sc) { keys = cand; cur = r; sc = s; console.log(`  it ${it}: score ${s.toFixed(4)}, knee/calf/foot ${cm(r.low)}, thigh ${cm(r.thigh)}, knee off ${cm(r.err)}`); }
   }
@@ -167,6 +184,6 @@ if (cmd === "check") {
   console.log("keys (48_rider_onfoot.js, G.swingPaths." + which + ".keys):");
   for (const k of keys) {
     const extra = (k.must ? ", must: true" : "") + (k.reachM ? `, reachM: ${k.reachM}` : "");
-    console.log(`  { T: ${k.T}, pelvis: ${f(k.pelvis)}, pitch: ${Math.round(k.pitch)}, roll: ${Math.round(k.roll)}, chest: ${Math.round(k.chest)}, twist: ${k.twist}, knee: ${f(k.knee)}, kneeDeg: ${Math.round(k.kneeDeg)}, footOff: ${f(k.footOff)}${extra} },`);
+    console.log(`  { T: ${k.T}, pelvis: ${f(k.pelvis)}, pitch: ${Math.round(k.pitch)}, roll: ${Math.round(k.roll)}, ${k.yaw != null ? `yaw: ${Math.round(k.yaw)}, ` : ""}chest: ${Math.round(k.chest)}, twist: ${k.twist}, knee: ${f(k.knee)}, kneeDeg: ${Math.round(k.kneeDeg)}, footOff: ${f(k.footOff)}${extra} },`);
   }
 }
