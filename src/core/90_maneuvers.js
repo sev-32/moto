@@ -5,6 +5,7 @@
 // suite (tests/browser/maneuvers.mjs) and callable from the console:
 //     LUCID_CORE.maneuvers.simulate("stoppie")      // synchronous, returns metrics + trace
 //     LUCID_CORE.maneuvers.names()
+//     LUCID_CORE.maneuvers.play("radius60")   // played live in the ride view (stop(): back to the player)
 // Conventions (measured): +x right, roll > 0 leans right, pitch > 0 nose up, a positive bar
 // torque steers left (counter-steer: the bike leans and then turns right).
 (function (global) {
@@ -388,6 +389,67 @@
   };
   // a reset that leaves the bike rolling (ride sessions, R key) ends the burnout
   CORE.chassis.onReset?.push((F) => { if (RIG.active && Math.hypot(F.v[0], F.v[1]) > 1.5) burnoutRig.stop(); });
+  // ------------------------------------------------------------------ live director
+  // A maneuver played in the live ride - for watching it and recording it (tools/capture-ride.mjs):
+  // the bike is reset to the maneuver's start, and each frame, after the ride's own input pre-step,
+  // its scripted rider writes the levers and throttle and its bar torque replaces the player's.
+  // The rider's posture follows the maneuver's (as simulate sets it) until it ends or stop().
+  const LIVE = { active: false, name: null, d: null, t: 0, T: 0, mem: null, rider: null, steer: 0, riderSave: null, loop: false };
+  function play(name, opts = {}) {
+    const d = DEFS[name];
+    if (!d) throw Error("unknown maneuver " + name);
+    if (LIVE.active) stopPlay();
+    if (RIG.active) burnoutRig.stop();
+    const F = free, pt = PT(), BIO = CORE.riderBio?.active ? CORE.riderBio : null, RB = CORE.rider;
+    LIVE.riderSave = BIO ? { auto: BIO.auto, manual: { ...(BIO.manual || {}) } } : RB ? { auto: RB.config.auto.enabled, manual: { ...RB.manual } } : null;
+    if (d.rider) {
+      const { auto, ...posture } = d.rider;
+      if (BIO) { if (auto !== undefined) BIO.auto = auto; BIO.setPosture(posture); }
+      else if (RB) { if (auto !== undefined) RB.setAuto(auto); RB.setPosture(d.rider); }
+    }
+    if (opts.assist || d.assist) API.setAssistMode?.(opts.assist || d.assist);
+    // (on the flat reference road, as the tests run it, unless it asks for the world: a 60 m
+    // circle from the circuit's start runs off the asphalt onto the grass)
+    const WORLD = CORE.world, useWorld = !!(opts.world ?? d.world);
+    LIVE.worldWas = WORLD ? WORLD.enabled : null;
+    if (WORLD && !useWorld && WORLD.enabled) WORLD.setEnabled(false);
+    const setup = { mode: "ENGINE", throttle: 0, gear: d.gear || 3, clutch: d.clutch ?? 1, frontBrakeBar: 0, rearBrakeBar: 0, absEnabled: !!d.abs, tcEnabled: !!d.tc, autoShift: false };
+    if (pt) Object.assign(pt.states.free.command, setup);
+    F.reset(opts.speed ?? d.speed ?? 20, d.roll ?? 0);
+    if (d.setup) d.setup();
+    Object.assign(LIVE, { active: true, name, d, t: 0, T: opts.T ?? d.T ?? 5, mem: { lean: leanController(opts.leanGains || d.leanGains), heading: null }, rider: riderCom(F), steer: 0, loop: !!opts.loop });
+    return { ok: true, name, T: LIVE.T, about: d.about };
+  }
+  function stopPlay() {
+    if (!LIVE.active) return { ok: false };
+    const d = LIVE.d, BIO = CORE.riderBio?.active ? CORE.riderBio : null, RB = CORE.rider, sv = LIVE.riderSave;
+    if (d?.teardown) d.teardown();
+    if (sv && d?.rider) {
+      if (BIO) { BIO.auto = sv.auto; BIO.setPosture(sv.manual); } else if (RB) { RB.setAuto(sv.auto); RB.setPosture(sv.manual); }
+    }
+    if (LIVE.worldWas != null && CORE.world && CORE.world.enabled !== LIVE.worldWas) CORE.world.setEnabled(LIVE.worldWas);
+    Object.assign(LIVE, { active: false, steer: 0, worldWas: null });
+    return { ok: true };
+  }
+  function liveStep(dt) {
+    const F = free, pt = PT(), cmd = pt ? pt.states.free.command : {};
+    const ctx = { F, cmd, s: state(F, LIVE.rider), t: LIVE.t, dt, mem: LIVE.mem, steer: 0, rpm: pt?.states?.free?.engine?.rpm || 0 };
+    if (LIVE.d.control) LIVE.d.control(ctx);
+    LIVE.steer = LIVE.d.control ? ctx.steer : 0;
+    LIVE.t += dt;
+    if (LIVE.t > LIVE.T) { if (LIVE.loop) play(LIVE.name, { loop: true, T: LIVE.T }); else stopPlay(); }
+  }
+  // (the bar torque: the ride writes the player's into the bike's controls after the pre-step;
+  // while a maneuver plays, its rider's replaces it)
+  if (typeof freeApplyUI === "function") {
+    const baseApplyUI = freeApplyUI;
+    global.freeApplyUI = function (...a) {
+      const r = baseApplyUI.apply(this, a);
+      if (LIVE.active && String(global.__LUCID_ACTIVE_PAGE__ || "RIDE").toUpperCase() === "RIDE") free.controls.userSteerTorqueNm = LIVE.steer;
+      return r;
+    };
+  }
+
   // live ride: the rig takes over the controls after the ride input pre-step each frame
   const basePre = global.__LUCID_RIDE_PRESTEP__;
   let lastPre = performance.now();
@@ -399,6 +461,7 @@
       const cmd = PT()?.states?.free?.command;
       if (cmd) rigControl(cmd, dt * (CORE.realtime?.timeScale ?? 1));
     }
+    if (LIVE.active) liveStep(dt * (CORE.realtime?.timeScale ?? 1));
     return r;
   };
   let rigChip = null;
@@ -421,6 +484,6 @@
   let uiAcc = 0;
   (CORE.renderHooks = CORE.renderHooks || []).push({ id: "burnoutRig", draw: () => { if (++uiAcc % 10 === 0) rigUi(); } });
 
-  CORE.maneuvers = { defs: DEFS, names: () => Object.keys(DEFS), simulate, controllers: { leanController, headingController }, state, burnoutRig };
+  CORE.maneuvers = { defs: DEFS, names: () => Object.keys(DEFS), simulate, controllers: { leanController, headingController }, state, burnoutRig, play, stop: stopPlay, live: () => ({ active: LIVE.active, name: LIVE.name, t: LIVE.t, T: LIVE.T }) };
   CORE.burnoutRig = burnoutRig;
 })(typeof window !== "undefined" ? window : globalThis);

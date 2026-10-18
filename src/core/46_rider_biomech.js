@@ -1323,6 +1323,23 @@
       // in a 1-1.2 g turn, as she did with a pull on her inside elbow down and out: nothing holds
       // her at the seat's edge yet)
       hangPelvisRollDeg: 12, hangPelvisYawDeg: 14, hangChestRollDeg: 15, hangTuckDeg: 0, hangKneeOutM: 0.12, hangKneeDownM: 0.06,
+      // (and, hung off, her pelvis this much lower on the seat (m), her chest and head turned
+      // towards the inside and her head rolled in (deg) - declared)
+      hangDropM: 0.012, hangChestYawDeg: 10, hangHeadYawDeg: 12, hangHeadRollDeg: 6,
+      // the other postures' shapes, at full intent (declared): tucked - the trunk leaned further down
+      // to the tank, the pelvis rolled forward, the head up to see over the screen (deg); sat up -
+      // the trunk this much more upright (deg, at tuck -1); standing on the pegs - the pelvis this
+      // high and far forward off the seat (m), the trunk more upright, the pelvis rolled back, the
+      // head down (deg); weight forward / back (foreAft +-1, m)
+      tuckLeanDeg: 10, tuckPelvisPitchDeg: 4, tuckHeadPitchDeg: 6, sitUpLeanDeg: 16,
+      // (tucked, her elbows bend this much further - the trunk leaning on down to keep the grips:
+      // reach; the user's riding note - slowing, alert: shoulders up, arms near straight; for speed:
+      // arms bent, tucked)
+      tuckElbowDeg: 40,
+      standRiseM: 0.19, standFwdM: 0.06, standLeanDeg: 22, standPelvisPitchDeg: 14, standHeadPitchDeg: 4, foreAftM: 0.05,
+      // her knees on the tank's flanks: this far behind / above the reference point (m), standing
+      // this much further forward / lower (m) - declared
+      kneeY: -0.03, kneeZ: 0.02, standKneeY: 0.02, standKneeZ: 0.1,
       // braced under braking: planned pelvis this much further forward / pitched forward
       braceForwardM: 0.02, braceForwardPitchDeg: 4,
       // feet down at a standstill / walking pace: below feetDownOnMps her feet leave the pegs for
@@ -1490,32 +1507,32 @@
       // to the bike held upright.)
       const level = (1 - fd) * PL.pelvisLevelShare * rollFelt / DEG;
       const pel = R.pelvisPoseBike({
-        x: hang * PL.hangOffsetM + fd * fsx * (PL.footPelvisShiftM + PL.feel.hip), y: PL.seatY + P.foreAft * 0.05 + stand * 0.06 + bf * PL.braceForwardM, z: PL.seatZ + stand * 0.19 - Math.abs(hang) * 0.012,
-        pelvisPitchDeg: PL.pelvisPitchDeg - stand * 14 + P.tuck * 4 + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hang * PL.hangPelvisRollDeg + fd * fsx * PL.footPelvisRollDeg + level, pelvisYawDeg: -hang * PL.hangPelvisYawDeg,
+        x: hang * PL.hangOffsetM + fd * fsx * (PL.footPelvisShiftM + PL.feel.hip), y: PL.seatY + P.foreAft * PL.foreAftM + stand * PL.standFwdM + bf * PL.braceForwardM, z: PL.seatZ + stand * PL.standRiseM - Math.abs(hang) * PL.hangDropM,
+        pelvisPitchDeg: PL.pelvisPitchDeg - stand * PL.standPelvisPitchDeg + P.tuck * PL.tuckPelvisPitchDeg + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hang * PL.hangPelvisRollDeg + fd * fsx * PL.footPelvisRollDeg + level, pelvisYawDeg: -hang * PL.hangPelvisYawDeg,
       });
       // (feet down: sideways and fore/aft from the bike held upright, the height from the seat as it
       // is - she stays seated, pressing it, so the seat carries her push to the bike)
       const pelW = fd > 0 ? (() => { const a = toBikeFrame(bk, WU(pel.pos)); a[2] = pel.pos[2]; return W(a); })() : W(pel.pos);
       const T = { pelvis: { p: pelW, R: mm(RU, pel.R) }, bike: bk, feetDown: fd, pelvisUp: fd > 0 ? pel.pos : null };
       const wb = mtv(Rb, WUP), rollWorld = Math.atan2(wb[0], wb[2]);
-      const lean = (PL.leanDeg + (P.tuck >= 0 ? P.tuck * 10 : P.tuck * 16) - stand * 22 + Math.abs(hang) * PL.hangTuckDeg) * DEG + PL.reachLean;
+      const lean = (PL.leanDeg + (P.tuck >= 0 ? P.tuck * PL.tuckLeanDeg : P.tuck * PL.sitUpLeanDeg) - stand * PL.standLeanDeg + Math.abs(hang) * PL.hangTuckDeg) * DEG + PL.reachLean;
       // (her chest levels towards the felt vertical by the same share as her pelvis: the upper body
       // rolls over the hips as one block, and the lumbar spine - whose side-bend muscles are weak,
       // leaning to the bars - is not asked to bend between them when the bike rolls under her)
       const roll = PL.chestLevelShare * rollFelt + hang * PL.hangChestRollDeg * DEG;
-      T.chest = mm(Rb, mm(Rz(-hang * 10 * DEG), mm(Ry(roll), mm(Rx(-lean), M2B))));
+      T.chest = mm(Rb, mm(Rz(-hang * PL.hangChestYawDeg * DEG), mm(Ry(roll), mm(Rx(-lean), M2B))));
       // head: closer to the true horizon than the trunk, turned and dipped towards where she looks
-      const hroll = 0.55 * rollWorld + 0.45 * rollFelt + hang * 6 * DEG;
+      const hroll = 0.55 * rollWorld + 0.45 * rollFelt + hang * PL.hangHeadRollDeg * DEG;
       const gz = gazeRiding(bk);
-      const hpitch = (PL.headPitchDeg + P.tuck * 6 - stand * 4) * DEG + gz.headPitch;
-      T.head = mm(Rb, mm(Rz(gz.headYaw - hang * 12 * DEG), mm(Ry(hroll), mm(Rx(-hpitch), M2B))));
+      const hpitch = (PL.headPitchDeg + P.tuck * PL.tuckHeadPitchDeg - stand * PL.standHeadPitchDeg) * DEG + gz.headPitch;
+      T.head = mm(Rb, mm(Rz(gz.headYaw - hang * PL.hangHeadYawDeg * DEG), mm(Ry(hroll), mm(Rx(-hpitch), M2B))));
       T.hands = {};
       // (a hand reaching for its grip - just sat down, the grip not yet taken - goes there too)
       for (const S of ["L", "R"]) if (R.grips[S].held || R.grips[S].reach) { const g = R.gripWorld(bk, S); T.hands[S] = { p: g.c, axis: g.a, volar: mv(Rb, unit([0, 0.35, -1])) }; }
       T.feet = {};
       for (const [S, side, sx] of [["L", "left", -1], ["R", "right", 1]]) {
         const pg = SURF.pegs[side], mid = scl(add(pg.a, pg.b), 0.5), inside = sx * hang > 0;
-        const ky = -0.03 + stand * 0.02, kz = 0.02 - stand * 0.1 - (inside ? Math.abs(hang) * PL.hangKneeDownM : 0);
+        const ky = PL.kneeY + stand * PL.standKneeY, kz = PL.kneeZ - stand * PL.standKneeZ - (inside ? Math.abs(hang) * PL.hangKneeDownM : 0);
         // the knee rests on the tank's flank: target = where the knee sphere meets the tank surface
         // (measured on the field); the grip itself is a force (pelvisVMC); the inside knee comes
         // off the tank when she hangs off
@@ -1957,7 +1974,10 @@
       let e = 0, n = 0;
       for (const S of ["L", "R"]) if (R.grips[S].held) { e += ikb.q[elbowHinge[S === "L" ? 0 : 1]]; n++; }
       if (!n) return;
-      PL.reachLean = clamp(PL.reachLean + (PL.elbowPrefDeg * DEG - e / n) * PL.reachGain * dtp, PL.reachLeanMaxDeg[0] * DEG, PL.reachLeanMaxDeg[1] * DEG);
+      // (tucked she bends her elbows - tuckElbowDeg more at full tuck - and her trunk goes down to
+      // keep the grips; sat up, alert, her arms stay near straight)
+      const want = PL.elbowPrefDeg + Math.max(0, PL.posture.tuck) * PL.tuckElbowDeg;
+      PL.reachLean = clamp(PL.reachLean + (want * DEG - e / n) * PL.reachGain * dtp, PL.reachLeanMaxDeg[0] * DEG, PL.reachLeanMaxDeg[1] * DEG);
     }
     R.reach = reach;
     R.planner = function (R_, bk, dt) {
@@ -2532,12 +2552,14 @@
     };
 
     // ------------------------------------------------------------------ Semantic51 output
-    R.commands = function () {
+    // (her body's pose as Semantic51 commands and a placement - of her body, or of another
+    // multibody of the same model: the IK copy, a pose being previewed)
+    R.commands = function (bb = body) {
       const cmds = {};
       for (const d of ch.dofs) cmds[d.id] = 0;
-      for (let i = 0; i < NH; i++) cmds[H[i].id] = body.q[H[i].link] / DEG;
+      for (let i = 0; i < NH; i++) cmds[H[i].id] = bb.q[H[i].link] / DEG;
       for (const S of ["L", "R"]) if (foot[S].toes) cmds[foot[S].toes.id] = foot[S].toes.q / DEG;
-      return { commands: ch.clampToRange(cmds), placement: { R: body.R.slice(), t: sub(body.p, B[TI.Hip]) } };
+      return { commands: ch.clampToRange(cmds), placement: { R: bb.R.slice(), t: sub(bb.p, B[TI.Hip]) } };
     };
     R.totals = () => body.totals();
     R.setBase = (p, Rw) => setBase(body, p, Rw);
@@ -2654,6 +2676,8 @@
       bk.pivot = F.geom.steerPivotBody; bk.axis = F.geom.forkAxisBody;
       return bk;
     }
+    // (the bike as it is now - for a pose solved while the ride is paused: the pose lab's preview)
+    BIO.bikeState = () => (typeof free !== "undefined" && free?.q ? adapt(free) : bk);
     const RT = CORE.realtime;
     const ground = { height: (x, y) => (RT?.road ? RT.road.height(x, y) : 0), normal: (x, y) => (RT?.road ? RT.road.normal(x, y) : [0, 0, 1]), grip: (x, y) => (RT?.road ? RT.road.mu(x, y) : 1) };
     // place her, pre-settled, on the bike as it is now (pose and rigid motion)

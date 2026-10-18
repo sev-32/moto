@@ -68,6 +68,11 @@
       "description": "The physical rider off the bike: on her feet (stand, walk, run, step-turn: capture-point stepping, centre-of-pressure control through compliant ankles, virtual-model support, a declared capped pelvis balance assist), getting up after a fall, lifting the bike and getting on / off (F / pad X); third-person camera and controls while she is off the bike"
     },
     {
+      "id": "pose-lab",
+      "file": "49_pose_lab.js",
+      "description": "POSE LAB: the animator's controls on the riding rider - posture shapes (planner priors per posture) and joint style (IK preferred angles and weights), live or frozen (the IK pose for her targets); pose sets saved / loaded as JSON (lucid.rider.pose-set.v1), the shown pose as BVH and OBJ"
+    },
+    {
       "id": "world",
       "file": "50_world.js",
       "inline": {

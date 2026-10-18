@@ -84,7 +84,8 @@
     if (!gpu) gpu = makeGpu(ch);
     if (!gpu) return;
     const t0 = performance.now();
-    const R = BIO.rider, cmds = R.commands();
+    // (a pose being previewed - the pose lab's - is drawn in place of her body's)
+    const R = BIO.rider, cmds = (RT.override && RT.override()) || R.commands();
     const pose = ch.compile(cmds.commands, { validate: false, placement: cmds.placement, extraLocal: handExtra(ch, R) });
     const X = ch.lbs(ch.clusterTransforms(pose));
     for (let i = 0; i < X.length; i++) gpu.pos[i] = X[i];
