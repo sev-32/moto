@@ -14,6 +14,9 @@
   const RT = (CORE.riderRender = {
     visible: true, draws: 0, frameMs: 0, error: null,
     color: [0.23, 0.245, 0.26], roughness: 0.68, // leathers: the legacy rider's suit material
+    // dressed (47_rider_wardrobe.js) her skin is drawn as skin: one albedo, no texture yet (CANDIDATE)
+    skinColor: [0.62, 0.37, 0.25], skinRoughness: 0.55,
+    afterDraw: [], // (layers drawn on her body this frame, in order: her clothes)
     grip: { held: { profile: "bottle", profileGain: 1.0, thumbOpposition: 0.8, spread: 0.1 }, open: { profile: "locomotion_relaxed", profileGain: 1.0 } },
   });
   let gpu = null, legacyHidden = false;
@@ -74,6 +77,16 @@
   function setLegacyVisible(v) {
     const live = global.LUCID_RIDER_CONTROL_V12853?.runtime;
     if (live) live.visible = v;
+    // (and the V1.28.5.5A viewport studio's overlays of that rider - its skeleton, contacts, effectors -
+    // which it would keep drawing at her hip; restored with the legacy rider;
+    // and the range gizmo of its selected DOF, which it draws whatever the overlay switches say)
+    const st = global.LUCID_RIDER_STUDIO_V12855A?.studio, ov = st?.overlays;
+    if (!ov) return;
+    if (!v) {
+      RT.legacyOverlays = { overlays: { ...ov }, selection: st.selection };
+      for (const k of Object.keys(ov)) if (typeof ov[k] === "boolean") ov[k] = false;
+      st.selection = { type: "none", id: null };
+    } else if (RT.legacyOverlays) { Object.assign(ov, RT.legacyOverlays.overlays); st.selection = RT.legacyOverlays.selection; RT.legacyOverlays = null; }
   }
 
   function draw() {
@@ -95,11 +108,13 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.nb);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpu.nor);
     // world coordinates: identity model (as the tyres are drawn)
-    drawPBR(gpu.vao, gpu.count, IDENTITY, RT.color, RT.roughness, 0, true, gl.UNSIGNED_INT, gl.TRIANGLES, true);
+    const dressed = !!CORE.wardrobe?.dressed?.();
+    drawPBR(gpu.vao, gpu.count, IDENTITY, dressed ? RT.skinColor : RT.color, dressed ? RT.skinRoughness : RT.roughness, 0, true, gl.UNSIGNED_INT, gl.TRIANGLES, true);
     RT.draws++;
     RT.frameMs += (performance.now() - t0 - RT.frameMs) * 0.05;
     RT.gpu = gpu; // her posed mesh this frame, for other layers' depth passes (NIMBUS)
     RT.frame = (RT.frame || 0) + 1;
+    for (const f of RT.afterDraw) f(gpu);
   }
   const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 

@@ -5,6 +5,11 @@
 //
 //   node tools/pose-board.mjs [--pose-set FILE.json] [--cams side,front34] [--out FILE.png]
 //                              [--postures alert,seated,tuck,hangR,hangL,stand] [--tile 480x300]
+//                              [--wardrobe off|bound|quality] [--settle N]
+//
+// Clothes (47_rider_wardrobe.js): "bound" - on their carriers (default); "quality" - the clothing
+// engine's outfit settings, re-anchored on each posture and settled (its own 20 steps + N more at
+// 120 Hz): ~1 s of compute a step, so a board takes minutes; "off" - her body as before.
 //
 // Postures (her intent: tuck -1 sat up .. +1 tucked, hang -1 left .. +1 right, stand 0..1):
 //   alert = slowing, sat up (tuck -1)      seated = neutral      tuck = speed (tuck +1)
@@ -31,6 +36,7 @@ const cams = String(opt("cams", "side,front34")).split(",");
 const [TW, TH] = String(opt("tile", "480x300")).split("x").map(Number);
 const out = path.resolve(opt("out", path.join(ROOT, "tmp/pose-board.png")));
 const setFile = opt("pose-set", null);
+const wardrobe = String(opt("wardrobe", "bound")), settle = Number(opt("settle", 24));
 const build = opt("build", path.join(ROOT, "dist/LucidMoto_V2.0.0_dev.html"));
 const tiles = out.replace(/\.png$/, "") + "_tiles";
 fs.mkdirSync(tiles, { recursive: true });
@@ -38,13 +44,15 @@ fs.mkdirSync(tiles, { recursive: true });
 const W = TW * 2, H = TH * 2;
 const { browser, page, logs } = await openRide(openBuild, build, { W, H });
 await page.waitForTimeout(3000);
-const info = await page.evaluate((setText) => {
+const info = await page.evaluate(({ setText, wardrobe }) => {
   const L = window.LUCID_CORE.poseLab;
   L.open(); L.close(); // (captures the build's defaults)
   const rep = setText ? L.apply(setText) : null;
   L.freeze(true);
-  return { rep, ready: L.ready };
-}, setFile ? fs.readFileSync(setFile, "utf8") : null);
+  const W = window.LUCID_CORE.wardrobe;
+  if (W) { if (wardrobe === "off") W.visible = false; else W.setMode(wardrobe); }
+  return { rep, ready: L.ready, wardrobe: W ? { mode: W.mode, visible: W.visible } : null };
+}, { setText: setFile ? fs.readFileSync(setFile, "utf8") : null, wardrobe });
 console.log("pose lab:", JSON.stringify(info));
 await installStudio(page, { W, H });
 const sheet = [];
@@ -56,7 +64,13 @@ for (const p of postures) {
     Object.assign(R.plan.posture, { hang: P.hang, tuck: P.tuck, stand: P.stand, foreAft: P.foreAft });
     R.plan.reachLean = R.calibration?.reachLean ?? 0; // (each posture's reach settled from the same start)
     C.poseLab.refresh();
+    C.wardrobe?.reanchor?.(); // (the clothes re-made on her for this posture at the next frame)
   }, P);
+  if (wardrobe === "quality") {
+    await page.evaluate(() => renderFree()); // (the posture drawn: the clothes re-anchored and settled)
+    const st = await page.evaluate((n) => { const W = window.LUCID_CORE.wardrobe; W.settle(n); return W.audit(); }, settle);
+    console.log("  cloth", p, JSON.stringify(st));
+  }
   const row = [];
   for (const c of cams) {
     const f = path.join(tiles, `${p}_${c}.png`);

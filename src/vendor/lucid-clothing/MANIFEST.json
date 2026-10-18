@@ -1,0 +1,20 @@
+{
+ "schema": "lucid-moto.vendor-manifest.v1",
+ "from": "LUCID_CLOTHING_ENGINE_CLEAN_HANDOFF_20261018",
+ "verifiedAgainst": "MANIFEST_SHA256.json of that handoff",
+ "rule": "byte-for-byte copies; never edited here - changes belong upstream (clothing-engine/r1 or a new revision)",
+ "files": {
+  "labs/human-engine/clothing-safe/m26/source/public/src/clothing/lucidClothSolver.js": "d95aae00132076897645ebffb1a42ae46685f2f17d9a0077ca9a424700a4a3a6",
+  "labs/human-engine/clothing-safe/m26/source/public/src/clothing/dynamicBvh.js": "477cd297f66a33d182991e51610e9049c080c4eeac0d2b33eeb4dc94613fdfee",
+  "labs/human-engine/clothing-safe/m26/source/public/src/clothing/garmentAsset.js": "686a9c0f9d272179a68e1ea08941bf1f06a38316b80b09599899532d88685c9d",
+  "labs/human-engine/clothing-safe/m26/source/public/src/clothing/watertightBodyProxy.js": "8ac139be93b63ff5db99b77463fc24b65f212ae536e14a7cd893560f1ffe3f57",
+  "labs/human-engine/clothing-safe/m26/source/public/src/clothing/jeansDetailRuntime.js": "57309ccedbc935f21fe0c05af22af0633054fcb989b14f01e909e8b6a8ec25d6",
+  "labs/human-engine/clothing-safe/m26/source/public/src/clothing/renderSupermesh.js": "13163c00f305a8a69cba3de284213617c2d94ab2c494f09a37df392ad2da9c36",
+  "labs/human-engine/clothing-safe/m26/source/public/src/runtime/loader.js": "8750e8a892b427b2805bd023545e68ebfc5637e2e3702ce66c5c7c575c40f065",
+  "labs/human-engine/clothing-engine/r1/src/lucidClothSolverV2.js": "d18e3f90f993bdf26e728376a0b7844a261efe26348a3f60588af480641de9c3",
+  "labs/human-engine/clothing-engine/r1/src/wardrobeRuntime.js": "a7bfe93463e868ab90130b5289537464100f3c12e23deb91cf0f860cf9d17cbe",
+  "labs/human-engine/clothing-engine/r1/src/interGarmentContact.js": "31edb3150f0f46ed8520afc00af6891922f19add6d123305c6728495f8d81bb2",
+  "labs/human-engine/clothing-engine/r1/src/pantsSectionEnvelope.js": "1a826cc4f88f5981ac510be787a90511418a3a3138856808b4df31a814e85d3b",
+  "labs/human-engine/clothing-engine/r1/src/pantsTubeTopology.js": "0a139264f9cf1d4b81aa533b506a61a9726e3e48a8c749b2791b5e361911d369"
+ }
+}

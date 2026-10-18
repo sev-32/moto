@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { bundleModules } from "./bundle-modules.mjs";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const args = process.argv.slice(2);
@@ -59,6 +60,12 @@ function coreLayers() {
     for (const [token, file] of Object.entries(l.inline || {})) {
       if (!code.includes(token)) throw Error(`layer ${l.id}: inline token ${token} not found`);
       code = code.split(token).join(read(file.startsWith("/") ? file.slice(1) : "src/core/" + file).trim()); // "/x" = repo-root path
+    }
+    // "bundle": { "TOKEN": { root, entries } } substitutes vendored ES modules as one expression
+    // (tools/bundle-modules.mjs: each module a function scope; their sources otherwise unchanged)
+    for (const [token, spec] of Object.entries(l.bundle || {})) {
+      if (!code.includes(token)) throw Error(`layer ${l.id}: bundle token ${token} not found`);
+      code = code.split(token).join(bundleModules(path.join(ROOT, spec.root), spec.entries).code);
     }
     // "inlineString": { "TOKEN": "path" } substitutes a file as a JS string literal (worker sources)
     for (const [token, file] of Object.entries(l.inlineString || {})) {

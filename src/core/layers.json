@@ -63,6 +63,31 @@
       "description": "The physical rider drawn through the canonical skin path (compile -> helper clusters -> Skin78 LBS) every frame from her body's Semantic51 commands + placement; hands closed on the grips with the declared bottle grip synergy; legacy mannequins hidden while she is active"
     },
     {
+      "id": "rider-wardrobe",
+      "file": "47_rider_wardrobe.js",
+      "description": "Her clothes: the LUCID Clothing Engine (Human Engine M26 cloth solver + Clothing Engine R1 wardrobe, vendored unchanged) simulating the T-shirt and jeans on her drawn skin, in a frame riding with the bike (gravity less its acceleration, the air as wind)",
+      "bundle": {
+        "/*@@CLOTHING_MODULES@@*/ null": {
+          "root": "src/vendor/lucid-clothing",
+          "entries": [
+            "labs/human-engine/clothing-engine/r1/src/wardrobeRuntime.js",
+            "labs/human-engine/clothing-safe/m26/source/public/src/clothing/garmentAsset.js",
+            "labs/human-engine/clothing-safe/m26/source/public/src/clothing/watertightBodyProxy.js",
+            "labs/human-engine/clothing-safe/m26/source/public/src/clothing/jeansDetailRuntime.js",
+            "labs/human-engine/clothing-safe/m26/source/public/src/clothing/renderSupermesh.js"
+          ]
+        }
+      },
+      "inline": {
+        "/*@@GARMENT_TSHIRT@@*/ null": "/assets/character/clothing/lucid_human_native_tshirt_v1.json",
+        "/*@@GARMENT_JEANS@@*/ null": "/assets/character/clothing/lucid_human_native_jeans_v1.json",
+        "/*@@GARMENT_JEANS_DETAILS@@*/ null": "/assets/character/clothing/lucid_human_native_jeans_v1_details.json",
+        "/*@@BODY_PROXY@@*/ null": "/assets/character/clothing/body_watertight_proxy_alpha4.json",
+        "/*@@BODY_ADAPTER@@*/ null": "/assets/character/clothing/lucid_body_adapter_v1.json",
+        "/*@@RIDING_CUT@@*/ null": "/assets/character/clothing/lucid_riding_cut_v1.json"
+      }
+    },
+    {
       "id": "rider-onfoot",
       "file": "48_rider_onfoot.js",
       "description": "The physical rider off the bike: on her feet (stand, walk, run, step-turn: capture-point stepping, centre-of-pressure control through compliant ankles, virtual-model support, a declared capped pelvis balance assist), getting up after a fall, lifting the bike and getting on / off (F / pad X); third-person camera and controls while she is off the bike"
