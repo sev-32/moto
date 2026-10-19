@@ -76,16 +76,36 @@
             "labs/human-engine/clothing-safe/m26/source/public/src/clothing/jeansDetailRuntime.js",
             "labs/human-engine/clothing-safe/m26/source/public/src/clothing/renderSupermesh.js"
           ]
+        },
+        "/*@@MOTO_CLOTHING@@*/ null": {
+          "root": "src/core/clothing",
+          "entries": [
+            "hangers.js",
+            "bra.js",
+            "stretch.js",
+            "layeredge.js",
+            "fabricmap.js"
+          ]
         }
       },
       "inline": {
-        "/*@@GARMENT_TSHIRT@@*/ null": "/assets/character/clothing/lucid_human_native_tshirt_v1.json",
+        "/*@@GARMENT_TSHIRT@@*/ null": "/assets/character/clothing/lucid_moto_tshirt_v1.json",
         "/*@@GARMENT_JEANS@@*/ null": "/assets/character/clothing/lucid_human_native_jeans_v1.json",
         "/*@@GARMENT_JEANS_DETAILS@@*/ null": "/assets/character/clothing/lucid_human_native_jeans_v1_details.json",
         "/*@@BODY_PROXY@@*/ null": "/assets/character/clothing/body_watertight_proxy_alpha4.json",
         "/*@@BODY_ADAPTER@@*/ null": "/assets/character/clothing/lucid_body_adapter_v1.json",
-        "/*@@RIDING_CUT@@*/ null": "/assets/character/clothing/lucid_riding_cut_v1.json"
+        "/*@@RIDING_CUT@@*/ null": "/assets/character/clothing/lucid_riding_cut_v1.json",
+        "/*@@SKIN_COVER@@*/ null": "/assets/character/clothing/lucid_skin_cover_v1.json",
+        "/*@@FABRIC_JEANS@@*/ null": "/assets/character/clothing/lucid_moto_jeans_fabric_v1.json"
       }
+    },
+    {
+      "id": "rider-hair",
+      "file": "47_rider_hair.js",
+      "inline": {
+        "/*@@HAIR_GUIDES@@*/ null": "/assets/character/hair/lucid_hair_guides_v1.json"
+      },
+      "description": "Her hair: the DDHF V25 hair engine's clump charts (twist-optical rank: packed RGB8 twist coefficients, the m2 secondary lobe) on a groom from the hair cards of the Human Engine model she was made with; strands with follow-the-leader inextensibility, root-to-tip shape memory, collisions with her head, neck and shoulders, gravity less the bike's acceleration and the air seen from the bike"
     },
     {
       "id": "rider-onfoot",
@@ -96,6 +116,11 @@
       "id": "pose-lab",
       "file": "49_pose_lab.js",
       "description": "POSE LAB: the animator's controls on the riding rider - posture shapes (planner priors per posture) and joint style (IK preferred angles and weights), live or frozen (the IK pose for her targets); pose sets saved / loaded as JSON (lucid.rider.pose-set.v1), the shown pose as BVH and OBJ"
+    },
+    {
+      "id": "fabric-lab",
+      "file": "49_fabric_lab.js",
+      "description": "Fabric lab: heatmaps (tension, stretch, thickness, bend, friction, damping, wrinkle) and crease strokes painted on her jeans' flats, baked into the clothing engine's fabric fields; JSON import/export"
     },
     {
       "id": "world",

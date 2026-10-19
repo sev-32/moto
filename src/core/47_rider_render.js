@@ -43,6 +43,24 @@
     return { vao, pb, nb, ib, count: faces.length, faces, pos: new Float32Array(nv * 3), nor: new Float32Array(nv * 3) };
   }
 
+  // her skin less the triangles hidden under her clothes: a second VAO on the same vertex buffers
+  function dressedIndices(g, hidden) {
+    const F = g.faces, keep = [];
+    for (let f = 0; f < F.length / 3; f++) if (!hidden[f]) keep.push(F[3 * f], F[3 * f + 1], F[3 * f + 2]);
+    const idx = Uint32Array.from(keep);
+    if (!g.vaoDressed) {
+      g.vaoDressed = gl.createVertexArray();
+      gl.bindVertexArray(g.vaoDressed);
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.pb); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.nb); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+      g.ibDressed = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibDressed);
+    } else { gl.bindVertexArray(g.vaoDressed); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibDressed); }
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+    g.countDressed = idx.length; g.hiddenRef = hidden;
+  }
+
   // area-weighted vertex normals of the posed skin
   function normals(X, faces, out) {
     out.fill(0);
@@ -100,6 +118,7 @@
     // (a pose being previewed - the pose lab's - is drawn in place of her body's)
     const R = BIO.rider, cmds = (RT.override && RT.override()) || R.commands();
     const pose = ch.compile(cmds.commands, { validate: false, placement: cmds.placement, extraLocal: handExtra(ch, R) });
+    RT.pose = pose; // (her joints this frame, world: P positions, G rotations - for her hair)
     const X = ch.lbs(ch.clusterTransforms(pose));
     for (let i = 0; i < X.length; i++) gpu.pos[i] = X[i];
     normals(gpu.pos, gpu.faces, gpu.nor);
@@ -107,9 +126,12 @@
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpu.pos);
     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.nb);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpu.nor);
-    // world coordinates: identity model (as the tyres are drawn)
-    const dressed = !!CORE.wardrobe?.dressed?.();
-    drawPBR(gpu.vao, gpu.count, IDENTITY, dressed ? RT.skinColor : RT.color, dressed ? RT.skinRoughness : RT.roughness, 0, true, gl.UNSIGNED_INT, gl.TRIANGLES, true);
+    // world coordinates: identity model (as the tyres are drawn). Dressed, her skin where her clothes
+    // cover it well inside their openings is left out (it would poke through where LBS bulges)
+    const dressed = !!CORE.wardrobe?.dressed?.(), hidden = dressed ? CORE.wardrobe.hiddenSkin?.() : null;
+    if (hidden && gpu.hiddenRef !== hidden) dressedIndices(gpu, hidden);
+    const vao = hidden ? gpu.vaoDressed : gpu.vao, count = hidden ? gpu.countDressed : gpu.count;
+    drawPBR(vao, count, IDENTITY, dressed ? RT.skinColor : RT.color, dressed ? RT.skinRoughness : RT.roughness, 0, true, gl.UNSIGNED_INT, gl.TRIANGLES, true);
     RT.draws++;
     RT.frameMs += (performance.now() - t0 - RT.frameMs) * 0.05;
     RT.gpu = gpu; // her posed mesh this frame, for other layers' depth passes (NIMBUS)

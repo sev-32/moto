@@ -150,6 +150,13 @@
         c.steer = c.mem.lean(c.s, 0, c.dt);
       },
     },
+    rollOn: {
+      speed: 12, T: 6, gear: 3, world: true, about: "roll-on in third from 12 m/s, full throttle from 0.5 s, down the circuit's straight: the air builds from ~43 to over 100 km/h (her clothes and hair in the wind)",
+      control(c) {
+        c.cmd.throttle = c.t < 0.5 ? 0.15 : 1;
+        c.steer = c.mem.lean(c.s, 0, c.dt);
+      },
+    },
     wheelie: {
       speed: 8, T: 6.5, gear: 1, about: "clutch-up wheelie in first: rev to ~8000 rpm on the clutch, pop it, hold ~25 deg on the throttle, cover the rear brake",
       control(c) {

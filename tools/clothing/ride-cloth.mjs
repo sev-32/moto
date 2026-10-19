@@ -6,7 +6,7 @@
 // enable the layer). Reports the engine's gates and the cost; dumps the last frame (engine frame).
 //
 //   node tools/clothing/ride-cloth.mjs [--sequence seated,tuck,hangR,seated] [--hold 1.0] [--blend 0.6]
-//        [--wind 0,20] [--garments jeans,shirt] [--cut] [--knee-bellows M] [--knee-dart S]
+//        [--wind 0,20] [--garments jeans,shirt] [--cut] [--cut-pattern] [--knee-bellows M] [--knee-dart S]
 //        [--jeans-settings JSON] [--shirt-settings JSON] [--out DIR]
 //
 // Postures: tests/fixtures/rider_poses.json (tools/clothing/capture-poses.mjs), plus "rest". Her
@@ -14,7 +14,7 @@
 // the engine's +Z; the wind is the air from ahead.
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT, read, mods, character, engineBody, buildWardrobe, skinWorld, headingFree, applyRidingCut, ridingCutAsset } from "./engine.mjs";
+import { ROOT, read, mods, character, engineBody, buildWardrobe, skinWorld, headingFree, applyRidingCut, wearRidingCut, ridingCutAsset } from "./engine.mjs";
 
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf("--" + k); return i < 0 ? d : args[i + 1]; };
@@ -42,9 +42,11 @@ if (g.jeans && kneeDartScale) {
   const S = g.jeans.solver, Pr = S.rest, rest = S.edgeRestAuthored || S.edgeRest, sigma = 0.07, cz = 0.002;
   for (let e = 0; e < S.edges.length; e += 2) { const ei = e >> 1, a = S.edges[e], b = S.edges[e + 1]; if (a >= S.shellVertexCount || b >= S.shellVertexCount) continue; const pa = a * 3, pb = b * 3, my = 0.5 * (Pr[pa + 1] + Pr[pb + 1]), mz = 0.5 * (Pr[pa + 2] + Pr[pb + 2]), dx = Pr[pb] - Pr[pa], dy = Pr[pb + 1] - Pr[pa + 1], dz = Pr[pb + 2] - Pr[pa + 2], L = Math.hypot(dx, dy, dz) || 1, orient = Math.abs(dy) / L; if (orient < 0.5) continue; const wy = Math.exp(-Math.pow((my - kneeY) / sigma, 2)), front = Math.max(0, Math.min(1, (mz - cz) / 0.075)); if (wy < 0.01 || front <= 0) continue; rest[ei] *= 1 + kneeDartScale * wy * front * Math.pow((orient - 0.5) / 0.5, 1.2); }
 }
-const cut = flag("cut") ? ridingCutAsset() : null, cutApplied = {};
-if (flag("cut") && !cut) throw Error("no riding cut asset: run tools/clothing/riding-cut.mjs");
-for (const [id, gg] of Object.entries(g)) if (cut?.garments?.[id]) cutApplied[id] = applyRidingCut(gg.solver, cut.garments[id]);
+// --cut: the riding cut as the game wears it (stretch denim: src/core/clothing/stretch.js);
+// --cut-pattern: as the jeans' pattern (every edge at its riding length, standing too)
+const cut = flag("cut") || flag("cut-pattern") ? ridingCutAsset() : null, cutApplied = {};
+if (cut === undefined || ((flag("cut") || flag("cut-pattern")) && !cut)) throw Error("no riding cut asset: run tools/clothing/riding-cut.mjs");
+for (const [id, gg] of Object.entries(g)) if (cut?.garments?.[id]) cutApplied[id] = flag("cut-pattern") ? applyRidingCut(gg.solver, cut.garments[id]) : (wearRidingCut(gg.solver, cut.garments[id]), "stretch");
 console.log(`engine built in ${(performance.now() - t0).toFixed(0)} ms`, cut ? "riding cut " + JSON.stringify(cutApplied) : "");
 
 // ---- the ride: postures in sequence, blended (commands and placement), wind from ahead

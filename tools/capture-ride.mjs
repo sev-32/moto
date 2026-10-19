@@ -15,6 +15,10 @@
 //     --still T         instead of a clip: one PNG per camera at ride time T (s)
 //     --posture JSON    rider posture held while recording, e.g. '{"tuck":1}' (BIO.setPosture)
 //     --pose-set FILE   a pose set (JSON, exported from the in-game POSE LAB) applied first
+//     --wardrobe MODE   her clothes: bound (on their carriers, default), quality (the clothing
+//                       engine's outfit settings, stepped every frame: ~1-3 s of compute a frame),
+//                       live, or off
+//     --wardrobe-set JSON  wardrobe fields, e.g. '{"windScreen":1}' (no shelter)
 //     --build FILE      the built HTML (default dist/LucidMoto_V2.0.0_dev.html; npm run build first)
 //
 // How: the page's clock is replaced by a virtual one (performance.now and requestAnimationFrame),
@@ -41,6 +45,7 @@ const still = opt("still", null);
 const posture = opt("posture", null);
 const build = opt("build", path.join(ROOT, "dist/LucidMoto_V2.0.0_dev.html"));
 const setFile = opt("pose-set", null);
+const wardrobe = opt("wardrobe", "bound"), wardrobeSet = JSON.parse(opt("wardrobe-set", "{}"));
 const ffmpeg = process.env.FFMPEG || "ffmpeg";
 fs.mkdirSync(out, { recursive: true });
 
@@ -50,13 +55,14 @@ log("build loaded, ride page:", await page.evaluate(() => window.__LUCID_ACTIVE_
 // the studio (the canvas alone, the camera rigs), the clock taken over, the maneuver started
 const studio = await installStudio(page, { W, H });
 if (setFile) log("pose set:", JSON.stringify(await page.evaluate((t) => { const L = window.LUCID_CORE.poseLab; L.open(); L.close(); return L.apply(t); }, fs.readFileSync(setFile, "utf8"))));
-const setup = await page.evaluate(({ maneuver, posture }) => {
-  const C = window.LUCID_CORE, BIO = C.riderBio?.active ? C.riderBio : null;
+const setup = await page.evaluate(({ maneuver, posture, wardrobe, wardrobeSet }) => {
+  const C = window.LUCID_CORE, BIO = C.riderBio?.active ? C.riderBio : null, WD = C.wardrobe;
+  if (WD) { Object.assign(WD, wardrobeSet); if (wardrobe === "off") WD.visible = false; else WD.setMode(wardrobe); }
   window.__VCLOCK__.start();
   const res = C.maneuvers.play(maneuver);
   if (posture && BIO) { BIO.auto = false; BIO.setPosture(JSON.parse(posture)); }
-  return { res, rider: BIO ? "riderBio" : C.rider ? "legacy" : "none" };
-}, { maneuver, posture });
+  return { res, rider: BIO ? "riderBio" : C.rider ? "legacy" : "none", wardrobe: WD ? WD.mode : null };
+}, { maneuver, posture, wardrobe, wardrobeSet });
 log("studio:", JSON.stringify({ ...setup, ...studio }));
 
 const T = still != null ? +still : +(opt("seconds", setup.res.T));

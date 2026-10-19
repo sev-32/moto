@@ -69,6 +69,9 @@ export async function openRide(openBuild, file, { W = 960, H = 600, clock = fals
   await r.page.waitForFunction(() => window.__LUCID_CORE_WORLD_READY__, null, { timeout: 180000 }).catch(() => {});
   const btn = r.page.locator("button:visible", { hasText: "START ROLLING RIDE" }).first();
   if (await btn.count()) await btn.click().catch(() => {});
+  // (the launch starts the audio, then resets the ride to its rolling start and closes the
+  // launcher - seconds later at times: wait for it, or the reset lands on a tool's setup)
+  await r.page.waitForFunction(() => !document.getElementById("v1282Launcher")?.classList.contains("open"), null, { timeout: 30000 }).catch(() => {});
   await r.page.waitForTimeout(1500);
   return r;
 }
