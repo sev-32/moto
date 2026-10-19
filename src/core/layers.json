@@ -116,6 +116,22 @@
       "description": "Her sunglasses ('Sunglasses' by martn00, Sketchfab, CC-BY-4.0), fitted to her face by tools/character/fit-glasses.mjs - on the bridge of her nose, the temples opened and lengthened to rest where her ears join her head - carried rigidly by her Head joint; rose-gold metal, red-tinted lenses, clear pads and tips in the scene's lights"
     },
     {
+      "id": "rider-shoes",
+      "file": "47_rider_shoes.js",
+      "bundle": {
+        "/*@@MOTO_SHOES@@*/ null": {
+          "root": "src/core/clothing",
+          "entries": [
+            "shoes.js"
+          ]
+        }
+      },
+      "inline": {
+        "/*@@SHOES@@*/ null": "/assets/character/accessories/lucid_vans_v1.json"
+      },
+      "description": "Her shoes ('Vans shoe' by JW (CrossFireJW), Sketchfab, CC-BY-4.0), fitted to her feet by tools/character/fit-shoes.mjs - one size for the pair, the left mirrored, a 12 mm sole under her - carried by her Foot joints, the forefoot bending with her toes about a line in the sole under her toe joint, the vamp's canvas solved as a sheet that creases where the bend shortens it, her bow (two loops, two tails) simulated as lace in the bike's frame; drawn with the model's textures (base colour, roughness and metal, normal map) in the scene's lights; her skin the shoes cover left out of her body's draw"
+    },
+    {
       "id": "rider-onfoot",
       "file": "48_rider_onfoot.js",
       "description": "The physical rider off the bike: on her feet (stand, walk, run, step-turn: capture-point stepping, centre-of-pressure control through compliant ankles, virtual-model support, a declared capped pelvis balance assist), getting up after a fall, lifting the bike and getting on / off (F / pad X); third-person camera and controls while she is off the bike"

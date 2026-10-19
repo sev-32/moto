@@ -61,6 +61,14 @@
     g.countDressed = idx.length; g.hiddenRef = hidden;
   }
 
+  // her skin her clothes and her shoes cover: one mask, their union (kept while neither changes)
+  let maskA = null, maskB = null, maskU = null;
+  function skinMask(a, b) {
+    if (!a || !b) return a || b;
+    if (a !== maskA || b !== maskB) { maskA = a; maskB = b; maskU = Uint8Array.from(a, (x, i) => x | b[i]); }
+    return maskU;
+  }
+
   // area-weighted vertex normals of the posed skin
   function normals(X, faces, out) {
     out.fill(0);
@@ -127,8 +135,9 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, gpu.nb);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpu.nor);
     // world coordinates: identity model (as the tyres are drawn). Dressed, her skin where her clothes
-    // cover it well inside their openings is left out (it would poke through where LBS bulges)
-    const dressed = !!CORE.wardrobe?.dressed?.(), hidden = dressed ? CORE.wardrobe.hiddenSkin?.() : null;
+    // cover it well inside their openings is left out (it would poke through where LBS bulges), and
+    // her skin inside her shoes
+    const dressed = !!CORE.wardrobe?.dressed?.(), hidden = skinMask(dressed ? CORE.wardrobe.hiddenSkin?.() : null, CORE.shoes?.hiddenSkin?.() || null);
     if (hidden && gpu.hiddenRef !== hidden) dressedIndices(gpu, hidden);
     const vao = hidden ? gpu.vaoDressed : gpu.vao, count = hidden ? gpu.countDressed : gpu.count;
     drawPBR(vao, count, IDENTITY, dressed ? RT.skinColor : RT.color, dressed ? RT.skinRoughness : RT.roughness, 0, true, gl.UNSIGNED_INT, gl.TRIANGLES, true);

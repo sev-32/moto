@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """A GLB's mesh primitives as plain arrays, for the LUCID MOTO tools (fit-glasses.mjs, fit-shoes.mjs).
 
-    python3 -I tools/character/extract_glb.py <model.glb> <out.json> [--skip NODE,NODE]
+    python3 -I tools/character/extract_glb.py <model.glb> <out.json> [--skip NODE,NODE] [--jpeg Q]
 
-Each mesh node's primitives in its mesh's own frame: positions, normals, UVs, indices, its
+Each mesh node's primitives in its mesh's own frame: positions, normals, UVs, tangents (xyz and the
+bitangent's sign w, where the model has them), indices, its
 material's name, factors and alpha mode, and which embedded images its textures are (written next
 to out.json as <out>_imageN.<ext>). The asset block (author, licence, source) is kept. The file is
 read as data only: nothing in it is run. Nodes named in --skip (a backdrop, a light's mesh) are left
-out.
+out. --jpeg Q re-encodes the images as JPEG at quality Q, full chroma (4:4:4, so a normal map keeps
+its x and y), to embed them smaller (needs Pillow).
 """
 import json, os, struct, sys
 
 
-def main(path, out, skip):
+def main(path, out, skip, jpeg=None):
     b = open(path, "rb").read()
     magic, ver, length = struct.unpack_from("<III", b, 0)
     if magic != 0x46546C67:
@@ -42,9 +44,16 @@ def main(path, out, skip):
         bv = g["bufferViews"][im["bufferView"]]
         data = blob[bv.get("byteOffset", 0): bv.get("byteOffset", 0) + bv["byteLength"]]
         ext = {"image/jpeg": "jpg", "image/png": "png"}.get(im.get("mimeType"), "bin")
+        mime = im.get("mimeType")
+        if jpeg:
+            import io
+            from PIL import Image
+            buf = io.BytesIO()
+            Image.open(io.BytesIO(data)).convert("RGB").save(buf, "JPEG", quality=int(jpeg), subsampling=0)
+            data, ext, mime = buf.getvalue(), "jpg", "image/jpeg"
         name = "%s_image%d.%s" % (base, k, ext)
         open(name, "wb").write(data)
-        images.append({"index": k, "file": os.path.basename(name), "mimeType": im.get("mimeType"), "bytes": len(data)})
+        images.append({"index": k, "file": os.path.basename(name), "mimeType": mime, "bytes": len(data)})
     tex = lambda t: g["textures"][t["index"]].get("source") if t else None
 
     skipped = set(skip.split(",")) if skip else set()
@@ -58,6 +67,7 @@ def main(path, out, skip):
             pos = acc(at["POSITION"])
             nor = acc(at["NORMAL"]) if "NORMAL" in at else None
             uv = acc(at["TEXCOORD_0"]) if "TEXCOORD_0" in at else None
+            tan = acc(at["TANGENT"]) if "TANGENT" in at else None
             idx = [v[0] for v in acc(p["indices"])] if "indices" in p else list(range(len(pos)))
             mat = g["materials"][p["material"]] if "material" in p else {}
             pbr = mat.get("pbrMetallicRoughness", {})
@@ -69,6 +79,7 @@ def main(path, out, skip):
                 "positions": [round(x, 6) for v in pos for x in v],
                 "normals": [round(x, 5) for v in nor for x in v] if nor else None,
                 "uvs": [round(x, 6) for v in uv for x in v] if uv else None,
+                "tangents": [round(x, 5) for v in tan for x in v] if tan else None,
                 "indices": idx,
             })
     json.dump({"asset": g.get("asset"), "images": images, "meshes": meshes}, open(out, "w"))
@@ -78,4 +89,4 @@ def main(path, out, skip):
 if __name__ == "__main__":
     a = sys.argv[1:]
     skip = a[a.index("--skip") + 1] if "--skip" in a else ""
-    main(a[0], a[1], skip)
+    main(a[0], a[1], skip, a[a.index("--jpeg") + 1] if "--jpeg" in a else None)

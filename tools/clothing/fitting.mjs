@@ -34,6 +34,16 @@ const RIGS = {
   lap: { yaw: 15, pitch: 10, dist: 0.75, at: [SIDE, 0, 0.74], fov: 40 },
   kneeBack: { yaw: 160, pitch: 4, dist: 0.8, at: [SIDE, 0, 0.5], fov: 40 },
   ankles: { yaw: 25, pitch: 8, dist: 0.7, at: [SIDE, 0, 0.2], fov: 40 },
+  // her shoes: her left from the outside, from the front, from above, and her right from the inside
+  shoes: { yaw: 35, pitch: 12, dist: 0.62, at: [SIDE, 0, 0.07], fov: 40 },
+  shoeL: { yaw: 75, pitch: 10, dist: 0.42, at: [SIDE - 0.08, 0, 0.06], fov: 40 },
+  shoeFront: { yaw: 0, pitch: 18, dist: 0.5, at: [SIDE, 0, 0.06], fov: 40 },
+  shoeTop: { yaw: 10, pitch: 62, dist: 0.45, at: [SIDE, 0, 0.04], fov: 40 },
+  shoeR: { yaw: -100, pitch: 10, dist: 0.42, at: [SIDE + 0.08, 0, 0.06], fov: 40 },
+  // her left bow, close: from above and the front, from her left, from the front
+  bowTop: { yaw: 20, pitch: 55, dist: 0.2, at: [SIDE - 0.064, 0.058, 0.085], fov: 40 },
+  bowSide: { yaw: 80, pitch: 15, dist: 0.2, at: [SIDE - 0.064, 0.058, 0.08], fov: 40 },
+  bowFront: { yaw: 5, pitch: 20, dist: 0.2, at: [SIDE - 0.064, 0.058, 0.08], fov: 40 },
   face: { yaw: 25, pitch: 2, dist: 0.42, at: [SIDE, 0, 1.52], fov: 40 },
   faceSide: { yaw: 90, pitch: 2, dist: 0.42, at: [SIDE, 0, 1.52], fov: 40 },
   legs: { yaw: 30, pitch: 4, dist: 1.5, at: [SIDE, 0, 0.5], fov: 40 },
@@ -58,7 +68,7 @@ const info = await page.evaluate(({ SIDE, garments, set, settings }) => {
   const place = () => {
     const f0 = v5qrot(free.q, V5_Y), n = Math.hypot(f0[0], f0[1]) || 1, f = [f0[0] / n, f0[1] / n, 0], r = [f[1], -f[0], 0];
     const Rw = [r[0], 0, -f[0], r[1], 0, -f[1], r[2], 1, -f[2]];
-    const hip = [free.p[0] + r[0] * SIDE, free.p[1] + r[1] * SIDE, b[1]];
+    const hip = [free.p[0] + r[0] * SIDE, free.p[1] + r[1] * SIDE, b[1] + (C.shoes?.enabled ? C.shoes.soleStackM : 0)]; // (in her shoes: on their soles)
     return { R: Rw, t: [hip[0] - b[0], hip[1] - b[1], hip[2] - b[2]], hip };
   };
   RT.override = () => ({ commands, placement: place() });
@@ -74,7 +84,8 @@ console.log("fitting:", JSON.stringify(info));
 await installStudio(page, { W: TW * 2, H: TH * 2 });
 await page.evaluate((R) => Object.assign(window.__STUDIO_CAM__.rigs, R), RIGS);
 await page.evaluate(() => renderFree()); // (dressed on her pose: the garments made on her and settled)
-const audit = await page.evaluate((n) => { const C = window.LUCID_CORE, W = C.wardrobe; W.settle(n, { still: true }); C.hair?.settle?.(120, { still: true }); return { ...W.audit(), hair: C.hair ? { enabled: C.hair.enabled, error: C.hair.error, steps: C.hair.stats.steps } : null }; }, settle);
+const audit = await page.evaluate((n) => { const C = window.LUCID_CORE, W = C.wardrobe; W.settle(n, { still: true }); C.hair?.settle?.(120, { still: true }); C.shoes?.settle?.(480); return { ...W.audit(), hair: C.hair ? { enabled: C.hair.enabled, error: C.hair.error, steps: C.hair.stats.steps } : null, shoes: C.shoes ? { enabled: C.shoes.enabled, error: C.shoes.error, stats: C.shoes.stats } : null }; }, settle);
+await page.waitForFunction(() => !window.LUCID_CORE.shoes?.enabled || window.LUCID_CORE.shoes.ready, null, { timeout: 20000 }).catch(() => console.log("shoes: textures not loaded"));
 console.log("cloth:", JSON.stringify(audit));
 const files = [];
 for (const c of rigs) { const fp = path.join(tiles, `${c}.png`); fs.writeFileSync(fp, await grab(page, c)); files.push(fp); }
