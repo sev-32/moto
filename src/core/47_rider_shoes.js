@@ -19,9 +19,11 @@
   if (!CORE) return;
   const ASSET = /*@@SHOES@@*/ null;
   const MOD = /*@@MOTO_SHOES@@*/ null;
+  // (?shoes=0: barefoot - her body's contacts are then her bare soles' too: 46_rider_biomech.js)
+  const barefoot = typeof location !== "undefined" && /[?&]shoes=0\b/.test(location.search);
   const SH = (CORE.shoes = {
-    enabled: !!(ASSET && MOD), visible: true, sim: true, ready: false,
-    attribution: ASSET?.attribution || null, fit: ASSET?.fit || null, soleStackM: ASSET?.fit?.soleStackM || 0,
+    enabled: !!(ASSET && MOD) && !barefoot, visible: true, sim: true, ready: false,
+    attribution: ASSET?.attribution || null, fit: ASSET?.fit || null, soleStackM: ASSET?.fit?.soleStackM || 0, standM: ASSET?.fit?.standM || ASSET?.fit?.soleStackM || 0,
     // the air at her feet: the fairing's shelter (her clothes' windFairing when they are worn) and flutter
     windShelter: 0.2, windTurbulence: 0.12,
     stats: { frames: 0, ms: 0, toe: { L: 0, R: 0 }, creaseMM: { L: 0, R: 0 } }, error: null,

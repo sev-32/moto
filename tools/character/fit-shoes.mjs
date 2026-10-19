@@ -304,6 +304,57 @@ const hiddenSkin = [];
   for (let f = 0; f < F.length / 3; f++) if (covered[F[3 * f]] && covered[F[3 * f + 1]] && covered[F[3 * f + 2]]) hiddenSkin.push(f);
 }
 
+// ---- the shoes in her body's mechanics (assets/character/accessories/<id>_contact.json, read by her
+// body: 46_rider_biomech.js): under each point of her soles' contact region, the tread (her pads
+// stand on the outsole, its toe spring included); the line her toe pads turn about with the shoe;
+// the rubber sole's bending stiffness there (a plate: E w t^3 / (12 L) - E, t declared, w the
+// tread's width at the flex line, L the flex zone); each shoe's mass from its materials (their
+// areas on the model x declared thicknesses and densities), its centre and its inertia as a shell
+const RUBBER = { E: 5e6, outsoleM: 0.008, foxingM: 0.002, density: 1150 }, UPPER = { M: 0.0015, density: 650 }, LINING = { M: 0.003, density: 200 }, LACE_KG_M = 0.0015;
+const contact = (() => {
+  const triArea = (pos, f) => { const a = 3 * I[3 * f], b = 3 * I[3 * f + 1], c = 3 * I[3 * f + 2]; return Math.hypot(...cross([pos[b] - pos[a], pos[b + 1] - pos[a + 1], pos[b + 2] - pos[a + 2]], [pos[c] - pos[a], pos[c + 1] - pos[a + 1], pos[c + 2] - pos[a + 2]])) / 2; };
+  // (the tread: the outsole's triangles below a point of her sole, straight down)
+  const below = (pos, x, z) => {
+    let best = null;
+    for (const f of keep) {
+      if (region[f] !== REG.outsole) continue;
+      const a = 3 * I[3 * f], b = 3 * I[3 * f + 1], c = 3 * I[3 * f + 2], ax = pos[a], az = pos[a + 2], bx = pos[b], bz = pos[b + 2], cx = pos[c], cz = pos[c + 2];
+      const den = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(den) < 1e-14) continue;
+      const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / den, l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / den; if (l1 < 0 || l2 < 0 || l1 + l2 > 1) continue;
+      const y = l1 * pos[a + 1] + l2 * pos[b + 1] + (1 - l1 - l2) * pos[c + 1];
+      if (best === null || y < best) best = y; // (the lowest: the tread, not the insole)
+    }
+    return best;
+  };
+  // mass: each region's area x its thickness x its density, the laces' length x their weight per metre
+  const thick = { [REG.outsole]: RUBBER.outsoleM * RUBBER.density, [REG.foxing]: RUBBER.foxingM * RUBBER.density, [REG.upper]: UPPER.M * UPPER.density, [REG.heel]: UPPER.M * UPPER.density, [REG.toecap]: UPPER.M * UPPER.density, [REG.tongue]: UPPER.M * UPPER.density, [REG.lining]: LINING.M * LINING.density, [REG.insole]: LINING.M * LINING.density };
+  const shell = (pos) => {
+    let m = 0, c = [0, 0, 0]; const parts = [];
+    for (const f of keep) { if (region[f] === REG.lace) continue; const a = triArea(pos, f), w = a * thick[region[f]], q = [0, 1, 2].map((k) => (pos[3 * I[3 * f] + k] + pos[3 * I[3 * f + 1] + k] + pos[3 * I[3 * f + 2] + k]) / 3); m += w; c = c.map((v, k) => v + w * q[k]); parts.push([w, q]); }
+    // (the bow's tails and loops and ~60 cm through the eyelets, declared: its ~2 g in the mass, not
+    // in the centre or the inertia - the shell's)
+    const laceKg = LACE_KG_M * (tails.reduce((a, b) => a + b, 0) + 0.095 * 2 + 0.6);
+    c = c.map((v) => v / m); m += laceKg;
+    const Iv = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (const [w, q] of parts) { const d = sub(q, c), d2 = dot(d, d); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) Iv[3 * i + j] += w * ((i === j ? d2 : 0) - d[i] * d[j]); }
+    return { massKg: m, com: c, inertiaAtComKgM2: Iv };
+  };
+  const out = { soleStackM: STACK, sides: {} };
+  for (const [S, pos, reg] of [["L", L.pos, "leftFoot"], ["R", Rt.pos, "rightFoot"]]) {
+    // (her region's points more than 2 cm above her sole - up her heel - keep the sole's stack)
+    const ids = ch.contactRegions[reg], tread = ids.length ? Array.from(ids, (v) => { const y = X[3 * v + 1] - sole > 0.02 ? null : below(pos, X[3 * v], X[3 * v + 2]); return y === null ? STACK : +(X[3 * v + 1] - y).toFixed(4); }) : [];
+    const mx = (p) => (S === "R" ? [-p[0], p[1], p[2]] : p), sh = shell(pos);
+    out.sides[S] = { region: reg, treadBelowM: tread, flexPoint: mx(flexL.point).map(r4), flexAxis: ch.dofs.find((d) => d.joint === `${S}_ToeBase`).axis.map(r4), massKg: +sh.massKg.toFixed(3), comRestM: sh.com.map(r4), inertiaAtComKgM2: sh.inertiaAtComKgM2.map((x) => +x.toExponential(4)) };
+  }
+  // the tread's width at the flex line (across her foot, the left shoe)
+  let w0 = Infinity, w1 = -Infinity;
+  for (const f of keep) { if (region[f] !== REG.outsole) continue; for (let c = 0; c < 3; c++) { const v = I[3 * f + c], p = [L.pos[3 * v], L.pos[3 * v + 1], L.pos[3 * v + 2]]; if (Math.abs(dot(sub(p, flexL.point), fwdL)) < 0.006) { w0 = Math.min(w0, p[0]); w1 = Math.max(w1, p[0]); } } }
+  const w = w1 - w0;
+  out.soleBend = { NmPerRad: +(RUBBER.E * w * RUBBER.outsoleM ** 3 / (12 * FLEX_ZONE)).toFixed(4), E: RUBBER.E, outsoleM: RUBBER.outsoleM, widthM: r4(w), zoneM: FLEX_ZONE };
+  out.materials = { rubber: RUBBER, upper: UPPER, lining: LINING, laceKgPerM: LACE_KG_M };
+  return out;
+})();
+
 // ---- written
 const f32 = (A) => Buffer.from(Float32Array.from(A).buffer).toString("base64");
 const u32 = (A) => Buffer.from(Uint32Array.from(A).buffer).toString("base64");
@@ -326,6 +377,8 @@ const out = {
   fit: {
     scale: S, lengthM: r4(3.875 * S), soleStackM: STACK, yawDeg: +(PL.yaw * 180 / Math.PI).toFixed(2), offsets: { across: r4(PL.cx), along: r4(PL.cz), footbed: r4(PL.cy) },
     footLengthM: r4(Math.hypot(toeTip[0] - heelBack[0], toeTip[2] - heelBack[2])), toeRoomM: r4(best.r.toeRoom),
+    // (how much the shoes raise her standing: their tread's lowest point below her sole's)
+    standM: r4(sole - Math.min(...Array.from({ length: NV }, (_, v) => L.pos[3 * v + 1]))),
     skinThroughShoe: { points: best.r.n, maxM: r4(best.r.max), byPlaceMM: best.r.where }, hiddenSkinTriangles: hiddenSkin.length,
   },
   regions: REG,
@@ -351,4 +404,8 @@ const out = {
 };
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(out));
-console.log(JSON.stringify({ ...out.fit, patch: { triangles: patchTris.length, points: patch.pts.length, pinned: patch.pinned.reduce((a, b) => a + b, 0), subTriangles: patch.tris.length / 3 }, laces: out.laces, regions: Object.fromEntries(Object.entries(REG).map(([k, r]) => [k, keepReg.filter((x) => x === r).length])), file: path.relative(ROOT, OUT), bytes: fs.statSync(OUT).size }));
+const OUTC = OUT.replace(/\.json$/, "_contact.json");
+fs.writeFileSync(OUTC, JSON.stringify({ schema: "lucid-moto.shoe-contact.v1", status: "CANDIDATE", id: out.id, frame: out.frame,
+  note: "Her shoes in her body's mechanics (made by tools/character/fit-shoes.mjs with the shoes' asset): the tread under each point of her soles' contact region (contactRegions order), the shoe's flex line, the rubber sole's bending stiffness (a plate, from declared material values), each shoe's mass from its materials' areas x declared thicknesses and densities, its centre and inertia as a shell (her rest frame).",
+  ...contact }));
+console.log(JSON.stringify({ ...out.fit, contact: { soleBend: contact.soleBend, massKg: contact.sides.L.massKg, comRestM: contact.sides.L.comRestM, tread: (() => { const t = contact.sides.L.treadBelowM; return [Math.min(...t), Math.max(...t)]; })() }, patch: { triangles: patchTris.length, points: patch.pts.length, pinned: patch.pinned.reduce((a, b) => a + b, 0), subTriangles: patch.tris.length / 3 }, laces: out.laces, regions: Object.fromEntries(Object.entries(REG).map(([k, r]) => [k, keepReg.filter((x) => x === r).length])), file: path.relative(ROOT, OUT), bytes: fs.statSync(OUT).size }));

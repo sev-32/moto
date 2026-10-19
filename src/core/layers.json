@@ -53,7 +53,8 @@
       "id": "rider-biomech",
       "file": "46_rider_biomech.js",
       "inline": {
-        "/*@@RIDER_SURFACES@@*/ null": "/assets/bike/ducati916_rider_surfaces.json"
+        "/*@@RIDER_SURFACES@@*/ null": "/assets/bike/ducati916_rider_surfaces.json",
+        "/*@@SHOE_CONTACT@@*/ null": "/assets/character/accessories/lucid_vans_v1_contact.json"
       },
       "description": "Physical rider: the LUCID character as an articulated body (Semantic51 hinges, R1.5 17-body profile, skin-fitted contact spheres) on the 916's contact surfaces (envelope SDF, pegs, grips, ground); torque-limited servos, IK planner (world-referenced trunk/head, hang-off/tuck/stand, braking brace), coupled into the V5 multibody"
     },

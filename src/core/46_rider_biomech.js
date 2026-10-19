@@ -205,7 +205,7 @@
   }
 
   // ------------------------------------------------------------------ model
-  function buildModel(ch) {
+  function buildModel(ch, opts = {}) {
     const names = ch.joints.names, parents = ch.joints.parents, B = ch.joints.rest, TI = ch.joints.index;
     const bodyOf = Object.fromEntries(ch.physical.bodies.map((b) => [b.joint, b]));
     const links = [], linkOf = {}, hinges = [];
@@ -243,6 +243,15 @@
         let m = b.massKg, I = b.inertiaAtComKgM2.slice();
         if (j === "Spine02") { const f = (m - 2 * PRIORS.clavicleMassKg) / m; m *= f; I = I.map((x) => x * f); }
         last.mass = m; last.com = sub(b.comWorldRestM, B[TI[j]]); last.inertia = I;
+        // (in her shoes: each shoe's mass, centre and inertia - fit-shoes.mjs, from its materials - on her
+        // foot: the two bodies as one, about their joint centre)
+        const shoe = base === "Foot" ? opts.shoes?.sides?.[side] : null;
+        if (shoe) {
+          const m2 = shoe.massKg, c2 = sub(shoe.comRestM, B[TI[j]]), mt = m + m2, c = scl(add(scl(last.com, m), scl(c2, m2)), 1 / mt);
+          const S_ = (d, w) => { const d2 = dot(d, d); return [0, 1, 2].flatMap((r) => [0, 1, 2].map((q) => w * ((r === q ? d2 : 0) - d[r] * d[q]))); };
+          const s1 = S_(sub(last.com, c), m), s2 = S_(sub(c2, c), m2);
+          last.inertia = last.inertia.map((x, k) => x + s1[k] + shoe.inertiaAtComKgM2[k] + s2[k]); last.mass = mt; last.com = c;
+        }
       }
       linkOf[j] = parent;
     }
@@ -360,8 +369,22 @@
   }
 
   // ------------------------------------------------------------------ the rider
+  // in her shoes, each foot's moment of inertia about its ankle's flexion axis (the asset's: her +x
+  // to 0.1 deg) over her bare foot's
+  // (a swung foot's hold is scaled by it: 48_rider_onfoot.js - she holds a heavier foot as she holds
+  // her own, its swing as quick)
+  function footInertiaScale(ch, M, opts) {
+    const out = { L: 1, R: 1 };
+    if (!opts.shoes) return out;
+    const bare = buildModel(ch, {});
+    for (const S of ["L", "R"]) {
+      const about = (L) => { const ax = [1, 0, 0], d = L.com, dd = dot(d, d) - dot(d, ax) ** 2, I = L.inertia; return I[0] * ax[0] * ax[0] + L.mass * dd; };
+      out[S] = about(M.links[M.linkOf[S + "_Foot"]]) / about(bare.links[bare.linkOf[S + "_Foot"]]);
+    }
+    return out;
+  }
   function createRider(ch, surfacesJson, opts = {}) {
-    const M = buildModel(ch);
+    const M = buildModel(ch, opts);
     M.spec.limitFailsafe = 0.35; // rad past the hard range: only a numerical failsafe, the passive stops act first
     const body = MB.createArticulatedBody(M.spec), ikb = MB.createArticulatedBody(M.spec);
     // her muscles (46_rider_muscles.js): the 84 R1.5 musculotendon units on this body
@@ -419,16 +442,25 @@
     // balances the joint, each step - footToes). Each pad is soft tissue: soft at first touch,
     // stiffening as it is pressed (PRIORS.pads). The foot's reference points: ball = between the two
     // metatarsal heads on the sole (what stands on a peg), heel, toe = the toe tips.
+    // In her shoes (opts.shoes: fit-shoes.mjs' contact data) her pads are where her bones bear, as
+    // barefoot, each standing on the shoe's tread below it - the outsole's rubber and the insole
+    // between (her pads' tissue as before: the sole is far stiffer than it, in series it changes
+    // little - declared) - and her toe pads turn with the shoe's forefoot, about the line in its sole
+    // where it bends, against the rubber's bending stiffness there as well as her toes' own (footToes).
     const foot = {};
+    let standM = 0;
     for (const S of ["L", "R"]) {
       const an = B[TI[S + "_Foot"]], mtpW = B[TI[S + "_ToeBase"]], mtp = sub(mtpW, an), link = M.linkOf[S + "_Foot"], seg = S + "_Foot";
-      const reg = ch.contactRegions?.[(S === "L" ? "left" : "right") + "Foot"], V = ch.vrest;
-      const P = reg && reg.length > 50 ? Array.from(reg, (v) => [V[3 * v] - an[0], V[3 * v + 1] - an[1], V[3 * v + 2] - an[2]]) : (segPts[seg] || [[0, 0, 0]]).map((p) => sub(p, an));
+      const reg = ch.contactRegions?.[(S === "L" ? "left" : "right") + "Foot"], V = ch.vrest, shoe = opts.shoes?.sides?.[S], tread = shoe && reg && shoe.treadBelowM.length === reg.length ? shoe.treadBelowM : null;
+      // (her sole's points: x, y, z from her ankle, and the tread below each - 0 barefoot)
+      const P = reg && reg.length > 50 ? Array.from(reg, (v, i) => [V[3 * v] - an[0], V[3 * v + 1] - an[1], V[3 * v + 2] - an[2], tread ? tread[i] : 0]) : (segPts[seg] || [[0, 0, 0]]).map((p) => [...sub(p, an), 0]);
       const med = -Math.sign(an[0]) || 1; // her midline side (her left is -x)
-      const soleY = Math.min(...P.map((p) => p[1])), zBack = Math.max(...P.map((p) => p[2])), zFront = Math.min(...P.map((p) => p[2]));
+      // (how much her shoes raise her: her sole's lowest point to their tread's)
+      standM = Math.max(standM, Math.min(...P.map((p) => p[1])) - Math.min(...P.map((p) => p[1] - p[3])));
+      const soleY = Math.min(...P.map((p) => p[1] - p[3])), zBack = Math.max(...P.map((p) => p[2])), zFront = Math.min(...P.map((p) => p[2]));
       const band = (z0, z1) => P.filter((p) => p[2] >= Math.min(z0, z1) && p[2] <= Math.max(z0, z1));
       const lowest = (A, h = 0.004) => { const y0 = Math.min(...A.map((p) => p[1])); return A.filter((p) => p[1] < y0 + h); };
-      const at = (A) => [A.reduce((s_, p) => s_ + p[0], 0) / A.length, Math.min(...A.map((p) => p[1])), A.reduce((s_, p) => s_ + p[2], 0) / A.length];
+      const at = (A) => [A.reduce((s_, p) => s_ + p[0], 0) / A.length, Math.min(...A.map((p) => p[1])) - A.reduce((s_, p) => s_ + p[3], 0) / A.length, A.reduce((s_, p) => s_ + p[2], 0) / A.length];
       const across = (A, inner, w) => { const xs = A.map((p) => p[0] * med), lo = Math.min(...xs), hi = Math.max(...xs); return A.filter((p) => (inner ? p[0] * med > hi - w : p[0] * med < lo + w)); };
       const ballBand = band(mtp[2] + 0.004, mtp[2] + 0.04), midBand = band(mtp[2] + 0.05, mtp[2] + 0.09), toeBand = band(mtp[2] - 0.008, zFront);
       const tx = toeBand.map((p) => p[0] * med), tMid = (Math.min(...tx) + Math.max(...tx)) / 2;
@@ -444,7 +476,7 @@
       const ball = [(pad.ballMed[0] + pad.ballLat[0]) / 2, soleY, (pad.ballMed[2] + pad.ballLat[2]) / 2], heel = [pad.heel[0], soleY, pad.heel[2]], toe = [(pad.hallux[0] + pad.toes[0]) / 2, soleY, zFront + 0.01];
       // the toe flap: hinged at the toe joint about the asset's toe axis (+ lifts the toes)
       const tdof = ch.dofs.find((d) => d.joint === S + "_ToeBase");
-      const toes = tdof ? { id: tdof.id, pivot: mtp, axis: unit(tdof.axis), lo: tdof.min * DEG, hi: tdof.max * DEG, passive: tdof.passive, tmax: tdof.torqueLimitNm ?? 28, q: 0, M: 0, K: 0, felt: 0 } : null;
+      const toes = tdof ? { id: tdof.id, pivot: tread ? sub(shoe.flexPoint, an) : mtp, axis: unit(tdof.axis), lo: tdof.min * DEG, hi: tdof.max * DEG, passive: tdof.passive, tmax: tdof.torqueLimitNm ?? 28, q: 0, M: 0, K: 0, felt: 0, soleK: tread ? opts.shoes.soleBend?.NmPerRad || 0 : 0 } : null;
       foot[S] = { link, ball, heel, toe, forward: unit(sub(ball, heel)), up: [0, 1, 0], med: [med, 0, 0], soleY, toes };
       for (const [name, p, r, onToes] of pads) spheres.push({ link, seg, c: [p[0], p[1] + r, p[2]], r, kind: "sole", at: name, pad: name === "heel" ? "heel" : name.startsWith("ball") ? "ball" : name === "midLat" ? "mid" : "toe", toe: !!(onToes && toes), side: S });
     }
@@ -462,7 +494,7 @@
 
     // ---- state
     const R = {
-      model: M, body, ikb, spheres, hand, foot, surfaces: SURF, M2B, priors: PRIORS,
+      model: M, body, ikb, spheres, hand, foot, surfaces: SURF, M2B, priors: PRIORS, shoes: opts.shoes || null, standM, footInertiaScale: footInertiaScale(ch, M, opts),
       qT: new Float64Array(L.length), qdT: new Float64Array(L.length), tauFF: new Float64Array(L.length), tauVF: new Float64Array(L.length),
       activation: 0.5, servo: true, time: 0,
       // muscle drive: on, the servos are her intent (the torque each joint should have) and only her
@@ -2461,9 +2493,9 @@
     }
     // ---- her toes: each step the toe flap turns to where the ground's push on it balances the toe
     // joint - its R1.5 passive tissue (the asset's k, A, w about its range), her toes' elastic hold
-    // about their relaxed angle (PRIORS.toeHoldK...) and the press of her toe flexors as she feels her
-    // weight move forward over the balls (toeTone, toeFeelGain; the asset's torque limit). One Newton
-    // step a step, at most 3 deg.
+    // about their relaxed angle (PRIORS.toeHoldK...), the press of her toe flexors as she feels her
+    // weight move forward over the balls (toeTone, toeFeelGain; the asset's torque limit) and, in her
+    // shoes, their sole's bending stiffness. One Newton step a step, at most 3 deg.
     function footToes() {
       for (const S of ["L", "R"]) {
         const t = foot[S].toes;
@@ -2475,7 +2507,8 @@
         const bend = t.q - PRIORS.toeRelaxDeg * DEG, soft = PRIORS.toeSoftDeg * DEG, kh = PRIORS.toeHoldK * (1 + (ff.N * ff.fore) / PRIORS.toeLoadN);
         const hold = -kh * bend * (1 + Math.abs(bend) / soft), Kh = kh * (1 + (2 * Math.abs(bend)) / soft);
         t.hold = hold;
-        const tj = -p.k * (t.q - (p.q0 || 0) * DEG) + p.A * (ea - eb) - t.tone * t.tmax + hold, Kj = p.k + (p.A / p.w) * (ea + eb) + Kh;
+        // (in her shoes, their rubber sole bends with her toes: its stiffness about its flex line)
+        const tj = -p.k * (t.q - (p.q0 || 0) * DEG) + p.A * (ea - eb) - t.tone * t.tmax + hold - t.soleK * t.q, Kj = p.k + (p.A / p.w) * (ea + eb) + Kh + t.soleK;
         t.q = clamp(t.q + clamp((t.M + tj) / (t.K + Kj), -0.05, 0.05), t.lo - 0.05, t.hi + 0.05);
       }
     }
@@ -2632,6 +2665,7 @@
   // with the same forces (action = reaction, momentum exchanged exactly). The bike's mass matrix
   // and gravity become bike-only (the V5 values lump a 75.337 kg rider: V1.28.5.2 authority).
   const SURF_JSON = /*@@RIDER_SURFACES@@*/ null;
+  const SHOE_CONTACT = /*@@SHOE_CONTACT@@*/ null;
   (function install() {
     const CORE = global.LUCID_CORE, CH = CORE?.chassis;
     if (!CH || !SURF_JSON || typeof free === "undefined" || !global.DUCATI_V5_API) return;
@@ -2640,7 +2674,10 @@
     let R;
     // (?muscles=0: the servos as joint motors while riding too - the pre-muscle rider, for comparison)
     const muscles = !(typeof location !== "undefined" && /[?&]muscles=0\b/.test(location.search));
-    try { R = createRider(CORE.character, SURF_JSON, { muscles }); } catch (e) { console.error("LUCID rider biomech: build failed", e); return; }
+    // her shoes (47_rider_shoes.js draws them; here, what they do to her contacts: SHOE_CONTACT, from
+    // tools/character/fit-shoes.mjs) - ?shoes=0: barefoot
+    const shoes = SHOE_CONTACT && !(typeof location !== "undefined" && /[?&]shoes=0\b/.test(location.search)) ? SHOE_CONTACT : null;
+    try { R = createRider(CORE.character, SURF_JSON, { muscles, shoes }); } catch (e) { console.error("LUCID rider biomech: build failed", e); return; }
     const SET = presettle(R);
     const h = R.helpers, DEG = Math.PI / 180;
     let DEFAULT_ON = true;

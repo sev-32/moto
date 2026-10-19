@@ -136,6 +136,45 @@ map: G and B), the normal map in each vertex's tangent frame (the model's tangen
 the bend; mirrored for the left shoe), in the scene's four lights, the laces in the colour of the
 texture under the model's laces.
 
+### In her body (`46_rider_biomech.js`, `48_rider_onfoot.js`)
+
+What her shoes do to her mechanics comes from the fit (`lucid_vans_v1_contact.json`, written by
+`fit-shoes.mjs` with the shoes; inlined into her body's layer). `?shoes=0`: barefoot, body and draw.
+
+- **Her pads on the tread.** Her sole's pads stay where her bones bear (heel, the two balls, the
+  outer border, the toes - chosen on her bare sole as before), each standing on the shoe's tread
+  below it, 14-18 mm down: her heel's, her balls' and her arch's outer pads then bottom out within
+  1 mm of each other (the sole is under her arch: that pad bears with the rest), her toes' about
+  3 mm higher (the toe spring). Her pads' soft tissue is as before (the sole is far stiffer than it; in
+  series it changes little - declared).
+- **Her toes turn with the shoe's forefoot**, about its flex line in the sole (26 mm below her toe
+  joint), against her toes' own tissue and hold and the rubber's bending stiffness there:
+  E w t^3 / (12 L) = 0.35 N m/rad (a plate: E 5 MPa, the outsole 8 mm thick - both declared - the
+  tread 8.1 cm wide at the flex line, the flex zone 5 cm). Where her toe pads are, and the moment
+  the ground's push on them makes about the toe joint, follow from that line.
+- **The shoes' mass on her feet**: 0.21 kg each, from their materials (each region's area on the
+  model x a declared thickness and density: the rubber outsole 8 mm and foxing 2 mm at 1150 kg/m3,
+  the canvas and suede upper 1.5 mm at 650, the lining and insole 3 mm at 200; the laces 1.5 g/m),
+  at the shoe's centre with its inertia as a shell, combined with her foot's. She weighs 75.42 kg.
+- **Standing in them she is 14.6 mm taller** (her body's: her soles' lowest point to the tread's
+  lowest below them; the draw's fit, to the shoe's lowest point, 14.2). Her standing heights are
+  over her soles: her pelvis standing and walking, and the standing poses of her motions at the
+  bike - beside it, the leg-overs (she stands on her left foot through them), lifting it - are
+  that much higher over the ground; seated, her pelvis is on the bike's seat.
+- **A swung foot is held as heavy as it is**: the swung ankle's tone in the leg-overs is scaled by
+  her foot's moment of inertia about the ankle in the shoe over barefoot - 1.31 (left), 1.32
+  (right) - so she holds the heavier foot as she holds her own, its swing as quick.
+
+Measured (Node, the rider suites with her body in her shoes: `LUCID_SHOES=1`): 60 of 64 pass. Of
+the four that fail, three fail barefoot too (the floating trunk, creeping at 0.3 m/s, getting off
+stopped); getting on with the bike free to roll, which fails barefoot, passes in her shoes. The
+fourth, her look through a steady 0.8 g turn, is measured as her neck's axial turns (on, less off):
+4.0 deg in her shoes, 22.6 barefoot - but where her head points on the bike, her look turns it
+12.9 deg further into the turn in her shoes, 6.3 barefoot: both her feet on their pegs (barefoot her
+outside foot is off its peg in the turn), her chest square to the bike, her head tilted to the
+horizon - the neck's axial turns no longer measure her look there. Left failing, as found. The
+suites run barefoot by default (`npm test`: unchanged by her shoes).
+
 ### Cost (Node, per shoe)
 
 0.4 ms carried as they are, 1.7 ms with the bow simulated, 3.3 ms when her toes move (the vamp
@@ -163,10 +202,10 @@ Shoes:
 - The glasses do not move on her face (no slip with her head's acceleration) and nothing pushes
   them: the hair does not collide with the temples.
 - The lens tint and the reflections are declared, not measured against the model's own material.
-- **Her shoes in her body's mechanics: not yet.** Her contacts with the ground and the pegs are
-  still her bare soles' (the sole's 12 mm, the rubber's grip, the sole's bending stiffness on her
-  toes and the shoes' mass are not in her body yet); standing on the road, her shoes go 12 mm into
-  it (the fitting room raises her by the sole).
+- In her body, her sole's grip on the road is still the prior it had (`mu.sole` 0.8), not a
+  rubber outsole's measured; her pads' stiffness is her soft tissue's alone.
+- Her look through a turn in her shoes: the test's measure (her neck's axial turns) fails - see
+  "In her body" above.
 - The laces do not collide with each other, the other shoe or the bike; her jeans' hems do not
   collide with the shoes.
 - Her toes turn about her toe joint, the shoe's forefoot about the line in the sole below it: in a

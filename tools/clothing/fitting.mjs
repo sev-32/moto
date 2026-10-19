@@ -68,7 +68,7 @@ const info = await page.evaluate(({ SIDE, garments, set, settings }) => {
   const place = () => {
     const f0 = v5qrot(free.q, V5_Y), n = Math.hypot(f0[0], f0[1]) || 1, f = [f0[0] / n, f0[1] / n, 0], r = [f[1], -f[0], 0];
     const Rw = [r[0], 0, -f[0], r[1], 0, -f[1], r[2], 1, -f[2]];
-    const hip = [free.p[0] + r[0] * SIDE, free.p[1] + r[1] * SIDE, b[1] + (C.shoes?.enabled ? C.shoes.soleStackM : 0)]; // (in her shoes: on their soles)
+    const hip = [free.p[0] + r[0] * SIDE, free.p[1] + r[1] * SIDE, b[1] + (C.shoes?.enabled ? C.shoes.standM : 0)]; // (in her shoes: on their soles)
     return { R: Rw, t: [hip[0] - b[0], hip[1] - b[1], hip[2] - b[2]], hip };
   };
   RT.override = () => ({ commands, placement: place() });

@@ -105,8 +105,12 @@
     // hip joint to the sole, leg straight (rest pose)
     const legLen = R.model.B[R.model.TI.L_Thigh][1];
     // pelvis height for her speed: lower walking faster and running (longer steps need it)
+    // (her pelvis's height standing is over her soles: in her shoes, R.standM higher over the ground -
+    // so are the poses of her motions at the bike in which she stands, the leg-overs included (she
+    // stands on her left foot through them); seated, her pelvis is on the bike's seat)
+    const standZ = (z) => z + (R.standM || 0), standP = (p) => [p[0], p[1], standZ(p[2])];
     const hipHeight = () => {
-      const v = Math.hypot(G.vCmd[0], G.vCmd[1]), h = P.hipH - P.hipDropWalk * smooth01(v / P.walkMps) - (G.run ? P.hipDropRun * smooth01((v - P.walkMps) / (P.runMps - P.walkMps)) : 0);
+      const v = Math.hypot(G.vCmd[0], G.vCmd[1]), h = P.hipH + (R.standM || 0) - P.hipDropWalk * smooth01(v / P.walkMps) - (G.run ? P.hipDropRun * smooth01((v - P.walkMps) / (P.runMps - P.walkMps)) : 0);
       return G.rise ? lerp(G.rise.h0, h, riseS()) : h;
     };
     // rising from a squat (after getting up): pelvis height and forward pitch ramp to standing
@@ -902,7 +906,7 @@
           const swTasks = [{ type: "pos", link: R.model.linkOf[S + "_Calf"], local: [0, 0, 0], target: T.knees[S], w: 100 }, { type: "pos", link: foot[S].link, local: foot[S].ball, target: T.feet[S], w: sw.footW ?? 8 }];
           I.solveClear(swTasks, hipDofs[S], 4, bk, 3, 3, P.swingClearM, PREF_FOOT, false, 0.08);
           for (const i of legDofs[S]) { const li = H[i].link; R.qT[li] = ikb.q[li]; R.qdT[li] = 0; }
-          tones.push([kneeDofs[S], sw.kneeTone ?? P.swingKneeTone], [footDofs[S], sw.ankleTone ?? P.swingAnkleTone]);
+          tones.push([kneeDofs[S], sw.kneeTone ?? P.swingKneeTone], [footDofs[S], (sw.ankleTone ?? P.swingAnkleTone) * (R.footInertiaScale?.[S] || 1)]);
           continue;
         }
         if (onGround) tones.push([footDofs[S], P.scriptAnkleTone]);
@@ -1073,7 +1077,7 @@
         // (the bike lost: she lets go of it and stands up between her feet)
         const Fk = SC.frame || bikeFrame(bk), mid = toB(Fk, scl(add(footMid("L"), footMid("R")), 0.5));
         startScript("recover", [
-          { T: 0.9, pelvis: [mid[0], mid[1], P.hipH], yawDeg: k.yawDeg ?? 0, pitchDeg: 0, chestPitchDeg: 0, hands: { L: null, R: null }, stance: ["L", "R"], lean: false },
+          { T: 0.9, pelvis: [mid[0], mid[1], standZ(P.hipH)], yawDeg: k.yawDeg ?? 0, pitchDeg: 0, chestPitchDeg: 0, hands: { L: null, R: null }, stance: ["L", "R"], lean: false },
         ], bk, () => { G.enterFoot(); onFail?.(); }, () => { G.enterFoot(); onFail?.(); }, SC.frame);
         return;
       }
@@ -1303,25 +1307,25 @@
       G.goTo(spot.p, spot.psi, () => startScript("mount", [
         // (the bars, and the bike off its stand - held upright - and a step in to it)
         { T: 0.7, pelvisIn: [0.05, 0.05, -0.02], pitchDeg: 36, twistDeg: -20, hands: { L: "grip", R: { bike: TANK_B } }, handVia: { R: [-0.3, -0.04, 1.1] }, grip: { L: true }, waitS: 2.5, needGrip: true },
-        { T: 0.7, pelvis: [-0.42, -0.12, 0.85], pitchDeg: 25, grip: { L: true }, holdDeg: P.holdLeanDeg, onStart: onGrip, reachM: 0.12 },
+        { T: 0.7, pelvis: [-0.42, -0.12, standZ(0.85)], pitchDeg: 25, grip: { L: true }, holdDeg: P.holdLeanDeg, onStart: onGrip, reachM: 0.12 },
         // (her feet where the leg over starts from, wherever her walk left them: the left beside the
         // tank, then the right back beside the swingarm, where the bike is narrow - by the engine and
         // the fairing a knee there would press into them. Her weight over the foot that stays first,
         // the pelvis kept off the seat)
-        { T: 0.35, over: "R", pelvisZ: 0.85, stance: ["L", "R"], grip: { L: true }, reachM: 0.06, waitS: 0.6 },
+        { T: 0.35, over: "R", pelvisZ: standZ(0.85), stance: ["L", "R"], grip: { L: true }, reachM: 0.06, waitS: 0.6 },
         { T: 0.45, feet: { L: [-0.46, -0.05, 0] }, via: { L: [-0.54, -0.02, 0.08] }, fix: { L: true }, stance: ["R"], grip: { L: true }, reachM: 0.1 },
-        { T: 0.35, over: "L", pelvisZ: 0.85, stance: ["L", "R"], grip: { L: true }, reachM: 0.06, waitS: 0.6 },
+        { T: 0.35, over: "L", pelvisZ: standZ(0.85), stance: ["L", "R"], grip: { L: true }, reachM: 0.06, waitS: 0.6 },
         { T: 0.45, feet: { R: [-0.4, -0.28, 0] }, via: { R: [-0.45, -0.2, 0.08] }, fix: { R: true }, stance: ["L"], grip: { L: true }, reachM: 0.1 },
         // (her weight over her left foot - where it came to beside the tank - on both feet, the bike
         // steady at the lean she holds it at: now she can stand on one foot)
-        { T: 0.4, over: "L", pelvisZ: 0.87, pitchDeg: 30, twistDeg: -20, stance: ["L", "R"], grip: { L: true }, reachM: 0.06, waitBike: { tolDeg: 2.5, rateDegS: 6 }, waitS: 2 },
+        { T: 0.4, over: "L", pelvisZ: standZ(0.87), pitchDeg: 30, twistDeg: -20, stance: ["L", "R"], grip: { L: true }, reachM: 0.06, waitBike: { tolDeg: 2.5, rateDegS: 6 }, waitS: 2 },
         // (the leg over - the hip and the pelvis's side tilt do it, the knee easy, the ankle loose: the
         // knee back and out, up behind her beside the tail, across over the seat's middle as the
         // pelvis tilts right side up, and on past its far edge before it comes down. A path found
         // offline with this leg's own hip reach and ranges, clear of the 916's envelope by 1-3 cm
         // standing still: tools and numbers in docs/PHYSICS.md)
-        ...SWING_ON.keys.map((k) => swingKey(k, { grip: { L: true }, watchBike: 8, lean: false })),
-        swingKey(SWING_ON.final, { load: 0.4, grip: { L: true }, watchBike: 8, lean: false }),
+        ...SWING_ON.keys.map((k) => swingKey({ ...k, pelvis: standP(k.pelvis) }, { grip: { L: true }, watchBike: 8, lean: false })),
+        swingKey({ ...SWING_ON.final, pelvis: standP(SWING_ON.final.pelvis) }, { load: 0.4, grip: { L: true }, watchBike: 8, lean: false }),
         // (onto the seat, the right foot to its peg: her weight on the seat, the riding controller
         // (46) takes her on - it puts her left foot down to balance the bike, and her right hand
         // closes on its grip when it gets there)
@@ -1359,19 +1363,19 @@
         // (settling onto her left foot - over the seat's edge, her pelvis tilting down that side, her
         // right thigh across the seat, her chest upright, the bike let lean onto her a little further
         // (plantLeanDeg) - until her left heel is planted: she feels it bear)
-        { T: P.plantS, pelvis: SWING_OFF.start.pelvis, pitchDeg: SWING_OFF.start.pitch, rollDeg: SWING_OFF.start.roll, chestPitchDeg: P.plantChestDeg, feet: { L: SWING_OFF.stance }, knees: { R: SWING_OFF.start.knee }, stance: ["L"], load: P.plantLoad, slide: P.plantSlide, plant: "L", feel: true, grip: { L: true }, waitBike: { tolDeg: 2.5, rateDegS: 6 }, waitS: 1.5, reachM: 0.12, holdDeg: P.plantLeanDeg, brace: B, lean: false },
-        ...SWING_OFF.keys.map((k) => swingKey(k, { grip: { L: true }, watchBike: 8, ...held })),
-        swingKey(SWING_OFF.final, { grip: { L: true }, watchBike: 8, ...held }),
+        { T: P.plantS, pelvis: standP(SWING_OFF.start.pelvis), pitchDeg: SWING_OFF.start.pitch, rollDeg: SWING_OFF.start.roll, chestPitchDeg: P.plantChestDeg, feet: { L: SWING_OFF.stance }, knees: { R: SWING_OFF.start.knee }, stance: ["L"], load: P.plantLoad, slide: P.plantSlide, plant: "L", feel: true, grip: { L: true }, waitBike: { tolDeg: 2.5, rateDegS: 6 }, waitS: 1.5, reachM: 0.12, holdDeg: P.plantLeanDeg, brace: B, lean: false },
+        ...SWING_OFF.keys.map((k) => swingKey({ ...k, pelvis: standP(k.pelvis) }, { grip: { L: true }, watchBike: 8, ...held })),
+        swingKey({ ...SWING_OFF.final, pelvis: standP(SWING_OFF.final.pelvis) }, { grip: { L: true }, watchBike: 8, ...held }),
         // (the right foot down behind the left, on both feet beside the bike, still holding it)
-        { T: 0.45, pelvis: [-0.34, -0.33, 0.86], pitchDeg: 12, chestPitchDeg: 12, yawDeg: -10, feet: { R: [-0.46, -0.46, 0] }, fix: { R: true }, stance: ["L"], grip: { L: true }, ...held },
+        { T: 0.45, pelvis: [-0.34, -0.33, standZ(0.86)], pitchDeg: 12, chestPitchDeg: 12, yawDeg: -10, feet: { R: [-0.46, -0.46, 0] }, fix: { R: true }, stance: ["L"], grip: { L: true }, ...held },
         // (the side stand down, and the bike let over onto it - standing beside it, her places fixed on
         // the ground from here whatever its lean: freeze. What she waits for is the bike resting on
         // its stand: her hand still on the bar - a long reach for her from beside the seat - holds
         // her bent towards it, her pelvis well short of upright between her feet: reachM)
-        { T: 1.0, pelvis: [-0.4, -0.37, 0.88], pitchDeg: 5, chestPitchDeg: 8, yawDeg: 0, stance: ["L", "R"], grip: { L: true }, holdDeg: P.standDeg, brace: B, lean: false, waitRoll: { deg: P.standDeg, tolDeg: 2, rateDegS: 6 }, waitS: 1.5, reachM: 0.3, freeze: true, onStart: () => onStand?.() },
+        { T: 1.0, pelvis: [-0.4, -0.37, standZ(0.88)], pitchDeg: 5, chestPitchDeg: 8, yawDeg: 0, stance: ["L", "R"], grip: { L: true }, holdDeg: P.standDeg, brace: B, lean: false, waitRoll: { deg: P.standDeg, tolDeg: 2, rateDegS: 6 }, waitS: 1.5, reachM: 0.3, freeze: true, onStart: () => onStand?.() },
         // (her hands off it, up straight between her feet: from here she is on her feet - the walking
         // controller has her, and steps her clear)
-        { T: 0.5, pelvis: [-0.4, -0.37, 0.88], pitchDeg: 0, chestPitchDeg: 0, twistDeg: 0, yawDeg: 0, hands: { L: null, R: null }, stance: ["L", "R"], hold: false, onStart: () => { G.hold.active = false; }, freeze: true, lean: false },
+        { T: 0.5, pelvis: [-0.4, -0.37, standZ(0.88)], pitchDeg: 0, chestPitchDeg: 0, twistDeg: 0, yawDeg: 0, hands: { L: null, R: null }, stance: ["L", "R"], hold: false, onStart: () => { G.hold.active = false; }, freeze: true, lean: false },
       ], bk, () => { G.enterFoot(bikeYaw(bk)); onOff?.(); }, () => { onOff?.(); });
     };
     // ---- holding the bike up while she gets on or off. She keeps it leaning a little onto her side
@@ -1418,20 +1422,20 @@
       const hands = { [Fh]: { bike: TOP }, [Rh]: { bike: SEATP } }, yawDeg = 90 * sd, psi = F.yaw + (sd * Math.PI) / 2;
       const spot = toW(F, M([-1.2, -0.15, 0])), A = toW(F, M([-1.65, -0.15, 0]));
       G.goTo(spot, psi, () => startScript("lift", [
-        { T: 1.0, pelvis: M([-1.15, -0.15, 0.4]), yawDeg, pitchDeg: 60, chestPitchDeg: 70, hands, reachM: 0.1, waitS: 1.0 },
-        { T: 1.4, pelvis: M([-1.05, -0.15, 0.7]), yawDeg, pitchDeg: 35, chestPitchDeg: 45, hands, liftTo: P.liftMidDeg, onStart: () => { Object.assign(G.lift, { active: true, side: sd, target: I.uprightFrame(bk, 0).roll }); onUp?.(); } },
-        { T: 0.35, over: Fh, pelvisZ: 0.72, yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.06, waitS: 0.6 },
+        { T: 1.0, pelvis: M([-1.15, -0.15, standZ(0.4)]), yawDeg, pitchDeg: 60, chestPitchDeg: 70, hands, reachM: 0.1, waitS: 1.0 },
+        { T: 1.4, pelvis: M([-1.05, -0.15, standZ(0.7)]), yawDeg, pitchDeg: 35, chestPitchDeg: 45, hands, liftTo: P.liftMidDeg, onStart: () => { Object.assign(G.lift, { active: true, side: sd, target: I.uprightFrame(bk, 0).roll }); onUp?.(); } },
+        { T: 0.35, over: Fh, pelvisZ: standZ(0.72), yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.06, waitS: 0.6 },
         { T: 0.45, feet: { [Rh]: M([-0.92, -0.26, 0]) }, via: { [Rh]: M([-1.05, -0.26, 0.08]) }, stance: [Fh], yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.1 },
-        { T: 0.35, over: Rh, pelvisZ: 0.74, yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.06, waitS: 0.6 },
+        { T: 0.35, over: Rh, pelvisZ: standZ(0.74), yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.06, waitS: 0.6 },
         { T: 0.45, feet: { [Fh]: M([-0.9, -0.04, 0]) }, via: { [Fh]: M([-1.03, -0.04, 0.08]) }, stance: [Rh], yawDeg, pitchDeg: 30, hands, liftTo: P.liftMidDeg, reachM: 0.1 },
         // (up; then over to lean on its side stand - on its left. Lying on its right, it goes over
         // away from her: she lets go as it passes upright and stands back into balance - leaning on
         // it she would follow it down; from its left it comes towards her and she eases it onto the
         // stand with her hands)
-        { T: 0.9, pelvis: M([-0.68, -0.15, 0.85]), yawDeg, pitchDeg: 20, chestPitchDeg: 25, hands, liftRoll: 0 },
-        { T: 0.6, pelvis: M([-0.76, -0.15, 0.86]), yawDeg, pitchDeg: 10, chestPitchDeg: 12, hands: sd < 0 ? hands : { L: null, R: null }, liftRoll: P.standDeg + 2 },
-        { T: 0.6, pelvis: M([-0.8, -0.15, 0.86]), yawDeg, pitchDeg: 10, chestPitchDeg: 10, hands: sd < 0 ? hands : { L: null, R: null }, onStart: () => { G.lift.active = false; onStand?.(); } },
-        { T: 0.5, pelvis: M([-0.88, -0.15, 0.885]), yawDeg, pitchDeg: 0, chestPitchDeg: 0, hands: { L: null, R: null } },
+        { T: 0.9, pelvis: M([-0.68, -0.15, standZ(0.85)]), yawDeg, pitchDeg: 20, chestPitchDeg: 25, hands, liftRoll: 0 },
+        { T: 0.6, pelvis: M([-0.76, -0.15, standZ(0.86)]), yawDeg, pitchDeg: 10, chestPitchDeg: 12, hands: sd < 0 ? hands : { L: null, R: null }, liftRoll: P.standDeg + 2 },
+        { T: 0.6, pelvis: M([-0.8, -0.15, standZ(0.86)]), yawDeg, pitchDeg: 10, chestPitchDeg: 10, hands: sd < 0 ? hands : { L: null, R: null }, onStart: () => { G.lift.active = false; onStand?.(); } },
+        { T: 0.5, pelvis: M([-0.88, -0.15, standZ(0.885)]), yawDeg, pitchDeg: 0, chestPitchDeg: 0, hands: { L: null, R: null } },
       ], bk, () => { G.lift.active = false; G.enterFoot(psi); }, () => { G.lift.active = false; onFail?.(); }, F), () => { onFail?.(); G.enterFoot(); }, 0.12, 25, [...around(F, G.com, M([-1.65, -0.15, 0]), liftBox(sd)), A], 0);
       // (the points she holds, for the owner of the bike's dynamics: where the lift acts)
       G.lift.points = [TOP, SEATP];

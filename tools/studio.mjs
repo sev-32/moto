@@ -12,6 +12,11 @@ export const RIGS = {
   rear: { yaw: 180, pitch: 8, dist: 3.4, at: [0, -0.2, 0.8], fov: 40 },
   top: { yaw: 90, pitch: 70, dist: 3.6, at: [0, -0.05, 0.6], fov: 42 },
   rider: { yaw: 70, pitch: 4, dist: 1.9, at: [0, -0.1, 1.0], fov: 40 },
+  // close on her feet on the pegs (the 916's pegs: +-0.18-0.25 m across, 0.36 m behind its origin,
+  // ~0.40 m up): her right shoe from its outside, from behind it, her left from its outside
+  footR: { yaw: 70, pitch: 12, dist: 0.62, at: [0.22, -0.3, 0.46], fov: 40 },
+  footRrear: { yaw: 145, pitch: 16, dist: 0.62, at: [0.22, -0.33, 0.46], fov: 40 },
+  footL: { yaw: -70, pitch: 12, dist: 0.62, at: [-0.22, -0.3, 0.46], fov: 40 },
 };
 // (yaw: degrees from the bike's forward towards its right, of the eye seen from the target; at:
 // the target in the bike's heading frame - right, forward, height above the ground)

@@ -13,6 +13,11 @@ export const asset = JSON.parse(fs.readFileSync(path.join(ROOT, "assets/characte
 export const surfaces = JSON.parse(fs.readFileSync(path.join(ROOT, "assets/bike/ducati916_rider_surfaces.json"), "utf8"));
 export const character = globalThis.LUCID_CHARACTER.createLucidCharacter(asset);
 export const BIO = globalThis.LUCID_RIDER_BIO;
+// (LUCID_SHOES=1: her body in her shoes, as the game has her - tools/character/fit-shoes.mjs' contact data)
+if (process.env.LUCID_SHOES === "1") {
+  const shoes = JSON.parse(fs.readFileSync(path.join(ROOT, "assets/character/accessories/lucid_vans_v1_contact.json"), "utf8")), create = BIO.createRider;
+  BIO.createRider = (ch, s, o = {}) => create(ch, s, { shoes, ...o });
+}
 export const MB = globalThis.LUCID_MULTIBODY;
 // V5.6.7 steering geometry (free.geom at the static pose)
 export const STEER = { pivot: [0, 0.4383675230799615, 0.2167447385344473], axis: [0, -0.4181755688684205, 0.9083662221822059] };

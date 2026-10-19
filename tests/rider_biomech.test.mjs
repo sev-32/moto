@@ -43,8 +43,8 @@ const I = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 test("pre-settled on a held bike: her weight rests on the bike, seated, hands on the grips", () => {
   const R = BIO.createRider(character, surfaces), S = BIO.presettle(R);
-  const mass = R.body.totals().mass;
-  assert.ok(Math.abs(mass - 75) < 1e-6, `mass ${mass}`);
+  const mass = R.body.totals().mass, shoes = R.shoes ? R.shoes.sides.L.massKg + R.shoes.sides.R.massKg : 0; // (her 75 kg, and her shoes when she wears them)
+  assert.ok(Math.abs(mass - 75 - shoes) < 1e-6, `mass ${mass}`);
   // the reactions she puts on the bike carry her weight (down), within 2 %
   assert.ok(Math.abs(-S.weightN - mass * 9.81) < 0.02 * mass * 9.81, `weight ${S.weightN}`);
   // pelvis in the seat pocket, in front of the tail and behind the tank

@@ -85,3 +85,33 @@ test("standing across a 10 deg slope: both feet lie on it (soles within 4 deg), 
     assert.ok(m.heel > 0.2 * m.N && m.ballMed > 0.05 * m.N && m.ballLat > 0.05 * m.N, `${S} heel ${m.heel.toFixed(0)} balls ${m.ballMed.toFixed(0)} / ${m.ballLat.toFixed(0)} of ${m.N.toFixed(0)} N`);
   }
 });
+
+// In her shoes (tools/character/fit-shoes.mjs' contact data, as the game has her): each point of her
+// sole on the tread below it, her toe pads turning with the shoe's forefoot about its flex line
+// against the rubber's bending stiffness, the shoes' mass on her feet.
+test("in her shoes: her pads on the tread, her toes turning about the sole's flex line, the shoes' mass on her feet", async () => {
+  const fs = await import("node:fs"), path = await import("node:path");
+  const shoes = JSON.parse(fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "../assets/character/accessories/lucid_vans_v1_contact.json"), "utf8"));
+  const bare = BIO.createRider(character, surfaces, { shoes: null }), shod = BIO.createRider(character, surfaces, { shoes });
+  assert.equal(shod.shoes, shoes);
+  for (const S of ["L", "R"]) {
+    const b = bare.foot[S], s = shod.foot[S], sh = shoes.sides[S];
+    // (her sole stands the outsole and insole higher: 11-16 mm, the tread's own shape)
+    const lift = b.soleY - s.soleY;
+    assert.ok(lift > 0.011 && lift < 0.016, `${S}: in her shoes her sole stands ${(lift * 1000).toFixed(1)} mm up`);
+    for (const at of ["heel", "ballMed", "ballLat"]) {
+      const pb = bare.spheres.find((q) => q.kind === "sole" && q.side === S && q.at === at), ps = shod.spheres.find((q) => q.kind === "sole" && q.side === S && q.at === at);
+      assert.ok(pb.c[1] - ps.c[1] > 0.009, `${S} ${at}: on the tread`);
+    }
+    // (her toe pads turn about the shoe's flex line, below her toe joint, against its sole too)
+    const an = character.joints.rest[character.joints.names.indexOf(S + "_Foot")];
+    assert.deepEqual(s.toes.pivot.map((x) => +x.toFixed(6)), sh.flexPoint.map((x, k) => +(x - an[k]).toFixed(6)));
+    assert.ok(s.toes.pivot[1] < b.toes.pivot[1] - 0.015, "the flex line below her toe joint");
+    assert.equal(s.toes.soleK, shoes.soleBend.NmPerRad);
+    assert.equal(b.toes.soleK, 0);
+    // (each shoe's mass on her foot)
+    const mb = bare.model.links[b.link].mass, ms = shod.model.links[s.link].mass;
+    assert.ok(Math.abs(ms - mb - sh.massKg) < 1e-9);
+  }
+  assert.ok(Math.abs(shod.model.totalMass - bare.model.totalMass - shoes.sides.L.massKg - shoes.sides.R.massKg) < 1e-9);
+});
