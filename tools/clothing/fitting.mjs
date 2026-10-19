@@ -34,6 +34,8 @@ const RIGS = {
   lap: { yaw: 15, pitch: 10, dist: 0.75, at: [SIDE, 0, 0.74], fov: 40 },
   kneeBack: { yaw: 160, pitch: 4, dist: 0.8, at: [SIDE, 0, 0.5], fov: 40 },
   ankles: { yaw: 25, pitch: 8, dist: 0.7, at: [SIDE, 0, 0.2], fov: 40 },
+  face: { yaw: 25, pitch: 2, dist: 0.42, at: [SIDE, 0, 1.52], fov: 40 },
+  faceSide: { yaw: 90, pitch: 2, dist: 0.42, at: [SIDE, 0, 1.52], fov: 40 },
   legs: { yaw: 30, pitch: 4, dist: 1.5, at: [SIDE, 0, 0.5], fov: 40 },
   // close-ups: the neckband, her right sleeve from the front and from behind, the hem at her side
   neck: { yaw: 10, pitch: 12, dist: 0.55, at: [SIDE, 0.02, 1.36], fov: 40 },

@@ -108,6 +108,14 @@
       "description": "Her hair: the DDHF V25 hair engine's clump charts (twist-optical rank: packed RGB8 twist coefficients, the m2 secondary lobe) on a groom from the hair cards of the Human Engine model she was made with; strands with follow-the-leader inextensibility, root-to-tip shape memory, collisions with her head, neck and shoulders, gravity less the bike's acceleration and the air seen from the bike"
     },
     {
+      "id": "rider-glasses",
+      "file": "47_rider_glasses.js",
+      "inline": {
+        "/*@@SUNGLASSES@@*/ null": "/assets/character/accessories/lucid_sunglasses_v1.json"
+      },
+      "description": "Her sunglasses ('Sunglasses' by martn00, Sketchfab, CC-BY-4.0), fitted to her face by tools/character/fit-glasses.mjs - on the bridge of her nose, the temples opened and lengthened to rest where her ears join her head - carried rigidly by her Head joint; rose-gold metal, red-tinted lenses, clear pads and tips in the scene's lights"
+    },
+    {
       "id": "rider-onfoot",
       "file": "48_rider_onfoot.js",
       "description": "The physical rider off the bike: on her feet (stand, walk, run, step-turn: capture-point stepping, centre-of-pressure control through compliant ankles, virtual-model support, a declared capped pelvis balance assist), getting up after a fall, lifting the bike and getting on / off (F / pad X); third-person camera and controls while she is off the bike"
