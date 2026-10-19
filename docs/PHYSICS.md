@@ -124,6 +124,28 @@ but muscle force and passive tissue acts on her joints while she rides:
   - *hands fixed between plans*: her arms' joint targets stood still between plans while the bars
     turned under her hands, their damping resisting the steering; a hand on its grip now follows the
     bar (its arm's targets move at the rates that carry it with the grip).
+  - *a foot pulled off its peg*: the pelvis roll hold made its moment by pressing one foot harder and
+    the other lighter - past nothing, so it pulled the lighter foot up: a bike rocking ±8° at 0.5 Hz
+    under her lifted her right foot off its peg at once, and with one foot off the hold held nothing
+    (her pelvis rolled ±14.6° on a ±8° bike). Now the moment comes from weighting one peg more and the
+    other down to nothing on it, and a foot meant to be on its peg and off it is pressed back down.
+  - *an S through her waist*: the chest's orientation task moves her spine's two segments as one and
+    did not see them bending against each other - lumbar and thoracic side-bends ±17° each in
+    opposite phase (correlation -0.99) under the rocking bike, their sum ±3.5°. That mode alone (the
+    lumbar hinge's error less the thoracic one's) is now held to the IK's share between them at the
+    joints' full posture gains; the chest's own orientation stays the task's.
+  - *her upper body rolled with the bike*: with her pelvis and chest levelling half-way to the felt
+    vertical (0.5 / 0.5) and a soft chest task (260 N m/rad, 40 N m s/rad), the rocking bike tilted
+    her shoulders ±12.7° and swung her chest's heading ±19.7° (the floating-trunk test failed). Now
+    her chest levels fully and her pelvis 0.8 of the way, the chest task is 600 / 90 and her head
+    80 / 4 slow and 40 / 2 fast (`headTaskSlowScale`): shoulders ±3.2°, head ±2.8°, the test's
+    measure 2.3° (its band: under 6.8°). Her head is held softer fast because in a steady 0.68 g
+    corner her neck is busy holding her head up against her forward lean and turned into the turn:
+    at 60 / 3 and 80 / 4 its asks saturated her neck's twist muscles (±10 N m at that posture) and the
+    muscles recruited for it pushed its side-bend the wrong way - her head nodded through ±20° at
+    ~1 Hz; at 40 / 2 it holds (head swing as before). Measured on the full bike (radius60, slalom):
+    in the slalom her chest swings 23° (26°) and her head 16° (20.5°) peak to peak against the bike's
+    31°; radius60 as before.
 * **Her feet** (`46_rider_biomech.js`: the sole's pads, `R.feel`, `footToes`, `footFeelTorques`;
   `tests/rider_feet.test.mjs`). Each foot stands on an anatomical tripod on her own sole: pads where
   the package's plantar contact region (`contactRegions.leftFoot` / `rightFoot`, her skin in the rest
@@ -305,6 +327,53 @@ but muscle force and passive tissue acts on her joints while she rides:
   carry her felt weight with the least joint effort) - in the same turns it left the outside leg
   and arms working as hard (knee 62-64 %, arms 75-100 %) and its contacts squeezing her (seat and
   pegs 1.6 × her felt weight).
+* **Her body on the bike: the body stick, her style, how much she rides herself** (the install
+  section of `46_rider_biomech.js`; telemetry `riderBio.agility`). Whatever moves her body moves it
+  on her muscles, against what the bike does to her (her intent → IK → her muscles, as above), and
+  through the seat, pegs, grips and tank that body moves the bike.
+  - *The body stick* - the gamepad's right stick (hold R3 and it is the camera's again; the ride's
+    camera does not see the stick while it moves her: the core filters the pad the legacy ride reads,
+    which is untouched), or J / L and I / K and the D-pad, eased in at 3/s and out at 5/s. Left /
+    right leans her body to that side of the bike (`hang`), whether or not the bike is turning - she
+    can move first and the bike after. Forward bends her elbows and brings her chest down over the
+    tank (`tuck`, her weight forward on the seat; at speed the air on her is less), back straightens
+    her arms and sits her up with her weight back (more air: braking, sitting up slows the bike).
+    Standing on the pegs (L3 / U toggles it), forward and back move her hips over the pegs.
+  - *Her style at her speed* (`PL.styleSlowMps` 5 .. `styleFastMps` 12, declared). Her upper body
+    floats on the felt vertical (above): the bike rolling quickly under her does not roll it, and in
+    a balanced turn she leans with the bike. Fast, a lean into the turn is a hang-off - hips across the
+    seat, chest and head into the turn, inside knee out and down. Slow, a lean tilts her upper body
+    that way from the felt vertical (up to `slowTiltDeg` 20°, her hips tilting under it) with her hips
+    shifted over that side: out of a slow tight turn, the gyro - upright while the bike leans further
+    under her. Referred to the true vertical at low speed on its own (`gyroWorldShare`), measured on
+    the full bike in a slow turn (6 m/s asked on a 10 m circle): her shoulders stayed at 14° while
+    the bike went from 18° to 29-35° - and the maneuvers' lean controller let it fall (6.8-7.0 s, its
+    bodywork down); with the felt vertical the same turn holds (16° steady). Off by default: it waits
+    for her own balance through the bars - steering with her hands from what she senses of her centre
+    of mass and the bike's (next).
+  - *How much she rides herself* (`BIO.assist`; O or the pad's Back / View cycles it): `auto` - she
+    rides it all (hung off into a sustained turn, tucked at speed, sat up under hard braking: the
+    rules above) and the stick only trims it (`stickTrimAuto` 0.35 of its range); `assist` (default)
+    - her own riding and the stick, added (the stick at rest: as `auto`); `manual` - the stick alone;
+    `sim` - the stick alone and none of her protective reflexes (`R.plan.guardOn` false; the
+    reflexes are the next step). `BIO.setPosture` (maneuvers, the burnout rig) still has the last
+    word, and `BIO.auto = false` (a maneuver's "rider in line") still keeps her own riding out.
+  - *Checked* in the browser with a stand-in gamepad (`node tests/browser/body-stick.mjs`): the right
+    stick moves her intent (hang, tuck) and her posture follows while the ride's camera reads the
+    stick as still; held R3 gives it back; L3 and U stand her up and sit her down; O cycles the four
+    levels; a held key eases in. With her floating upper body: `npm test` 92 of 93 (the floating
+    trunk, creeping and getting off stopped now pass; getting on the bike free to roll fails as
+    before - pressed 400 N), the maneuver suite 15 / 15, `at-the-bike.mjs off-on` passes;
+    `crash-lift-on` fails its lift (lifted, on, riding) - as it does at the two commits before
+    (79bd297, 2bb2324: the latter not even at the bike) - not touched here.
+  - *Not yet on her muscles: a deep hang-off.* Asked to hang fully off into a steady 0.8 g turn (the
+    stub bike), her pelvis stays on the seat's centre (3 mm across of 90): the IK puts her inside
+    knee "out" with the foot on its peg by flexing the knee to ~124° and the hip to ~90°, and her
+    muscles cannot make that - her knee flexors there make +40 N m (the hamstrings short, 6-11 mm
+    arms) and the muscles that would flex both are antagonists at the other joint (hamstrings,
+    rectus femoris): asked 205 N m of hip flexion and 172 of knee flexion, they made ~2 and ~16. A
+    rider opens the inside knee by hip abduction and rotation and slides across with her weight off
+    the seat, the outside knee on the tank: next.
 * **Lower body** (virtual-model control, nothing moves the pelvis directly): the hips hold the
   pelvis orientation against the thighs; knee flexion and ankle relax when seated (the legs do not
   prop her off the seat); knee squeeze (adduction), stronger braced and as a clamp reflex when the

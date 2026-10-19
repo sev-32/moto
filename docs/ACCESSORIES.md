@@ -204,6 +204,11 @@ Shoes:
 - The lens tint and the reflections are declared, not measured against the model's own material.
 - In her body, her sole's grip on the road is still the prior it had (`mu.sole` 0.8), not a
   rubber outsole's measured; her pads' stiffness is her soft tissue's alone.
+- The sole's bending stiffness (0.35 N m/rad = 0.006 N m/deg) is the rubber outsole alone as a plate:
+  a lower bound. Shoes measured whole bend far stiffer - American football cleats 0.10-0.35 N m/deg
+  dynamically over 30-90° and 0.27-0.8 linearized; carbon-plated running shoes 0.31-0.48 N m/deg
+  (their upper, insole board and plates included) - and no measurement of a vulcanised canvas shoe
+  was found. Not changed until one is.
 - Her look through a turn in her shoes: the test's measure (her neck's axial turns) fails - see
   "In her body" above.
 - The laces do not collide with each other, the other shoe or the bike; her jeans' hems do not

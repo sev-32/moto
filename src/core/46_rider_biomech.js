@@ -135,7 +135,17 @@
     // R1.4 notes) and fight each other; the joint posture term keeps only taskPostScale of the servo
     // stiffness (declared priors: chest ~ the old spine servos in series; head firmer than the old neck
     // servos in series - at 22 N m/rad the other neck and shoulder muscles tilted it 1.5 deg, at 40 0.5)
-    chestTaskK: 260, chestTaskC: 40, headTaskK: 40, headTaskC: 2, taskPostScale: 0.15,
+    // (her upper body floats on the bike - the user's "gyro": the bike rocking +-8 deg at 0.5 Hz under
+    // her, with her chest levelled fully and her pelvis 0.8 towards the felt vertical - PL - her
+    // shoulders swung +-5.8 deg and her head +-5.4 at 260/40 and 40/2; at 600/90, with her spine's two
+    // segments held bending together, +-3.2, and her head +-2.8 at 80/4: declared, tuned there.)
+    // Her head is held that firmly slow - headTaskSlowScale x - and at 40/2 fast: in a 0.68 g corner
+    // her neck is busy holding her head up against her forward lean and turned into the turn, and
+    // there at 60/3 and 80/4 its asks saturated its muscles (twist +-10 N m) - the head nodded through
+    // +-20 deg at ~1 Hz - where at 40/2 it held steady
+    chestTaskK: 600, chestTaskC: 90, headTaskK: 40, headTaskC: 2, headTaskSlowScale: 2, taskPostScale: 0.15,
+    // (her spine's two segments held bending together: SPINE_PAIRS)
+    spineModeHold: true,
     // where she looks (R.gaze): riding, the road ahead on the arc her bike is taking, aheadS ahead
     // (minM..maxM); her head carries headShare of the gaze's turn and pitchShare of its dip, her eyes
     // the rest (her rig has no eyes to show); the head turns at most rateDegS (a head saccade), within
@@ -906,6 +916,14 @@
     // chest and the pelvis (every spine hinge carries it) and between the head and the chest
     const taskTau = new Float64Array(L.length), taskHinge = new Uint8Array(NH);
     for (const i of [...CH.spine, ...CH.neck]) taskHinge[i] = 1;
+    // her spine's two segments bend together: the chest's orientation task moves them as one and does
+    // not see them bending against each other - an S through her waist (measured under a bike rocking
+    // +-8 deg at 0.5 Hz: lumbar and thoracic side-bends +-17 deg each in opposite phase, their sum
+    // +-3.5). That mode alone - the lumbar hinge's error less the thoracic one's - is held to the IK's
+    // share between them at the joints' full posture gains (the task scaling leaves taskPostScale of
+    // them on each hinge), so the chest's own orientation stays the task's
+    const SPINE_PAIRS = ["flexionExtension", "lateralBend", "axialRotation"].map((a) => [hingeIndex["spine01." + a], hingeIndex["spine02." + a]]).filter(([a, c]) => a != null && c != null);
+    const modeTau = new Float64Array(L.length);
     function orientationTasks(gain, bk) {
       taskTau.fill(0);
       const T = PL.targets;
@@ -924,7 +942,8 @@
         if (fl > PRIORS.reachTaskMaxN) F = scl(F, PRIORS.reachTaskMaxN / fl);
         for (const { li, j } of Jcol(hand[S].link, pw, S === "L" ? CH.armL : CH.armR)) taskTau[li] += dot(j, F);
       }
-      for (const [k, link, idx, K, C] of [["chest", M.linkOf.Spine02, CH.spine, PRIORS.chestTaskK, PRIORS.chestTaskC], ["head", M.linkOf.Head, CH.neck, PRIORS.headTaskK, PRIORS.headTaskC]]) {
+      const hsc = 1 + (PRIORS.headTaskSlowScale - 1) * (1 - (PL.fast ?? 1));
+      for (const [k, link, idx, K, C] of [["chest", M.linkOf.Spine02, CH.spine, PRIORS.chestTaskK, PRIORS.chestTaskC], ["head", M.linkOf.Head, CH.neck, PRIORS.headTaskK * hsc, PRIORS.headTaskC * hsc]]) {
         const tp = T[k];
         if (!tp) continue;
         // (the target as it moves between plans, and how fast)
@@ -942,25 +961,41 @@
       if (MD && !RM.active) RM.snap = true;
       RM.active = !!MD;
       const tasks = MD && R.servo ? orientationTasks(gain, bk) : false;
+      // (the joint gains her intent has at a hinge: its servo's, within what her nervous system can drive
+      // the inertia it moves - the stability or neural-bandwidth cap)
+      const intentGains = (i) => {
+        const h = H[i], li = h.link;
+        let kp = h.kp * gain * R.servoScale[i], kd = h.kd * Math.sqrt(gain) * R.servoScale[i];
+        if (!MD) return [kp, kd];
+        const D = b.Dart[li];
+        if (PRIORS.intentCap === "stability") {
+          // (explicit stability at this step for the inertia the hinge moves: kp dt^2 / D <= 0.25,
+          // kd dt / D <= 0.5, and kd no more than critical damping)
+          if (D > 0) { kp = Math.min(kp, (0.25 * D) / (dt * dt)); kd = Math.min(kd, (0.5 * D) / dt, 2 * PRIORS.intentZeta * Math.sqrt(kp * D)); }
+        } else {
+          // (neural bandwidth: kp <= D w^2, kd <= 2 zeta D w, D the articulated inertia about the hinge)
+          const w = h.base === "Hand" ? PRIORS.intentOmegaHand : PRIORS.intentOmegaMax;
+          if (D > 0 && kp > D * w * w) { kp = D * w * w; kd = Math.min(kd, 2 * PRIORS.intentZeta * D * w); }
+        }
+        return [kp, kd];
+      };
+      // (the spine's S mode: see SPINE_PAIRS)
+      modeTau.fill(0);
+      if (tasks && PRIORS.spineModeHold) for (const [ia, ic] of SPINE_PAIRS) {
+        if (!R.servoOn[ia] || !R.servoOn[ic]) continue;
+        const [ka, da] = intentGains(ia), [kc, dc] = intentGains(ic), la = H[ia].link, lc = H[ic].link;
+        const k = Math.min(ka, kc) * (1 - PRIORS.taskPostScale), c = Math.min(da, dc);
+        const e = R.qT[la] - b.q[la] - dt * b.qd[la] - (R.qT[lc] - b.q[lc] - dt * b.qd[lc]), ed = R.qdT[la] - b.qd[la] - (R.qdT[lc] - b.qd[lc]);
+        const t = 0.5 * (k * e + c * ed);
+        modeTau[la] += t; modeTau[lc] -= t;
+      }
       for (let i = 0; i < NH; i++) {
         const h = H[i], li = h.link, q = b.q[li], qd = b.qd[li], P = passiveTau(h, q, qd);
         let tau = P.tau, arm = 0, want = 0;
         if (R.servo && R.servoOn[i]) {
-          let kp = h.kp * gain * R.servoScale[i], kd = h.kd * Math.sqrt(gain) * R.servoScale[i];
-          if (MD) {
-            const D = b.Dart[li];
-            if (PRIORS.intentCap === "stability") {
-              // (explicit stability at this step for the inertia the hinge moves: kp dt^2 / D <= 0.25,
-              // kd dt / D <= 0.5, and kd no more than critical damping)
-              if (D > 0) { kp = Math.min(kp, (0.25 * D) / (dt * dt)); kd = Math.min(kd, (0.5 * D) / dt, 2 * PRIORS.intentZeta * Math.sqrt(kp * D)); }
-            } else {
-              // (neural bandwidth: kp <= D w^2, kd <= 2 zeta D w, D the articulated inertia about the hinge)
-              const w = h.base === "Hand" ? PRIORS.intentOmegaHand : PRIORS.intentOmegaMax;
-              if (D > 0 && kp > D * w * w) { kp = D * w * w; kd = Math.min(kd, 2 * PRIORS.intentZeta * D * w); }
-            }
-            if (tasks && taskHinge[i]) kp *= PRIORS.taskPostScale;
-          }
-          let u = kp * (R.qT[li] - q - dt * qd) + kd * (R.qdT[li] - qd) + R.tauFF[li] + R.tauVF[li] + (tasks ? taskTau[li] : 0) + tauFeel[li];
+          let [kp, kd] = intentGains(i);
+          if (MD && tasks && taskHinge[i]) kp *= PRIORS.taskPostScale;
+          let u = kp * (R.qT[li] - q - dt * qd) + kd * (R.qdT[li] - qd) + R.tauFF[li] + R.tauVF[li] + (tasks ? taskTau[li] + modeTau[li] : 0) + tauFeel[li];
           // at its torque limit a servo keeps its damping (implicit): a saturated muscle still
           // resists being stretched quickly (force-velocity), and a light segment (a foot, a
           // hand) held at the limit against a stiff contact would otherwise ring step to step
@@ -1313,12 +1348,15 @@
       // is where holding the seated posture costs the least activation (sum a^2 over the 84 muscles,
       // static, on a still bike: 8 deg 3.0 - the lumbar extensors near 0.9, 15-20 deg 1.5, 25 deg
       // 3.4, 35 deg 8.0 - iliopsoas and the lumbar extensors saturated)
-      seatZ: 0.239, seatY: -0.34, leanDeg: 52, pelvisPitchDeg: 18, headPitchDeg: 12, pelvisLevelShare: 0.5,
+      // (pelvisLevelShare, chestLevelShare: how far her pelvis on the seat and her chest level towards
+      // the felt vertical as the bike rolls under her - her upper body floating on it; see
+      // PRIORS.chestTaskK. At 0.5 and 0.5 the bike rocking under her moved her chest as much as the bike)
+      seatZ: 0.239, seatY: -0.34, leanDeg: 52, pelvisPitchDeg: 18, headPitchDeg: 12, pelvisLevelShare: 0.8,
       // (her pelvis's roll on the seat, riding on her muscles: N m/rad, N m s/rad, N m - declared priors.
       // Locked in on a 916 - thighs on the tank, balls of the feet on the pegs - her pelvis rolls
       // little on the seat: at 400 N m/rad the bike and her body rolled against each other on a launch,
       // a slow mode the steering could not hold at 3-7 m/s (±12-31°, down); at 1500, ±5-9°, steady)
-      pelvisRollK: 1500, pelvisRollC: 200, pelvisRollMaxNm: 150, chestLevelShare: 0.5, armFollow: true,
+      pelvisRollK: 1500, pelvisRollC: 200, pelvisRollMaxNm: 150, chestLevelShare: 1, armFollow: true,
       // reach: the trunk leans (within reachLeanMaxDeg) until the elbows keep elbowPrefDeg of bend
       // (declared prior; the 916's clip-ons are a long reach for her 0.54 m arm: seated, her
       // elbows stay nearly straight); reachLean is that correction
@@ -1349,6 +1387,9 @@
       // full hang-off: pelvis this far across the seat (the 916's seat is narrow: about half a
       // buttock off it), the trunk and head lean in further (planTargets)
       hangOffsetM: 0.09,
+      // her style at her speed (planTargets): fully the slow one below styleSlowMps, the fast one above
+      // styleFastMps; slow, her upper body's reference is gyroWorldShare the true vertical (declared)
+      styleSlowMps: 5, styleFastMps: 12, gyroWorldShare: 0, slowTiltDeg: 20, fast: 0,
       // hung off (full hang): the pelvis rolled and turned towards the inside, the chest rolled
       // further in and lower, the inside knee out and down (deg, deg, deg, deg, m, m) - declared.
       // (Deeper - the pelvis 0.15 m across, the knee 0.2 m out - she slid off the seat's inside edge
@@ -1531,45 +1572,60 @@
       // filtered), NOT the instantaneous acceleration of the seat: a bike rocking under a rider at
       // a standstill shakes the seat but the rider keeps her trunk on the true vertical
       const up = unit(scl(PL.gFilt, -1)), ub = mtv(Rb, up), rollFelt = Math.atan2(ub[0], ub[2]);
+      const wb = mtv(Rb, WUP), rollWorld = Math.atan2(wb[0], wb[2]);
+      // her style at her speed (PL.styleSlowMps .. styleFastMps). Her upper body floats on the felt
+      // vertical - the bike rolling quickly under her does not roll it (PL.chestLevelShare) - and in a
+      // balanced turn that is the bike's own: she leans with it. Fast, a lean into the turn (hang) is a
+      // hang-off: her hips across the seat, chest and head into the turn, the inside knee out and down
+      // (the shape below, scaled by fast). Slow, a lean to a side tilts her upper body that way from
+      // the felt vertical, her hips tilting under it (up to slowTiltDeg), with her weight over that
+      // side's peg: out of a slow tight turn it is the gyro - upright while the bike leans further
+      // under her. (gyroWorldShare refers her upper body to the true vertical at low speed on its own -
+      // off: the bike leaning further under her, the maneuvers' lean controllers let it fall in a slow
+      // turn at 5-6 m/s; it waits for her own balance through the bars.) Feet down, the bike held
+      // upright is her reference (uprightFrame)
+      const Vh = Math.hypot(bk.v[0], bk.v[1]), fast = smooth01((Vh - PL.styleSlowMps) / (PL.styleFastMps - PL.styleSlowMps));
+      const gw = (1 - fd) * (1 - fast) * PL.gyroWorldShare, hs = hang * fast;
+      const rollRef = gw * rollWorld + (1 - gw) * rollFelt + (1 - fd) * (1 - fast) * hang * PL.slowTiltDeg * DEG;
+      PL.fast = fast;
       // her pelvis levels partly towards the felt vertical when the bike rolls under her (her hips,
       // abductors and adductors, roll it on the seat): her lumbar spine alone could not keep her trunk
       // up - its side-bend muscles are small (R1.5 quadratus lumborum < 10 N m per part, Phillips 2008)
       // and, leaning forward to the bars, already stretched by the flexion. In a balanced turn the
       // felt vertical is the bike's own: no levelling. (Feet down, the pelvis is already referenced
       // to the bike held upright.)
-      const level = (1 - fd) * PL.pelvisLevelShare * rollFelt / DEG;
+      const level = (1 - fd) * PL.pelvisLevelShare * rollRef / DEG;
       const pel = R.pelvisPoseBike({
-        x: hang * PL.hangOffsetM + fd * fsx * (PL.footPelvisShiftM + PL.feel.hip), y: PL.seatY + P.foreAft * PL.foreAftM + stand * PL.standFwdM + bf * PL.braceForwardM, z: PL.seatZ + stand * PL.standRiseM - Math.abs(hang) * PL.hangDropM,
-        pelvisPitchDeg: PL.pelvisPitchDeg - stand * PL.standPelvisPitchDeg + P.tuck * PL.tuckPelvisPitchDeg + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hang * PL.hangPelvisRollDeg + fd * fsx * PL.footPelvisRollDeg + level, pelvisYawDeg: -hang * PL.hangPelvisYawDeg,
+        x: hang * PL.hangOffsetM + fd * fsx * (PL.footPelvisShiftM + PL.feel.hip), y: PL.seatY + P.foreAft * PL.foreAftM + stand * PL.standFwdM + bf * PL.braceForwardM, z: PL.seatZ + stand * PL.standRiseM - Math.abs(hs) * PL.hangDropM,
+        pelvisPitchDeg: PL.pelvisPitchDeg - stand * PL.standPelvisPitchDeg + P.tuck * PL.tuckPelvisPitchDeg + bf * PL.braceForwardPitchDeg, pelvisRollDeg: hs * PL.hangPelvisRollDeg + fd * fsx * PL.footPelvisRollDeg + level, pelvisYawDeg: -hs * PL.hangPelvisYawDeg,
       });
       // (feet down: sideways and fore/aft from the bike held upright, the height from the seat as it
       // is - she stays seated, pressing it, so the seat carries her push to the bike)
       const pelW = fd > 0 ? (() => { const a = toBikeFrame(bk, WU(pel.pos)); a[2] = pel.pos[2]; return W(a); })() : W(pel.pos);
       const T = { pelvis: { p: pelW, R: mm(RU, pel.R) }, bike: bk, feetDown: fd, pelvisUp: fd > 0 ? pel.pos : null };
-      const wb = mtv(Rb, WUP), rollWorld = Math.atan2(wb[0], wb[2]);
-      const lean = (PL.leanDeg + (P.tuck >= 0 ? P.tuck * PL.tuckLeanDeg : P.tuck * PL.sitUpLeanDeg) - stand * PL.standLeanDeg + Math.abs(hang) * PL.hangTuckDeg) * DEG + PL.reachLean;
+      const lean = (PL.leanDeg + (P.tuck >= 0 ? P.tuck * PL.tuckLeanDeg : P.tuck * PL.sitUpLeanDeg) - stand * PL.standLeanDeg + Math.abs(hs) * PL.hangTuckDeg) * DEG + PL.reachLean;
       // (her chest levels towards the felt vertical by the same share as her pelvis: the upper body
       // rolls over the hips as one block, and the lumbar spine - whose side-bend muscles are weak,
       // leaning to the bars - is not asked to bend between them when the bike rolls under her)
-      const roll = PL.chestLevelShare * rollFelt + hang * PL.hangChestRollDeg * DEG;
-      T.chest = mm(Rb, mm(Rz(-hang * PL.hangChestYawDeg * DEG), mm(Ry(roll), mm(Rx(-lean), M2B))));
+      const roll = PL.chestLevelShare * rollRef + hs * PL.hangChestRollDeg * DEG;
+      T.chest = mm(Rb, mm(Rz(-hs * PL.hangChestYawDeg * DEG), mm(Ry(roll), mm(Rx(-lean), M2B))));
       // head: closer to the true horizon than the trunk, turned and dipped towards where she looks
-      const hroll = 0.55 * rollWorld + 0.45 * rollFelt + hang * PL.hangHeadRollDeg * DEG;
+      const hroll = 0.55 * rollWorld + 0.45 * rollFelt + hs * PL.hangHeadRollDeg * DEG;
       const gz = gazeRiding(bk);
       const hpitch = (PL.headPitchDeg + P.tuck * PL.tuckHeadPitchDeg - stand * PL.standHeadPitchDeg) * DEG + gz.headPitch;
-      T.head = mm(Rb, mm(Rz(gz.headYaw - hang * PL.hangHeadYawDeg * DEG), mm(Ry(hroll), mm(Rx(-hpitch), M2B))));
+      T.head = mm(Rb, mm(Rz(gz.headYaw - hs * PL.hangHeadYawDeg * DEG), mm(Ry(hroll), mm(Rx(-hpitch), M2B))));
       T.hands = {};
       // (a hand reaching for its grip - just sat down, the grip not yet taken - goes there too)
       for (const S of ["L", "R"]) if (R.grips[S].held || R.grips[S].reach) { const g = R.gripWorld(bk, S); T.hands[S] = { p: g.c, axis: g.a, volar: mv(Rb, unit([0, 0.35, -1])) }; }
       T.feet = {};
       for (const [S, side, sx] of [["L", "left", -1], ["R", "right", 1]]) {
-        const pg = SURF.pegs[side], mid = scl(add(pg.a, pg.b), 0.5), inside = sx * hang > 0;
-        const ky = PL.kneeY + stand * PL.standKneeY, kz = PL.kneeZ - stand * PL.standKneeZ - (inside ? Math.abs(hang) * PL.hangKneeDownM : 0);
+        const pg = SURF.pegs[side], mid = scl(add(pg.a, pg.b), 0.5), inside = sx * hs > 0;
+        const ky = PL.kneeY + stand * PL.standKneeY, kz = PL.kneeZ - stand * PL.standKneeZ - (inside ? Math.abs(hs) * PL.hangKneeDownM : 0);
         // the knee rests on the tank's flank: target = where the knee sphere meets the tank surface
         // (measured on the field); the grip itself is a force (pelvisVMC); the inside knee comes
         // off the tank when she hangs off
         let kx = kneeOnTank(sx, ky, kz) + sx * 0.005;
-        if (inside) kx += sx * Math.abs(hang) * PL.hangKneeOutM;
+        if (inside) kx += sx * Math.abs(hs) * PL.hangKneeOutM;
         T.feet[S] = { p: W([mid[0], mid[1] - 0.005, mid[2] + pg.radiusM + 0.003]), forward: mv(Rb, unit([sx * 0.2, 1, -0.15])), knee: W([kx, ky, kz]) };
         if (fd > 0 && S !== PL.footSide) {
           // the other foot rests just above its peg (loaded, it would lever the bike over that side)
@@ -1921,12 +1977,26 @@
         rollF = Mr / (2 * d);
         R.telemetry.pelvisRoll = { errDeg: e / DEG, Nm: Mr };
       }
+      // (a foot only ever presses its peg: the roll moment is made by weighting one peg more and the
+      // other less - down to nothing on it, the first then taking the whole of it - never by pulling a
+      // foot up off its peg (measured: the bike rocking +-8 deg at 0.5 Hz under her, the hold lifted
+      // her right foot off its peg at once and then, one foot off, held nothing))
+      const base = PL.rideLP ? 0 : PL.pegPressN * (1 - fd), press = { L: base + rollF, R: base - rollF };
+      if (press.R < 0) { press.L -= press.R; press.R = 0; }
+      if (press.L < 0) { press.R -= press.L; press.L = 0; }
       for (const S of legs) {
         const pw = b.toWorld(foot[S].link, foot[S].ball);
         const share = pushers.includes(S) ? 1 / pushers.length : 0;
         // (riding on the load path, how hard each foot bears on its peg is planned there)
-        const Fpelvis = add(add(scl(Fw, share), scl(up, PL.rideLP ? 0 : PL.pegPressN * (1 - fd))), scl(up, (S === "L" ? 1 : -1) * rollF)); // the pelvis gets this; the foot pushes -that (feet down: neither presses a peg)
+        const Fpelvis = add(scl(Fw, share), scl(up, press[S])); // the pelvis gets this; the foot pushes -that (feet down: neither presses a peg)
         for (const { li, j } of Jcol(foot[S].link, pw, S === "L" ? CH.legL : CH.legR)) R.tauVF[li] -= dot(j, Fpelvis);
+      }
+      // a foot meant to be on its peg and not on it (lifted by a jolt) is pressed back down onto it
+      // (its target is the peg's top: without a press it would hover there)
+      if (fd < 0.05) for (const S of ["L", "R"]) {
+        if (legs.includes(S) || S === dabS || !TB.feet[S] || PL.targets.feet?.[S]?.dab) continue;
+        const pw = b.toWorld(foot[S].link, foot[S].ball);
+        for (const { li, j } of Jcol(foot[S].link, pw, S === "L" ? CH.legL : CH.legR)) R.tauVF[li] -= dot(j, scl(up, PL.pegPressN));
       }
       R.telemetry.vmc = { F: Fw, legs: legs.join(""), knees: { ...kneeOut }, want, tanDone, sideDone, Fd, walkF };
     }
@@ -2685,7 +2755,7 @@
     const BIO = (CORE.riderBio = {
       // on by default (the maneuver suite passes with her); ?rider=legacy or setActive(false)
       // brings back the two-mass rider
-      rider: R, active: DEFAULT_ON, presettle: SET, placed: false, auto: true, keys: {}, pad: { hang: 0, tuck: 0 },
+      rider: R, active: DEFAULT_ON, presettle: SET, placed: false, auto: true, keys: {}, pad: { walk: 0 },
       config: {
         legacyRiderKg: 75.337, // V1.28.5.2 mass authority: the rider lumped into the V5 sprung mass
         balanceAssist: 0.4, // share of the chassis' virtual standstill roll support kept while her foot holds the bike
@@ -2825,32 +2895,71 @@
     const old = CORE.rider;
     if (BIO.active && old?.setActive) old.setActive(false);
 
-    // ---- intent: keys / pad / auto rider (same controls as 40_rider_body)
+    // ---- her body on the bike: the player's body stick and her own riding (BIO.assist)
+    // The body stick - the gamepad's right stick (hold R3 and it is the camera's), or J / L and I / K
+    // (and the D-pad), eased in and out as a thumb on a stick:
+    //   left / right leans her body to that side of the bike. Into a turn, at speed, she hangs off: her
+    //   hips across the seat, her chest and head into the turn, her inside knee and elbow down. Slow,
+    //   her upper body stays upright while the bike leans under her - a gyro, her hips tilting under it
+    //   - and a lean to a side is her weight shifted over that side's peg (against a slow tight turn:
+    //   the bike leaned further than she is). How it looks is her style at her speed (the planner).
+    //   It works whether or not the bike is turning: she can move first and the bike after.
+    //   forward bends her elbows and brings her chest down over the tank (tucked at speed: the air on
+    //   her less); back straightens her arms and sits her up (braking, sitting up into the air slows
+    //   the bike). Standing on the pegs (L3 / U toggles it), forward and back move her hips over them.
+    // BIO.assist - how much of it she does herself:
+    //   "auto"   she rides it all: the stick only trims it (stickTrimAuto of its range)
+    //   "assist" her own riding and the stick, added (the default; the stick at rest: "auto")
+    //   "manual" the stick alone
+    //   "sim"    the stick alone, and none of her protective reflexes (R.plan.guard: her knee and elbow
+    //            kept off the road, her hips on the seat): a knee down too hard, a slide off the seat's
+    //            edge, are hers to make
+    // Whatever the level, her body does it on her muscles, against what the bike does to her.
     const clamp = (x, a, b) => (x < a ? a : x > b ? b : x), smooth01 = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-    const KEYMAP = { KeyJ: "hangL", KeyL: "hangR", KeyI: "tuck", KeyK: "back", KeyU: "stand", KeyG: "walkF", KeyB: "walkB" };
+    const toward = (x, t, r) => (x < t ? Math.min(t, x + r) : Math.max(t, x - r));
+    const ASSIST = ["auto", "assist", "manual", "sim"];
+    Object.assign(BIO, { assist: "assist", bodyStick: true, standToggle: false, stickTrimAuto: 0.35, stick: { x: 0, y: 0, keyX: 0, keyY: 0, camera: false, l3: false, back: false } });
+    BIO.setAssist = (lvl) => { if (ASSIST.includes(lvl)) BIO.assist = lvl; return BIO.assist; };
+    const KEYMAP = { KeyJ: "hangL", KeyL: "hangR", KeyI: "tuck", KeyK: "back", KeyG: "walkF", KeyB: "walkB" };
     function onKey(e, down) {
       if (global.__LUCID_ACTIVE_PAGE__ !== "RIDE") return;
       const tag = (e.target?.tagName || "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.code === "KeyO" && down && !e.repeat) { BIO.auto = !BIO.auto; return; }
+      if (down && !e.repeat && e.code === "KeyO") { BIO.assist = ASSIST[(ASSIST.indexOf(BIO.assist) + 1) % ASSIST.length]; return; }
+      if (down && !e.repeat && e.code === "KeyU") { BIO.standToggle = !BIO.standToggle; return; }
       const k = KEYMAP[e.code];
       if (k) BIO.keys[k] = down;
     }
     global.addEventListener?.("keydown", (e) => onKey(e, true));
     global.addEventListener?.("keyup", (e) => onKey(e, false));
     global.addEventListener?.("blur", () => { BIO.keys = {}; });
-    let padT = 0;
-    function readPad() {
-      const now = performance.now();
-      if (now - padT < 16) return BIO.pad;
-      padT = now;
-      let gp = null;
-      try { gp = [...(navigator.getGamepads?.() || [])].find(Boolean); } catch (_) {}
-      const b = (i) => !!gp?.buttons?.[i]?.pressed;
+    // (the ride's own camera reads the right stick: while it moves her body the camera does not see it -
+    // held R3 gives it back, BIO.bodyStick = false for good. The ride's other controls read the pad as
+    // it is)
+    const NAV = global.navigator, realGetPads = NAV?.getGamepads ? NAV.getGamepads.bind(NAV) : null;
+    const realPad = () => { try { return [...(realGetPads?.() || [])].find(Boolean) || null; } catch (_) { return null; } };
+    const stickLive = () => BIO.bodyStick && BIO.active && BIO.placed && !R.plan.fallen && global.__LUCID_ACTIVE_PAGE__ === "RIDE";
+    if (realGetPads) {
+      const hideRight = (gp) => new Proxy(gp, { get: (t, k) => { if (k === "axes") { const a = Array.from(t.axes || []); if (a.length > 3) a[2] = a[3] = 0; return a; } const v = t[k]; return typeof v === "function" ? v.bind(t) : v; } });
+      try { NAV.getGamepads = () => { const list = realGetPads(); return !stickLive() || BIO.stick.camera ? list : Array.from(list || [], (gp) => (gp ? hideRight(gp) : gp)); }; } catch (_) {}
+    }
+    function readPad(dt) {
+      const gp = global.__LUCID_ACTIVE_PAGE__ === "RIDE" ? realPad() : null, ST = BIO.stick, K = BIO.keys;
+      const b = (i) => !!gp?.buttons?.[i]?.pressed, dz = (v) => (Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88);
+      ST.camera = b(11);
+      if (b(10) && !ST.l3) BIO.standToggle = !BIO.standToggle; // (L3)
+      if (b(8) && !ST.back) BIO.assist = ASSIST[(ASSIST.indexOf(BIO.assist) + 1) % ASSIST.length]; // (Back / View)
+      ST.l3 = b(10); ST.back = b(8);
+      // (keys and the D-pad are digital: eased in at 3/s and back out at 5/s)
+      const kx = (K.hangR || b(15) ? 1 : 0) - (K.hangL || b(14) ? 1 : 0), ky = (K.tuck || b(12) ? 1 : 0) - (K.back || b(13) ? 1 : 0);
+      ST.keyX = toward(ST.keyX, kx, (kx ? 3 : 5) * dt); ST.keyY = toward(ST.keyY, ky, (ky ? 3 : 5) * dt);
+      const live = stickLive() && !ST.camera;
+      ST.x = clamp((live && gp ? dz(gp.axes?.[2] || 0) : 0) + ST.keyX, -1, 1);
+      ST.y = clamp((live && gp ? -dz(gp.axes?.[3] || 0) : 0) + ST.keyY, -1, 1);
       // (left stick up / down: walk the bike forward / back - it only acts with her foot down)
       const ly = gp?.axes?.[1] || 0;
-      BIO.pad = gp ? { hang: (b(15) ? 1 : 0) - (b(14) ? 1 : 0), tuck: (b(12) ? 1 : 0) - (b(13) ? 1 : 0), walk: Math.abs(ly) > 0.25 ? -ly : 0 } : { hang: 0, tuck: 0, walk: 0 };
-      return BIO.pad;
+      BIO.pad = { walk: Math.abs(ly) > 0.25 ? -ly : 0 };
+      return ST;
     }
     const filt = (BIO.filt = { latG: 0, roll: 0, decelG: 0, lastV: null, footContact: 0 });
     function intent(F, dt) {
@@ -2866,24 +2975,33 @@
       filt.roll += (v5bodyAngles(F.q).rollRad - filt.roll) * a;
       if (filt.lastV != null) filt.decelG += (-(V - filt.lastV) / dt / F.S.g - filt.decelG) * Math.min(1, dt / 0.12);
       filt.lastV = V;
+      // her own riding: hung off into a sustained turn, tucked at speed, sat up under hard braking
+      const lvl = BIO.assist, own = BIO.auto && (lvl === "auto" || lvl === "assist");
       const auto = { hang: 0, tuck: 0, foreAft: 0, stand: 0 };
-      if (BIO.auto) {
+      if (own) {
         const side = Math.abs(filt.roll) > A.minLeanDeg * DEG ? Math.sign(filt.roll) : 0;
         auto.hang = side * A.style * smooth01((Math.abs(filt.latG) - A.hangStartG) / (A.hangFullG - A.hangStartG));
         auto.tuck = (1 - Math.abs(auto.hang)) * smooth01((V - A.tuckStartMps) / (A.tuckFullMps - A.tuckStartMps));
         if (filt.decelG > A.sitUpDecelG && V > A.sitUpMinMps) auto.tuck = Math.min(auto.tuck, -0.5 * smooth01((filt.decelG - A.sitUpDecelG) / 0.4) * smooth01((V - A.sitUpMinMps) / 15));
       }
-      const K = BIO.keys, pad = global.__LUCID_ACTIVE_PAGE__ === "RIDE" ? readPad() : { hang: 0, tuck: 0, walk: 0 };
-      const kHang = (K.hangR ? 1 : 0) - (K.hangL ? 1 : 0);
-      R.intent.hang = kHang || pad.hang ? clamp(kHang + pad.hang, -1, 1) : BIO.manual?.hang ?? auto.hang;
-      R.intent.tuck = K.tuck || pad.tuck > 0 ? 1 : K.back || pad.tuck < 0 ? -0.6 : BIO.manual?.tuck ?? auto.tuck;
-      R.intent.foreAft = K.back || pad.tuck < 0 ? -1 : BIO.manual?.foreAft ?? auto.foreAft;
-      R.intent.stand = K.stand ? 1 : BIO.manual?.stand ?? auto.stand;
+      // the player's: the body stick (in "auto" only a trim of her own riding)
+      const ST = readPad(dt), trim = lvl === "auto" ? BIO.stickTrimAuto : 1, sx = ST.x * trim, sy = ST.y * trim;
+      const standing = BIO.standToggle ? 1 : 0;
+      // (fore / aft: seated, forward tucks her - elbows bent, chest down - with her weight forward on the
+      // seat, back sits her up - arms straight - with her weight back; standing, her hips over the pegs)
+      const pTuck = standing ? 0 : sy >= 0 ? sy : 0.6 * sy, pFore = standing ? sy : sy >= 0 ? 0.5 * sy : sy;
+      const M_ = BIO.manual || {};
+      R.intent.hang = M_.hang ?? clamp(auto.hang + sx, -1, 1);
+      R.intent.tuck = M_.tuck ?? clamp(auto.tuck + pTuck, -1, 1);
+      R.intent.foreAft = M_.foreAft ?? clamp(auto.foreAft + pFore, -1, 1);
+      R.intent.stand = M_.stand ?? Math.max(auto.stand, standing);
       // walking the bike with her foot (stopped or at walking pace; nothing otherwise)
-      const kWalk = (K.walkF ? 1 : 0) - (K.walkB ? 1 : 0);
-      R.intent.walk = kWalk || pad.walk ? clamp(kWalk + (pad.walk || 0), -1, 1) : BIO.manual?.walk ?? 0;
+      const K = BIO.keys, kWalk = (K.walkF ? 1 : 0) - (K.walkB ? 1 : 0);
+      R.intent.walk = kWalk || BIO.pad.walk ? clamp(kWalk + (BIO.pad.walk || 0), -1, 1) : M_.walk ?? 0;
+      R.plan.guardOn = lvl !== "sim";
       const P = R.plan.posture;
       CH.aero.posture = { tuck: clamp(0.35 + 0.65 * P.tuck, 0, 1), hang: P.hang };
+      R.telemetry.agility = { assist: lvl, own, stick: { x: +ST.x.toFixed(2), y: +ST.y.toFixed(2) }, standing: !!standing, camera: ST.camera, intent: { hang: +R.intent.hang.toFixed(2), tuck: +R.intent.tuck.toFixed(2), foreAft: +R.intent.foreAft.toFixed(2), stand: R.intent.stand }, auto: { hang: +auto.hang.toFixed(2), tuck: +auto.tuck.toFixed(2) } };
     }
     // soft-shadow capsules for the world renderer (4 segments: trunk, head, legs)
     BIO.shadowSegments = () => {

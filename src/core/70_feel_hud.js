@@ -20,7 +20,7 @@
   let on = false;
   try { on = global.localStorage?.getItem("lucid.feelHud") === "1"; } catch (_) {}
   const H = (CORE.feelHud = { get on() { return on; }, trail: { front: [], rear: [] }, frames: 0 });
-  const W = 348, HH = 224;
+  const W = 348, HH = 236;
   let cv = null, ctx = null, dpr = 1;
   function ensure() {
     if (cv) return true;
@@ -130,10 +130,12 @@
     line(252, 36, `steer ${(F.controls?.userSteerTorqueNm || 0).toFixed(1)}Nm`);
     line(252, 47, `${(v * 3.6).toFixed(0)} km/h  g${cmd.gear ?? "-"}`);
     line(252, 58, `${Math.round(pt?.engine?.rpm || 0)} rpm`);
-    const P = CORE.rider?.posture || {};
-    hbar(282, 70, 58, P.hang || 0, "hang", "#b58cff", true);
-    hbar(282, 80, 58, P.foreAft || 0, "fwd", "#b58cff", true);
-    hbar(282, 90, 58, P.tuck || 0, "tuck", "#b58cff", true);
+    // (her posture as her plan has it - the physical rider - or the two-mass rider's)
+    const BIO_ = CORE.riderBio?.active ? CORE.riderBio : null, P = (BIO_ ? BIO_.rider?.plan?.posture : CORE.rider?.posture) || {};
+    hbar(282, 66, 58, P.hang || 0, "hang", "#b58cff", true);
+    hbar(282, 75, 58, P.foreAft || 0, "fwd", "#b58cff", true);
+    hbar(282, 84, 58, P.tuck || 0, "tuck", "#b58cff", true);
+    hbar(282, 93, 58, P.stand || 0, "stand", "#b58cff");
     hbar(282, 104, 58, cmd.throttle || 0, "thr", "#63e38a");
     hbar(282, 114, 58, (cmd.frontBrakeBar || 0) / 60, "F bar", "#ff7b54");
     hbar(282, 124, 58, (cmd.rearBrakeBar || 0) / 40, "R bar", "#ff7b54");
@@ -157,6 +159,12 @@
     if (ft) {
       const rg = ft.regions, pc = (x) => Math.round(100 * (x ?? 1)), wk = ft.weakest[0].replace(/^left_/, "L ").replace(/^right_/, "R ").replace(/_/g, " ");
       line(10, 216, `FRESH legs ${pc(rg.legs)}% trunk ${pc(rg.trunk)}% arms ${pc(rg.arms)}% neck ${pc(rg.neck)}%  grip ${pc(ft.grip.L)}/${pc(ft.grip.R)}%  low ${wk} ${pc(ft.weakest[1])}%`);
+    }
+    // her body on the bike: how much she rides herself, the body stick (O / Back cycles; R3 camera)
+    const ag = RB?.telemetry?.agility;
+    if (ag) {
+      g.fillStyle = "#e6c8ff";
+      line(10, 228, `BODY ${ag.assist.toUpperCase()}  stick ${ag.stick.x >= 0 ? "+" : ""}${ag.stick.x.toFixed(2)} ${ag.stick.y >= 0 ? "+" : ""}${ag.stick.y.toFixed(2)}${ag.standing ? "  STANDING" : ""}${ag.camera ? "  (camera)" : ""}  hang ${ag.intent.hang.toFixed(2)} tuck ${ag.intent.tuck.toFixed(2)}`);
     }
   }
   let acc = 0;
