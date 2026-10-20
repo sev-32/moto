@@ -293,6 +293,12 @@
       frontLockT: null, rearLiftT: null, firstBodyContactT: null, firstBodyContactName: null,
       terminationReason: null, terminationPitchDeg: null, terminationRollDeg: null, maxLoadedFrontForceRatio: 0,
       groundStopT: null, headingVelocityReversalT: null,
+      balance: opts.probeBalance ? { samples: 0, peakRelativeResidual: 0,
+        peakAbsoluteResidualN: 0, peakAbsPitchCrossCouplingNm: 0,
+        peakAbsPitchDiagonalNm: 0, maxImpulseRelativeResidual: 0,
+        maxAbsJointImpulseEnergyDeltaJ: 0, jointImpulseFrames: 0,
+        firstFrontLock: null, firstRearLift: null, firstVertical: null,
+        firstImpact: null } : null,
       dynamics: opts.probeDynamics ? { samples: 0, peakAbsPitchAccelBodyRadS2: 0,
         peakAbsPitchGeneralizedForceNm: 0, peakAbsPitchBiasNm: 0,
         peakGeneralizedSolveConditionProxy: 0, peakMassSymmetryError: 0,
@@ -311,8 +317,31 @@
       if (d.control) d.control(ctx);
       F.controls.userSteerTorqueNm = d.control ? ctx.steer : 0;
       F.__rttLite = i % every !== 0;
-      F.step();
-      F.__rttLite = false;
+      F.__motoBalanceProbe = !!opts.probeBalance;
+      try { F.step(); } finally { F.__rttLite = false; F.__motoBalanceProbe = false; }
+      if (M.balance && F.coupled?.balanceProbe) {
+        const b = F.coupled.balanceProbe, B = M.balance;
+        B.samples++;
+        B.peakRelativeResidual = Math.max(B.peakRelativeResidual, b.equationRelativeResidual);
+        B.peakAbsoluteResidualN = Math.max(B.peakAbsoluteResidualN, b.equationResidualNorm);
+        B.peakAbsPitchCrossCouplingNm = Math.max(B.peakAbsPitchCrossCouplingNm, Math.abs(b.pitchCrossCouplingTermNm));
+        B.peakAbsPitchDiagonalNm = Math.max(B.peakAbsPitchDiagonalNm, Math.abs(b.pitchDiagonalInertiaTermNm));
+        B.maxImpulseRelativeResidual = Math.max(B.maxImpulseRelativeResidual, b.jointImpulseRelativeResidual);
+        B.maxAbsJointImpulseEnergyDeltaJ = Math.max(B.maxAbsJointImpulseEnergyDeltaJ, Math.abs(b.jointImpulseDeltaQuadraticKineticJ));
+        if (b.impulseCount) B.jointImpulseFrames++;
+        const snap = () => ({ t: +(t + dt).toFixed(4), pitchResidualNm: b.pitchEquationResidualNm,
+          pitchDiagonalNm: b.pitchDiagonalInertiaTermNm, pitchCrossNm: b.pitchCrossCouplingTermNm,
+          pitchBiasNm: b.pitchBiasNm, pitchForceNm: b.pitchGeneralizedForceNm,
+          equationRelativeResidual: b.equationRelativeResidual,
+          generalizedForceNorm: b.equationRhsNorm, jointImpulseCount: b.impulseCount,
+          impulseRelativeResidual: b.jointImpulseRelativeResidual,
+          impulseDeltaKineticJ: b.jointImpulseDeltaQuadraticKineticJ,
+          matrix: b.matrix, acceleration: b.generalizedAcceleration, rhs: b.generalizedRhs });
+        if (!B.firstFrontLock && F.tf?.loadN > 100 && F.tf?.kappa <= -0.9) B.firstFrontLock = snap();
+        if (!B.firstRearLift && s.liftR > .02) B.firstRearLift = snap();
+        if (!B.firstVertical && Math.abs(v5bodyAngles(F.q).pitchRad) > 75 * DEGR) B.firstVertical = snap();
+        if (!B.firstImpact && F.collisions?.contacts?.length) B.firstImpact = snap();
+      }
       // Sample the *existing* coupled solver outputs: no recomputation of dynamics,
       // and no artificial pitch stabilizer. Q[3] is the pitch generalized force in
       // BODY axes; it cannot be treated as net external torque without the mass
@@ -387,6 +416,12 @@
           t: +t.toFixed(3), v: +s2.speed.toFixed(2), groundV: +groundV.toFixed(2), roll: +(s2.roll / DEGR).toFixed(2), pitch: +(s2.pitch / DEGR).toFixed(2), yawRate: +(s2.yawRate / DEGR).toFixed(2),
           steer: +((F.steer || 0) / DEGR).toFixed(2), barNm: +(F.controls.userSteerTorqueNm || 0).toFixed(2), NF: Math.round(s2.NF), NR: Math.round(s2.NR),
           kF: +s2.kF.toFixed(3), kR: +s2.kR.toFixed(3), aF: +s2.aF.toFixed(2), aR: +s2.aR.toFixed(2),
+          ...(opts.probeBalance && F.coupled?.balanceProbe ? {
+            balanceRelativeResidual: F.coupled.balanceProbe.equationRelativeResidual,
+            balancePitchCrossNm: F.coupled.balanceProbe.pitchCrossCouplingTermNm,
+            balancePitchDiagonalNm: F.coupled.balanceProbe.pitchDiagonalInertiaTermNm,
+            balanceImpulseResidual: F.coupled.balanceProbe.jointImpulseRelativeResidual
+          } : {}),
           ...(opts.probeDynamics && F.coupled ? { pitchAccelBody: +F.coupled.angularAccelBody[0].toFixed(3),
             pitchGeneralizedForce: +F.coupled.generalizedForce[3].toFixed(2),
             pitchBias: +F.coupled.biasGeneralized[3].toFixed(2),
