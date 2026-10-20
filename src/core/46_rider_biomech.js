@@ -1341,6 +1341,10 @@
     function contacts(bk, ground, dt = 0) {
       const out = [];
       const b = body;
+      // R7 opt-in reaction provenance. Geometry/force/application are unchanged.
+      // Ground is a separate external contact, not a reaction on the motorcycle.
+      const audit = !!R.__interfaceProbe;
+      let groundPowerW = 0;
       for (const S of ["L", "R"]) if (foot[S].toes) foot[S].toes.M = foot[S].toes.K = 0;
       const ownMuscles = !!(R.wbc && R.wbc.driving), plantarOn = R.footModel === "plantar";
       for (const s of spheres) {
@@ -1357,7 +1361,7 @@
           const Ft = Fn > 0 ? frictionForce(st, x, nw, vt, s.k, s.cN, mu, Fn, (a) => bikeToWorld(bk, a), (w) => toBikeFrame(bk, w)) : [0, 0, 0];
           const F = add(scl(nw, Fn), Ft);
           applyContact(s.link, F, x);
-          out.push({ F: scl(F, -1), x, part: "frame" });
+          out.push({ F: scl(F, -1), x, part: "frame", ...(audit ? { link: s.link, riderPoint: x, source: "bike_envelope" } : {}) });
           st.on = true; st.F = F; st.x = x; st.n = nw; st.mu = mu; st.pen = pen; st.where = cb[1] < -0.2 ? "seat" : cb[1] < 0.36 ? "tank" : "front";
         } else if (st.on) { st.on = false; st.anchor = null; st.F = [0, 0, 0]; st.pen = 0; }
         // --- footpegs (sole points and any leg sphere): capsule of the peg radius
@@ -1379,7 +1383,7 @@
             const F = add(scl(nw, Fn), Ft);
             applyContact(s.link, F, x);
             if (s.toe) toeLoad(s, x, F, nw);
-            out.push({ F: scl(F, -1), x, part: "frame" });
+            out.push({ F: scl(F, -1), x, part: "frame", ...(audit ? { link: s.link, riderPoint: x, source: "footpeg" } : {}) });
             ps.on = true; ps.F = F; ps.side = hit.side; ps.x = x; ps.n = nw; ps.mu = mu;
           } else if (ps.on) { ps.on = false; ps.anchor = null; ps.F = [0, 0, 0]; }
         }
@@ -1413,6 +1417,7 @@
             }
             const F = add(scl(gn, Fn), Ft);
             applyContact(s.link, F, x);
+            if (audit) groundPowerW += dot(F, b.pointVelocity(s.link, b.toLocal(s.link, x)));
             if (s.toe) toeLoad(s, x, F, gn);
             gs.on = true; gs.F = F; gs.x = x; gs.n = gn; gs.mu = mu;
           } else if (gs.on) { gs.on = false; gs.anchor = null; gs.F = [0, 0, 0]; }
@@ -1448,9 +1453,12 @@
         applyContact(hd.link, F, pw);
         const lh = hd.link, Tl = mtv(b.Rw[lh], T), fe = b.fext[lh];
         fe[0] += Tl[0]; fe[1] += Tl[1]; fe[2] += Tl[2];
-        out.push({ F: scl(F, -1), x: cw, part: "steer" }, { T: scl(T, -1), part: "steer" });
+        out.push({ F: scl(F, -1), x: cw, part: "steer",
+          ...(audit ? { link: hd.link, riderPoint: pw, source: "grip_force_" + S } : {}) },
+          { T: scl(T, -1), part: "steer", ...(audit ? { link: hd.link, source: "grip_torque_" + S } : {}) });
         g.F = F; g.T = T;
       }
+      if (audit) R.last.groundPowerW = groundPowerW;
       return out;
     }
     R.gripWorld = (bk, S) => { const g = R.grips[S], gb = gripBody(bk, g); return { c: bikeToWorld(bk, add(add(gb.c, scl(gb.a, g.tOff)), g.slip ? mv(gb.Rs, g.slip) : [0, 0, 0])), a: mv(bk.R, gb.a) }; };
@@ -2979,6 +2987,8 @@
       BIO.stats.steerNm = steer; // her hands' torque about the steering axis this step
     };
     function riderWrench(F, Q, dt) {
+      BIO.interfaceProbe = null;
+      R.__interfaceProbe = false;
       if (!BIO.active || F.__rttReference) return;
       if (!BIO.placed || F.__lucidSettling) {
         // the bike is being settled/held by the reset: she rides along pre-settled and her
@@ -2991,7 +3001,57 @@
       }
       adapt(F);
       const t0 = performance.now();
+      R.__interfaceProbe = !!F.__motoInterfaceProbe;
       const rs = R.forces(bk, ground, dt);
+      if (R.__interfaceProbe) {
+        // Newton-III force/torque pairs at their OWN contact-side velocities.
+        // With sliding, bar compliance or grip misalignment, opposite forces
+        // do not entail opposite power; their sum is relative-interface work.
+        const b = R.body, aw = h.mv(bk.R, bk.axis), steerW = h.scl(aw, bk.steerRate);
+        const mul = (a, b) => h.dot(a, b);
+        const categories = {};
+        const vBikeAt = (r) => {
+          const diff = h.sub(r.x, bk.p);
+          let v = h.add(bk.v, h.cross(bk.w, diff));
+          if (r.part === "steer") {
+            const pivot = h.add(bk.p, h.mv(bk.R, bk.pivot));
+            v = h.add(v, h.scl(h.cross(aw, h.sub(r.x, pivot)), bk.steerRate));
+          }
+          return v;
+        };
+        let bikePowerW = 0, riderPowerW = 0, reactionForceClosureN = [0, 0, 0], reactionTorqueClosureNm = [0, 0, 0];
+        for (const r of rs) {
+          const c = categories[r.source] ||= { contacts: 0, bikePowerW: 0, riderPowerW: 0, pairPowerW: 0 };
+          let pb = 0, pr = 0;
+          if (r.F) {
+            const vR = b.pointVelocity(r.link, b.toLocal(r.link, r.riderPoint));
+            pb = mul(r.F, vBikeAt(r));
+            pr = -mul(r.F, vR);
+            reactionForceClosureN = h.add(reactionForceClosureN, h.add(r.F, h.scl(r.F, -1)));
+          } else if (r.T) {
+            const vR = h.mv(b.Rw[r.link], [b.v[r.link][0], b.v[r.link][1], b.v[r.link][2]]);
+            pb = mul(r.T, h.add(bk.w, steerW));
+            pr = -mul(r.T, vR);
+            reactionTorqueClosureNm = h.add(reactionTorqueClosureNm, h.add(r.T, h.scl(r.T, -1)));
+          }
+          c.contacts++; c.bikePowerW += pb; c.riderPowerW += pr; c.pairPowerW += pb + pr;
+          bikePowerW += pb; riderPowerW += pr;
+        }
+        const totalsBefore = R.totals();
+        const jointPowerW = b.tau.reduce((sum, tau, i) => i ? sum + tau * b.qd[i] : sum, 0);
+        BIO.interfaceProbe = {
+          schema: "lucid.rider.contact-work.r7", dt, count: rs.length, categories,
+          bikePowerW, riderPowerW, pairPowerW: bikePowerW + riderPowerW,
+          groundPowerW: R.last.groundPowerW || 0, jointPowerW,
+          reactionForceClosureN, reactionTorqueClosureNm,
+          riderKineticBeforeJ: totalsBefore.T,
+          riderPotentialBeforeJ: totalsBefore.mass * 9.81 * totalsBefore.com[2],
+          riderMassKg: totalsBefore.mass,
+          riderKineticAfterJ: null, riderPotentialAfterJ: null,
+          riderEnergyDeltaJ: null, riderEnergyBudgetResidualJ: null,
+        };
+      }
+      R.__interfaceProbe = false;
       apply(F, Q, rs);
       BIO.skipIntegrate = false;
       BIO.stats.stepMs += (performance.now() - t0 - BIO.stats.stepMs) * 0.02;
@@ -3023,6 +3083,16 @@
       if (BIO.skipIntegrate) { place(F); return; } // held/settling bike moved: she moves with it
       const t0 = performance.now();
       R.integrate(dt);
+      // Only after the existing ABA/integration step: read out the actual
+      // articulated kinetic and gravitational potential changes. No replay.
+      if (BIO.interfaceProbe) {
+        R.body.kinematics();
+        const t = R.totals(), m = BIO.interfaceProbe;
+        m.riderKineticAfterJ = t.T;
+        m.riderPotentialAfterJ = t.mass * 9.81 * t.com[2];
+        m.riderEnergyDeltaJ = (m.riderKineticAfterJ + m.riderPotentialAfterJ) - (m.riderKineticBeforeJ + m.riderPotentialBeforeJ);
+        m.riderEnergyBudgetResidualJ = m.riderEnergyDeltaJ - (m.riderPowerW + m.groundPowerW + m.jointPowerW) * dt;
+      }
       BIO.stats.steps++;
       BIO.stats.integrateMs = (BIO.stats.integrateMs || 0) + (performance.now() - t0 - (BIO.stats.integrateMs || 0)) * 0.02;
       // a body that left the machine far behind (a teleport) is put back on it; come off in a crash
