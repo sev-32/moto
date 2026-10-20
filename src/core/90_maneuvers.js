@@ -293,6 +293,15 @@
       frontLockT: null, rearLiftT: null, firstBodyContactT: null, firstBodyContactName: null,
       terminationReason: null, terminationPitchDeg: null, terminationRollDeg: null, maxLoadedFrontForceRatio: 0,
       groundStopT: null, headingVelocityReversalT: null,
+      interface: opts.probeInterface ? { samples: 0, sourcePairs: {},
+        bikeWorkJ: 0, riderContactWorkJ: 0, pairSlipWorkJ: 0,
+        groundWorkJ: 0, jointWorkJ: 0, riderEnergyDeltaJ: 0,
+        riderKineticDeltaJ: 0, riderPotentialDeltaJ: 0,
+        riderMassKg: null, initialRiderKineticJ: null, initialRiderPotentialJ: null,
+        finalRiderKineticJ: null, finalRiderPotentialJ: null,
+        residualJ: 0, maxAbsInstantaneousResidualJ: 0,
+        bikeLedgerMismatchJ: 0, peakAbsBikeLedgerPowerMismatchW: 0,
+        missingSamples: 0, firstContact: null } : null,
       work: opts.probeWork ? { samples: 0, maxForceClosure: 0,
         maxPowerClosureW: 0, maxPitchClosureNm: 0,
         totalGeneralizedWorkJ: 0, categories: {},
@@ -324,7 +333,45 @@
       F.__rttLite = i % every !== 0;
       F.__motoBalanceProbe = !!opts.probeBalance;
       F.__motoWorkProbe = !!opts.probeWork;
-      try { F.step(); } finally { F.__rttLite = false; F.__motoBalanceProbe = false; F.__motoWorkProbe = false; }
+      F.__motoInterfaceProbe = !!opts.probeInterface;
+      try { F.step(); } finally { F.__rttLite = false; F.__motoBalanceProbe = false; F.__motoWorkProbe = false; F.__motoInterfaceProbe = false; }
+      if (M.interface) {
+        const I = M.interface, c = CORE.riderBio?.interfaceProbe;
+        if (!c || c.riderEnergyDeltaJ === null) I.missingSamples++;
+        else {
+          I.samples++;
+          I.bikeWorkJ += c.bikePowerW * dt;
+          I.riderContactWorkJ += c.riderPowerW * dt;
+          I.pairSlipWorkJ += c.pairPowerW * dt;
+          I.groundWorkJ += c.groundPowerW * dt;
+          I.jointWorkJ += c.jointPowerW * dt;
+          I.riderEnergyDeltaJ += c.riderEnergyDeltaJ;
+          I.riderKineticDeltaJ += c.riderKineticAfterJ - c.riderKineticBeforeJ;
+          I.riderPotentialDeltaJ += c.riderPotentialAfterJ - c.riderPotentialBeforeJ;
+          I.riderMassKg = c.riderMassKg;
+          if (I.initialRiderKineticJ === null) { I.initialRiderKineticJ = c.riderKineticBeforeJ; I.initialRiderPotentialJ = c.riderPotentialBeforeJ; }
+          I.finalRiderKineticJ = c.riderKineticAfterJ;
+          I.finalRiderPotentialJ = c.riderPotentialAfterJ;
+          I.residualJ += c.riderEnergyBudgetResidualJ;
+          I.maxAbsInstantaneousResidualJ = Math.max(I.maxAbsInstantaneousResidualJ, Math.abs(c.riderEnergyBudgetResidualJ));
+          for (const [name,src] of Object.entries(c.categories)) {
+            const item = I.sourcePairs[name] ||= { count:0, bikeWorkJ:0, riderWorkJ:0, slipWorkJ:0 };
+            item.count += src.contacts;
+            item.bikeWorkJ += src.bikePowerW * dt;
+            item.riderWorkJ += src.riderPowerW * dt;
+            item.slipWorkJ += src.pairPowerW * dt;
+          }
+          const cw = F.coupled?.workProbe?.sources?.find(x => x.name === "wrench_7_riderWrench");
+          if (cw) {
+            const mismatchW = c.bikePowerW - cw.powerW;
+            I.bikeLedgerMismatchJ += mismatchW * dt;
+            I.peakAbsBikeLedgerPowerMismatchW = Math.max(I.peakAbsBikeLedgerPowerMismatchW, Math.abs(mismatchW));
+          }
+          if (!I.firstContact && c.count) I.firstContact = { t: +(t+dt).toFixed(4), sourceCount: Object.keys(c.categories).length,
+            bikePowerW: c.bikePowerW, riderPowerW: c.riderPowerW, pairPowerW: c.pairPowerW,
+            jointPowerW: c.jointPowerW, groundPowerW: c.groundPowerW, energyResidualJ: c.riderEnergyBudgetResidualJ };
+        }
+      }
       if (M.work && F.coupled?.workProbe) {
         const W = M.work, w = F.coupled.workProbe;
         W.samples++;
