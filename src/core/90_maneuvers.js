@@ -240,6 +240,10 @@
   function simulate(name, opts = {}) {
     const d = DEFS[name];
     if (!d) throw Error("unknown maneuver " + name);
+    // Reject invalid diagnostics BEFORE mutating ride state, controls, thermal state
+    // or the burnout rig. Previously a rejected >3s probe left the live ride reset.
+    if (opts.probeContinuePastAttitude && (!Number.isFinite(opts.T ?? d.T ?? 5) || (opts.T ?? d.T ?? 5) > 3 || (opts.T ?? d.T ?? 5) <= 0))
+      throw Error("overturn probe duration must be >0 and limited to 3 simulated seconds");
     // A free ride can enter the burnout rig before a scripted maneuver begins.
     // The rig forces a temporary tuck/fore-aft posture. Stop it BEFORE saving the
     // rider's posture; otherwise F.reset() stops the rig after the snapshot and
@@ -278,7 +282,7 @@
     // An explicit, bounded crash-reconstruction experiment may continue past the
     // normal Euler-angle guard to capture the FIRST actual proxy collision. It
     // never changes production rider physics or normal maneuver termination.
-    if (opts.probeContinuePastAttitude && T > 3) throw Error("overturn probe limited to 3 simulated seconds");
+    // Probe duration was validated before any session state changed.
     const mem = { lean: leanController(opts.leanGains || d.leanGains), heading: null };
     // Incident observability: a wheel lock, wheel lift, physical contact and an extreme
     // attitude are distinct events. In particular, Euler roll ceases to be a reliable
@@ -288,7 +292,12 @@
     const trace = [], M = { maxPitchDeg: -1e9, minPitchDeg: 1e9, maxAbsRollDeg: 0, maxDecelG: 0, maxAccelG: 0, minNF: 1e9, minNR: 1e9, maxNF: 0, maxNR: 0, maxLiftF: 0, maxLiftR: 0, stopT: null, crashT: null, finite: true,
       frontLockT: null, rearLiftT: null, firstBodyContactT: null, firstBodyContactName: null,
       terminationReason: null, terminationPitchDeg: null, terminationRollDeg: null, maxLoadedFrontForceRatio: 0,
-      groundStopT: null, headingVelocityReversalT: null };
+      groundStopT: null, headingVelocityReversalT: null,
+      dynamics: opts.probeDynamics ? { samples: 0, peakAbsPitchAccelBodyRadS2: 0,
+        peakAbsPitchGeneralizedForceNm: 0, peakAbsPitchBiasNm: 0,
+        peakGeneralizedSolveConditionProxy: 0, peakMassSymmetryError: 0,
+        rotorXPeakAbsNm: 0, jointLimitImpulseFrames: 0,
+        firstLock: null, firstRearLift: null, firstVertical: null, firstProxyImpact: null } : null };
     let cogPrev = null, vPrev = null, vHist = [];
     const t0 = performance.now();
     for (let i = 0; i <= n; i++) {
@@ -304,6 +313,36 @@
       F.__rttLite = i % every !== 0;
       F.step();
       F.__rttLite = false;
+      // Sample the *existing* coupled solver outputs: no recomputation of dynamics,
+      // and no artificial pitch stabilizer. Q[3] is the pitch generalized force in
+      // BODY axes; it cannot be treated as net external torque without the mass
+      // matrix/bias and the nine coupled generalized coordinates.
+      if (M.dynamics && F.coupled) {
+        const c = F.coupled, aX = c.angularAccelBody?.[0] || 0;
+        const qX = c.generalizedForce?.[3] || 0, biasX = c.biasGeneralized?.[3] || 0;
+        const dyn = M.dynamics;
+        dyn.samples++;
+        dyn.peakAbsPitchAccelBodyRadS2 = Math.max(dyn.peakAbsPitchAccelBodyRadS2, Math.abs(aX));
+        dyn.peakAbsPitchGeneralizedForceNm = Math.max(dyn.peakAbsPitchGeneralizedForceNm, Math.abs(qX));
+        dyn.peakAbsPitchBiasNm = Math.max(dyn.peakAbsPitchBiasNm, Math.abs(biasX));
+        dyn.peakGeneralizedSolveConditionProxy = Math.max(dyn.peakGeneralizedSolveConditionProxy, c.solveConditionProxy || 0);
+        dyn.peakMassSymmetryError = Math.max(dyn.peakMassSymmetryError, c.massMatrixSymmetryError || 0);
+        dyn.rotorXPeakAbsNm = Math.max(dyn.rotorXPeakAbsNm, Math.abs(c.rotorMomentumRateBodyNm?.[0] || 0));
+        if (c.jointLimitImpulses?.length) dyn.jointLimitImpulseFrames++;
+        const snapshot = () => ({ t: +(t + dt).toFixed(4), pitchDeg: +(v5bodyAngles(F.q).pitchRad / DEGR).toFixed(3),
+          pitchRateBodyRadS: F.w[0], pitchAccelerationBodyRadS2: aX,
+          pitchGeneralizedForceNm: qX, pitchBiasNm: biasX,
+          pitchMassMatrixDiagonalKgM2: c.massMatrixDiag?.[3],
+          rotorMomentumRatePitchNm: c.rotorMomentumRateBodyNm?.[0],
+          frontFxN: F.tf?.FxN || 0, frontFzN: F.tf?.loadN || 0, frontSlip: F.tf?.kappa || 0,
+          rearFzN: F.tr?.loadN || 0, worldGroundSpeedMps: Math.hypot(F.v[0], F.v[1]),
+          jointLimitImpulses: c.jointLimitImpulses?.length || 0,
+          bodyContacts: F.collisions?.contacts?.map(x => x.name) || [] });
+        if (!dyn.firstLock && F.tf?.loadN > 100 && F.tf?.kappa <= -0.9) dyn.firstLock = snapshot();
+        if (!dyn.firstRearLift && s.liftR > 0.02) dyn.firstRearLift = snapshot();
+        if (!dyn.firstVertical && Math.abs(v5bodyAngles(F.q).pitchRad) > 75 * DEGR) dyn.firstVertical = snapshot();
+        if (!dyn.firstProxyImpact && F.collisions?.contacts?.length) dyn.firstProxyImpact = snapshot();
+      }
       if (!Number.isFinite(F.p[2]) || !Number.isFinite(F.v[1])) { M.finite = false; M.terminationReason = "nonfinite_state"; break; }
       // Preserve the first *actual proxy-ground collision* even if a later frame has none.
       // The old crashT field is a termination flag, not proof of an impact.
@@ -347,7 +386,12 @@
         trace.push({
           t: +t.toFixed(3), v: +s2.speed.toFixed(2), groundV: +groundV.toFixed(2), roll: +(s2.roll / DEGR).toFixed(2), pitch: +(s2.pitch / DEGR).toFixed(2), yawRate: +(s2.yawRate / DEGR).toFixed(2),
           steer: +((F.steer || 0) / DEGR).toFixed(2), barNm: +(F.controls.userSteerTorqueNm || 0).toFixed(2), NF: Math.round(s2.NF), NR: Math.round(s2.NR),
-          kF: +s2.kF.toFixed(3), kR: +s2.kR.toFixed(3), aF: +s2.aF.toFixed(2), aR: +s2.aR.toFixed(2), fork: +(F.forkTravel * 1000).toFixed(1),
+          kF: +s2.kF.toFixed(3), kR: +s2.kR.toFixed(3), aF: +s2.aF.toFixed(2), aR: +s2.aR.toFixed(2),
+          ...(opts.probeDynamics && F.coupled ? { pitchAccelBody: +F.coupled.angularAccelBody[0].toFixed(3),
+            pitchGeneralizedForce: +F.coupled.generalizedForce[3].toFixed(2),
+            pitchBias: +F.coupled.biasGeneralized[3].toFixed(2),
+            pitchInertiaDiag: +F.coupled.massMatrixDiag[3].toFixed(2),
+            rotorPitch: +F.coupled.rotorMomentumRateBodyNm[0].toFixed(3) } : {}), fork: +(F.forkTravel * 1000).toFixed(1),
           liftF: +(s2.liftF * 1000).toFixed(0), liftR: +(s2.liftR * 1000).toFixed(0), thr: +(cmd.throttle || 0).toFixed(2), fb: +(cmd.frontBrakeBar || 0).toFixed(1),
           rb: +(cmd.rearBrakeBar || 0).toFixed(1), rpm: Math.round(ptl?.engine?.rpm || 0), gear: cmd.gear,
           // (opts.extra: a probe's own fields - e.g. the rider's state - at each sample)
