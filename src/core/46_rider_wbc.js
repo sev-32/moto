@@ -55,7 +55,7 @@
     // (and the declared CANDIDATE muscle geometry it drives with - 46_rider_muscles CANDIDATES: the
     // sternocleidomastoids as head-nod antagonists, BioRig R585; without, a push forward flips her head)
     muscle_candidates: ["scmNodAntagonist"],
-    drift: true, implicitInertia: true, contact_margin: 0.004, soleSettleS: 0.05, soleFullFrac: 0.6, contact_rows: "foot", cop_min_cap: 0.05, dcm_ff: 0, hull_max: 6, head_axes: [1, 1, 1], joint_armature: 0,
+    drift: true, implicitInertia: true, contact_margin: 0.004, soleSettleS: 0.05, soleFullFrac: 0.6, contact_rows: "foot", cop_min_cap: 0.05, dcm_ff: 0, hull_max: 6, head_axes: [1, 1, 1], joint_armature: 0, w_range: 10, range_margin: 0.09, range_kp: 100, range_kd: 20, range_joints: "Knee\\.flexionExtension",
   };
   // R1.5's parameters on one foot (lucid_bcr/fitted/agility_single_v1.json "single_overrides", CANDIDATE) -
   // fitted on MuJoCo's near-rigid feet; on her soft soles, stiffer posture and orientation holds than her
@@ -92,8 +92,13 @@
     step_margin: 0.06, max_step: 0.55, min_step: 0.12, lat_margin: 0.03, min_width: 0.1, max_width: 0.45, land_force_frac: 0.15, settle_time: 0.3, lat_inner: 0.0,
     leg_posture_scale: 1, sag_scale_shift: 0.15, reactive: true,
     single_overrides: { w_post_neck: 1.5 }, single_from: "lift", hold_leg: "joint",
-    use_single_overrides: true, blend_s: 0.15, land_ramp_s: 0.08, reanchor_land: true, reanchor_trunk: true, reanchor_spine: true, unload_com_margin: 0.01, shift_wait_s: 2.0, shift_along: 0,
+    use_single_overrides: true, blend_s: 0.15, land_ramp_s: 0.08, reanchor_land: true, reanchor_trunk: true, reanchor_spine: true, unload_com_margin: 0.01, shift_wait_s: 2.0, shift_along: 0, shift_along_step: 1, swing_ik: true, swing_ik_scale: 1, swing_ik_iters: 4, swing_ik_rot: 0.05, walk_overrides: true,
   };
+  // this port's walk (declared - the package has none): single and double support times (the first
+  // double support, the weight going onto the first stance foot, longer), the swing's lift, how long
+  // she comes to rest over the last two feet, the plan's time step, from what part of a double support
+  // the foot about to swing is unloaded, and the latest a swing may land (of its time)
+  const GAIT = { t_ss: 0.5, t_ds: 0.2, t_ds0: 0.6, t_end: 0.6, t_rest: 0.4, lift: 0.05, plan_dt: 0.005, unload_from: 0.5, max_swing_frac: 1.3 };
   const minjerk = (p0, p1, s) => {
     s = s < 0 ? 0 : s > 1 ? 1 : s;
     const k = 10 * s ** 3 - 15 * s ** 4 + 6 * s ** 5, kd = 30 * s ** 2 - 60 * s ** 3 + 30 * s ** 4, kdd = 60 * s - 180 * s ** 2 + 120 * s ** 3;
@@ -217,7 +222,7 @@
     const p = Object.assign({}, PARAMS, opts.params || {});
     const W = { p, on: !!opts.on, driving: false, last: {}, stats: {}, support: { L: true, R: true }, forceCap: { L: Infinity, R: Infinity }, swing: null, comGoal: null, comAxisScale: [1, 1, 1], legPostureScale: 1, heading: 0 };
     // ---- who is in the plan: her muscles (arms relaxed: at tone, a load), her hinges' posture rows
-    const isArm = MU.ids.map((id) => ARM_MUSCLE.test(id));
+    const isArm = MU.ids.map((id) => ARM_MUSCLE.test(id)), rangeRe = p.range_joints ? new RegExp(p.range_joints) : null;
     let free = [], fixed = [];
     const setMuscles = () => {
       free = []; fixed = [];
@@ -237,7 +242,7 @@
     const ORI = [["pelvis", linkOf.Hip, "w_pelvis"], ["thorax", linkOf.Spine02, "w_thorax"], ["head", linkOf.Head, "w_head"]];
     // ---- the intended posture: joint angles, world orientations of pelvis / chest / head, and her
     // feet's flat (R1.5: captured from the standing pose; here re-anchored by the caller - setPosture)
-    const qStar = new Float64Array(b.n), qStar0 = new Float64Array(b.n), Rstar = {}, Rstar0 = {}, soleUp = {};
+    const qStar = new Float64Array(b.n), qStar0 = new Float64Array(b.n), qdStar = new Float64Array(b.n), Rstar = {}, Rstar0 = {}, soleUp = {};
     let heading0 = 0;
     // (relaxed arms: her shoulder girdle's intended angle is where its passive tissue carries the
     // hanging arm - R1.5's standing pose was a settled one - not the pose's own: held at the pose's,
@@ -524,7 +529,10 @@
         // the capture point tracked (Hof 2005; with a moving goal, its own capture point
         // xi_d = g + g'/w0 and that one's rate - Englsberger 2015): p* = xi + k (xi - xi_d) - xi_d' / w0
         const ff = p.dcm_ff, gv = scl(W.comGoal?.v || [0, 0, 0], ff), ga = scl(W.comGoal?.a || [0, 0, 0], ff);
-        const xd = [goal[0] + gv[0] / w0, goal[1] + gv[1] / w0], xdd = [gv[0] + ga[0] / w0, gv[1] + ga[1] / w0];
+        let xd = [goal[0] + gv[0] / w0, goal[1] + gv[1] / w0], xdd = [gv[0] + ga[0] / w0, gv[1] + ga[1] / w0];
+        // (walking: the capture point's own planned path and rate - p* then sits at the planned centre
+        // of pressure, less (1 + k) of the capture point's error)
+        if (W.dcmRef) { xd = W.dcmRef.xi; xdd = W.dcmRef.xid; }
         pstar = [xi[0] + p.capture_k * (xi[0] - xd[0]) - xdd[0] / w0, xi[1] + p.capture_k * (xi[1] - xd[1]) - xdd[1] / w0];
         if (sup.length >= 3) pstar = clampToPolygon(pstar, sup.map((c) => [c.x[0], c.x[1]]), p.cop_margin);
         eC = [0, 0, currentComTarget()[2] - com[2]];
@@ -574,14 +582,25 @@
         for (let r = 0; r < 3; r++) addRow(rowOf(Jp, r), (sw.acc?.[r] || 0) + p.swing_kp * (sw.pos[r] - x[r]) + p.swing_kd * ((sw.vel?.[r] || 0) - Jz(Jp, r)) - dr[r], p.w_swing, "swing_pos");
         const Jw = b.angularJacobian(li, J3), drw = p.drift ? b.angularDrift(li) : [0, 0, 0], err = logSO3(mm(sw.R, mt(b.Rw[li])));
         for (let r = 0; r < 3; r++) addRow(rowOf(Jw, r), p.swing_ori_kp * err[r] - p.swing_ori_kd * Jz(Jw, r) - drw[r], p.w_swing * 0.5, "swing_ori");
-        for (let i = 0; i < NH; i++) if (legRow[sw.side][i]) postScale[i] *= p.swing_leg_posture_scale;
+        for (let i = 0; i < NH; i++) if (legRow[sw.side][i]) postScale[i] *= W.swingIK ? A.swing_ik_scale : p.swing_leg_posture_scale;
       }
       // posture (weak): each hinge's acceleration towards its intended angle
       for (let i = 0; i < NH; i++) {
         const w = hingeW(H[i]) * postScale[i];
         if (!w) continue;
         const li = H[i].link;
-        addUnitRow(5 + li, p.q_kp * (qStar[li] - b.q[li]) - p.q_kd * b.qd[li], w, "posture:" + H[i].id);
+        addUnitRow(5 + li, p.q_kp * (qStar[li] - b.q[li]) + p.q_kd * (qdStar[li] - b.qd[li]), w, "posture:" + H[i].id);
+      }
+      // (a knee near the end of its range: steered back inside it - the plan does not know its end stop,
+      // and her knee's extensors drive a knee through the soft stop into the hard one, which throws a
+      // swinging foot and buckles a planted leg. Both knees while she steps; on one foot, the free one)
+      const stepping = W.fsmOn && /^(step|walk)/.test(W.fsm?.mode || "");
+      if (p.w_range > 0 && (W.swing || stepping)) for (let i = 0; i < NH; i++) {
+        const h = H[i];
+        if (!(stepping ? legRow.L[i] || legRow.R[i] : legRow[W.swing.side][i]) || (rangeRe && !rangeRe.test(h.id))) continue;
+        const li = h.link, q = b.q[li], lo = h.lo + p.range_margin, hi = h.hi - p.range_margin;
+        if (q > lo && q < hi) continue;
+        addUnitRow(5 + li, p.range_kp * ((q <= lo ? lo : hi) - q) - p.range_kd * b.qd[li], p.w_range, "range:" + h.id);
       }
       // effort (a towards tone) and force regularisation: diagonal
       const sa = p.w_act, sf = p.w_force;
@@ -611,7 +630,9 @@
       for (let j = 0; j < nv; j++) {
         const st = lastStatus.get(vkey(j));
         if (st === 0) y[j] = 0;
-        else if (st === 2) y[j] = ub[j];
+        // (at its bound last tick: there again - unless the bound has since gone, a landing foot's force
+        // cap lifted: then where it was)
+        else if (st === 2) y[j] = Number.isFinite(ub[j]) ? ub[j] : Math.max(0, lastX.get(vkey(j)) - lo[j]);
         else if (st === 1) y[j] = clamp(lastX.get(vkey(j)) - lo[j], 1e-9, ub[j] - 1e-9 > 1e-9 ? ub[j] - 1e-9 : ub[j]);
         else y[j] = j < na ? clamp(MU.act[free[j]] - lo[j], 0, ub[j]) : Math.min(ub[j], 50);
       }
@@ -799,18 +820,28 @@
       // rows pull the trunk back from the orientation now intended for it)
       if (A.reanchor_spine) for (const li of spineLinks) qStar[li] = on ? b.q[li] : qStar0[li];
     };
+    const ikB = MBL.createArticulatedBody(R.model.spec), legHinges = { L: [], R: [] };
+    H.forEach((h, i) => { const m = /^(left|right)(Hip|Knee|Ankle)\./.exec(h.id); if (m) legHinges[m[1] === "left" ? "L" : "R"].push(i); });
+    function swingIK(sw, pos, Rf, dtc) {
+      ikB.p = b.p.slice(); ikB.R = b.R.slice(); ikB.q.set(b.q);
+      const li = foot[sw].link;
+      I.ikSolve(ikB, [{ type: "pos", link: li, local: [0, 0, 0], target: pos, w: 1 }, { type: "rot", link: li, target: Rf, w: A.swing_ik_rot }], legHinges[sw], null, A.swing_ik_iters);
+      for (const i of legHinges[sw]) { const l = H[i].link; qdStar[l] = W.swingIK ? (ikB.q[l] - qStar[l]) / dtc : 0; qStar[l] = ikB.q[l]; }
+      W.swingIK = true;
+    }
+    const endSwingIK = () => { if (!W.swingIK) return; qdStar.fill(0); W.swingIK = false; };
     W.requestSingleLeg = (stance) => { F.request = ["single", stance]; };
     F.debug = { footPoints, margin, centre, hull2 };
     W.requestStep = (swing, delta) => { F.request = ["step", swing, delta]; };
     W.requestDouble = () => { F.request = ["down"]; };
-    function startShift(stance, T, sagScale, cap) {
+    function startShift(stance, T, sagScale, cap, along = A.shift_along) {
       const other = stance === "L" ? "R" : "L", sc = centre(stance), oc = centre(other);
       let inward = sub(oc, sc); inward[2] = 0; inward = unit(inward);
       let goal = add(sc, scl(inward, A.lat_inner));
       // across the feet, and along the stance foot by shift_along of the way to its middle (R1.5 moved it
       // across only - its place along the feet already balanced on MuJoCo's full footprint; her tripod
       // sole narrows to the one heel pad, and her standing COM is only ~5 cm ahead of it)
-      const fw = fwdOf(); goal = sub(goal, scl(fw, (1 - A.shift_along) * dot(sub(goal, cap.com), fw)));
+      const fw = fwdOf(); goal = sub(goal, scl(fw, (1 - along) * dot(sub(goal, cap.com), fw)));
       goal[2] = cap.com[2];
       F.plan = { stance, swing: other, com0: cap.com.slice(), goal, T };
       W.comAxisScale = [1, 1, 1];
@@ -832,24 +863,145 @@
       const want = side * clamp(side * (dot(sub(xiTd, cop), lat) + side * A.lat_margin), A.min_width, A.max_width);
       return add(pl.foot0, add(scl(fw, sag), scl(lat, want - dot(sub(cur, cop), lat))));
     }
+    // ------------------------------------------------------------ the walk (this port's, declared)
+    // A footstep plan, and her capture point's path through it (Englsberger, Ott & Albu-Schaeffer 2015,
+    // "Three-dimensional bipedal walking control based on divergent component of motion"): the centre
+    // of pressure planned at the middle of each stance sole through single support and moving across
+    // to the next in double support, coming to rest between the last two feet; the capture point's
+    // path solved backwards from that rest. Her centre of mass is not carried over each foot - it
+    // sways while the capture point runs ahead to the next. Each swing as a voluntary step's.
+    const GA = Object.assign({}, GAIT, opts.gait || {});
+    W.requestWalk = (o) => { F.request = ["walk", o]; };
+    // the footsteps: o.n steps of o.step = [along, across] her heading (m), each foot landing beside a
+    // track point that advances by it a step - the leading foot first when it is across - and a last
+    // step closing her feet together
+    function walkPlan(o) {
+      const fw = fwdOf(), lt = latOf(), o0 = { L: b.ow[foot.L.link].slice(), R: b.ow[foot.R.link].slice() };
+      const off = { L: sub(centre("L"), o0.L), R: sub(centre("R"), o0.R) }, half = 0.5 * dot(sub(o0.R, o0.L), lt);
+      const d = add(scl(fw, o.step[0]), scl(lt, o.step[1])), steps = [];
+      let sw = o.first || (o.step[1] < -1e-6 ? "L" : "R"), track = scl(add(o0.L, o0.R), 0.5);
+      for (let k = 0; k <= o.n; k++) {
+        if (k < o.n) track = add(track, d);
+        const tg = add(track, scl(lt, (sw === "L" ? -1 : 1) * half));
+        tg[2] = o0[sw][2];
+        steps.push({ swing: sw, target: tg });
+        sw = sw === "L" ? "R" : "L";
+      }
+      return { steps, off };
+    }
+    // the plan from now: the double support before step k0 (the centre of pressure from cop0 to the
+    // middle of its stance sole), each step's single and double support, then to rest between the feet
+    function dcmPlan(k0, cop0) {
+      const Wk = F.walk, ph = [], pos = { L: b.ow[foot.L.link].slice(), R: b.ow[foot.R.link].slice() };
+      const c = (S) => { const x = add(pos[S], Wk.off[S]); return [x[0], x[1]]; };
+      let prev = [cop0[0], cop0[1]];
+      for (let k = k0; k < Wk.steps.length; k++) {
+        const st = Wk.steps[k], cs = c(st.swing === "L" ? "R" : "L");
+        ph.push({ T: k === 0 ? GA.t_ds0 : GA.t_ds, p0: prev, p1: cs }, { T: GA.t_ss, p0: cs, p1: cs });
+        pos[st.swing] = st.target;
+        prev = cs;
+      }
+      const cl = c("L"), cr = c("R"), end = [(cl[0] + cr[0]) / 2, (cl[1] + cr[1]) / 2];
+      ph.push({ T: GA.t_end, p0: prev, p1: end });
+      const ts = [0], P = [];
+      for (const q of ph) {
+        const n = Math.max(1, Math.round(q.T / GA.plan_dt));
+        for (let i = 0; i < n; i++) { const s = (i + 0.5) / n; P.push([q.p0[0] + (q.p1[0] - q.p0[0]) * s, q.p0[1] + (q.p1[1] - q.p0[1]) * s]); ts.push(ts[ts.length - 1] + q.T / n); }
+      }
+      // (backwards: over an interval of constant centre of pressure p, xi(t) = p + (xi(t+h) - p) e^(-w0 h))
+      const xi = new Array(ts.length);
+      xi[ts.length - 1] = end;
+      for (let i = P.length - 1; i >= 0; i--) { const e = Math.exp(-Wk.w0 * (ts[i + 1] - ts[i])); xi[i] = [P[i][0] + (xi[i + 1][0] - P[i][0]) * e, P[i][1] + (xi[i + 1][1] - P[i][1]) * e]; }
+      return { t0: F.t, ts, P, xi, end };
+    }
+    // the planned capture point now, its rate, and the planned centre of pressure
+    function dcmAt(pl, t) {
+      const tt = t - pl.t0, ts = pl.ts, w0 = F.walk.w0;
+      if (tt >= ts[ts.length - 1]) return { xi: pl.end, xid: [0, 0], p: pl.end };
+      let i = clamp(Math.floor(tt / GA.plan_dt), 0, ts.length - 2);
+      while (i > 0 && ts[i] > tt) i--;
+      while (i < ts.length - 2 && ts[i + 1] <= tt) i++;
+      const p0 = pl.P[i], e = Math.exp(-w0 * (ts[i + 1] - Math.max(tt, 0))), x1 = pl.xi[i + 1], xi = [p0[0] + (x1[0] - p0[0]) * e, p0[1] + (x1[1] - p0[1]) * e];
+      return { xi, xid: [w0 * (xi[0] - p0[0]), w0 * (xi[1] - p0[1])], p: p0 };
+    }
+    function startWalk(o, cap) {
+      F.mode = "walk";
+      const wp = walkPlan(o);
+      F.walk = { steps: wp.steps, off: wp.off, k: 0, w0: cap.w0, cap0: null };
+      F.walk.plan = dcmPlan(0, cap.xi);
+      W.comGoal = null;
+      enter("wds");
+    }
+    function walkStep(dt, cap, load, bw) {
+      const Wk = F.walk, k = Wk.k;
+      W.dcmRef = dcmAt(Wk.plan, F.t); W.comGoal = null; W.comAxisScale = [1, 1, 1]; W.legPostureScale = 1;
+      if (F.state === "wds") {
+        W.support = { L: true, R: true }; W.swing = null;
+        if (k >= Wk.steps.length) {
+          // at rest between her feet: standing again
+          W.forceCap = { L: Infinity, R: Infinity };
+          if (F.tState >= GA.t_end + GA.t_rest) { W.dcmRef = null; const e = Wk.plan.end, fc = feetCenter(); W.comOffset = [e[0] - fc[0], e[1] - fc[1], W.comOffset[2]]; F.mode = null; enter("double"); }
+          return;
+        }
+        const sw = Wk.steps[k].swing, stance = sw === "L" ? "R" : "L", T = k === 0 ? GA.t_ds0 : GA.t_ds, s = F.tState / T;
+        // (the foot about to swing unloaded through the double support's later part: its force cap
+        // ramped down from what it bore; a foot just landed takes her weight over land_ramp_s)
+        const r = clamp((s - GA.unload_from) / Math.max(1e-6, 1 - GA.unload_from), 0, 1);
+        if (r > 0 && Wk.cap0 == null) Wk.cap0 = Math.max(load[sw], 0.05 * bw);
+        W.forceCap = { [stance]: Infinity, [sw]: r > 0 ? Wk.cap0 * (1 - r) : Infinity };
+        if (k > 0 && F.tState < A.land_ramp_s) W.forceCap[stance] = Math.max(Wk.landCap0 || 0, 0.05 * bw) + (F.tState / A.land_ramp_s) * bw;
+        if (s >= 1) {
+          const li = foot[sw].link;
+          Wk.foot0 = b.ow[li].slice(); Wk.R = b.Rw[li].slice(); Wk.cap0 = null;
+          W.support = { [stance]: true, [sw]: "release" }; W.forceCap = { [stance]: Infinity, [sw]: 0 };
+          reanchorLegs();
+          enter("wss");
+        }
+        return;
+      }
+      // single support: the free foot on its way to its footstep
+      const st = Wk.steps[k], sw = st.swing, stance = sw === "L" ? "R" : "L";
+      W.support = { [stance]: true, [sw]: "release" };
+      const s = F.tState / GA.t_ss, ss = clamp(s, 0, 1), Hh = GA.lift;
+      let [ph, vh, ah] = minjerk(Wk.foot0, st.target, s);
+      vh = scl(vh, 1 / GA.t_ss); ah = scl(ah, 1 / (GA.t_ss * GA.t_ss));
+      const pos = add(ph, [0, 0, Hh * Math.sin(Math.PI * ss) - 0.006 * ss]);
+      const vel = add(vh, [0, 0, (Hh * Math.PI * Math.cos(Math.PI * ss)) / GA.t_ss]);
+      const acc = add(ah, [0, 0, (-Hh * Math.PI * Math.PI * Math.sin(Math.PI * ss)) / (GA.t_ss * GA.t_ss)]);
+      const touched = load[sw] > A.land_force_frac * bw || (s > 0.6 && footLow(sw) < 0.001);
+      if ((s > 0.55 && touched) || s >= GA.max_swing_frac) {
+        W.swing = null; W.support = { L: true, R: true }; Wk.landCap0 = load[sw]; endSwingIK();
+        if (A.reanchor_land) reanchorLegs();
+        // (re-planned from here, the new foot where it landed: the capture point's path through what is left)
+        Wk.k++;
+        Wk.plan = dcmPlan(Wk.k, W.dcmRef.p);
+        W.dcmRef = dcmAt(Wk.plan, F.t);
+        enter("wds");
+        return;
+      }
+      W.swing = { side: sw, pos, vel, acc, R: Wk.R };
+      if (A.swing_ik) swingIK(sw, pos, Wk.R, dt);
+    }
     F.step = (dt) => {
       F.t += dt; F.tState += dt;
       const cap = capture(), load = footLoad(), bw = I.bodyWeightN;
       // (the one-foot parameters fade in on one foot, out on two)
       if (A.use_single_overrides) {
-        const want = (A.single_from === "lift" ? F.state === "swing" : F.state === "shift" || F.state === "swing") || F.state === "hold" ? 1 : 0;
+        const want = (A.single_from === "lift" ? F.state === "swing" : F.state === "shift" || F.state === "swing") || F.state === "hold" || (A.walk_overrides && (F.state === "wss" || F.state === "wds")) ? 1 : 0;
         F.blend = clamp(F.blend + Math.sign(want - F.blend) * Math.min(Math.abs(want - F.blend), dt / A.blend_s), 0, 1);
         for (const k in A.single_overrides) p[k] = base[k] + F.blend * (A.single_overrides[k] - base[k]);
       }
+      if (F.state === "wds" || F.state === "wss") { walkStep(dt, cap, load, bw); return; }
       if (F.state === "double") {
-        W.support = { L: true, R: true }; W.swing = null; W.comGoal = null; W.comAxisScale = [1, 1, 1]; W.legPostureScale = 1;
+        W.support = { L: true, R: true }; W.swing = null; W.comGoal = null; W.dcmRef = null; W.comAxisScale = [1, 1, 1]; W.legPostureScale = 1;
         W.forceCap = { L: Infinity, R: Infinity };
         const mg = margin(cap.xi, footPoints("L").concat(footPoints("R")));
         F.lastMargin = mg;
         if (F.request) {
           const rq = F.request; F.request = null;
           if (rq[0] === "single") { F.mode = "single"; startShift(rq[1], A.shift_time_voluntary, 1, cap); enter("shift"); }
-          else if (rq[0] === "step") { F.mode = "step_voluntary"; startShift(rq[1] === "L" ? "R" : "L", A.shift_time_voluntary * 0.6, 1, cap); F.plan.delta = rq[2]; enter("shift"); }
+          else if (rq[0] === "step") { F.mode = "step_voluntary"; startShift(rq[1] === "L" ? "R" : "L", A.shift_time_voluntary * 0.6, 1, cap, A.shift_along_step); F.plan.delta = rq[2]; enter("shift"); }
+          else if (rq[0] === "walk") startWalk(rq[1], cap);
         } else if (A.reactive && mg < -A.step_trigger_m) {
           // her capture point has left her feet: step with the less loaded foot
           const sw = load.L < load.R ? "L" : "R";
@@ -940,9 +1092,13 @@
           vel = add(vh, [0, 0, (Hh * Math.PI * Math.cos(Math.PI * ss)) / pl.Tsw]);
           acc = add(ah, [0, 0, (-Hh * Math.PI * Math.PI * Math.sin(Math.PI * ss)) / (pl.Tsw * pl.Tsw)]);
           const touched = load[sw] > A.land_force_frac * bw || (s > 0.6 && footLow(sw) < 0.001);
-          if ((s > 0.55 && touched) || s >= 1.35) { W.swing = null; W.support = { L: true, R: true }; pl.landCap0 = load[sw]; enter("land"); return; }
+          if ((s > 0.55 && touched) || s >= 1.35) { W.swing = null; W.support = { L: true, R: true }; pl.landCap0 = load[sw]; endSwingIK(); enter("land"); return; }
         }
         W.swing = { side: sw, pos, vel, acc, R: pl.R };
+        // (the free leg's intended posture along its path: the leg solved to the foot's place and
+        // orientation on it, and the rate it moves at - its posture rows then carry the swing instead of
+        // holding the leg where it lifted)
+        if (A.swing_ik && F.mode !== "single") swingIK(sw, pos, pl.R, dt);
         if (F.mode === "step_reactive") {
           // during a reactive step: her momentum carries on (weak along), across over the stance foot
           const fw = fwdOf(), gp = add(cap.com, scl(latOf(), dot(sub(pl.goal, cap.com), latOf())));
@@ -969,7 +1125,7 @@
         }
       }
     };
-    W.reset = () => { lastStatus.clear(); lastX.clear(); W.snap = true; W.comOffset = null; W.swing = null; W.comGoal = null; W.support = { L: true, R: true }; W.forceCap = { L: Infinity, R: Infinity }; warm.fill(0); };
+    W.reset = () => { lastStatus.clear(); lastX.clear(); qdStar.fill(0); W.swingIK = false; W.snap = true; W.comOffset = null; W.swing = null; W.comGoal = null; W.dcmRef = null; W.support = { L: true, R: true }; W.forceCap = { L: Infinity, R: Infinity }; warm.fill(0); };
     W.setParams = (q) => { Object.assign(p, q); setMuscles(); refreshFixed(); };
     W.control = control;
     W.qStar = qStar;
@@ -979,7 +1135,7 @@
     return W;
   }
 
-  const api = { create, PARAMS, AGILITY, PACKAGE_SINGLE };
+  const api = { create, PARAMS, AGILITY, PACKAGE_SINGLE, GAIT };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   global.LUCID_RIDER_WBC = api;
 })(typeof window !== "undefined" ? window : globalThis);
