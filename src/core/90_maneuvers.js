@@ -275,6 +275,10 @@
     F.controls.userSteerTorqueNm = 0;
     const rider = riderCom(F);
     const dt = F.S.dt, T = opts.T ?? d.T ?? 5, n = Math.round(T / dt), every = Math.max(1, Math.round((opts.traceHz ? 1 / opts.traceHz : 0.05) / dt));
+    // An explicit, bounded crash-reconstruction experiment may continue past the
+    // normal Euler-angle guard to capture the FIRST actual proxy collision. It
+    // never changes production rider physics or normal maneuver termination.
+    if (opts.probeContinuePastAttitude && T > 3) throw Error("overturn probe limited to 3 simulated seconds");
     const mem = { lean: leanController(opts.leanGains || d.leanGains), heading: null };
     // Incident observability: a wheel lock, wheel lift, physical contact and an extreme
     // attitude are distinct events. In particular, Euler roll ceases to be a reliable
@@ -283,7 +287,8 @@
     // and the previous scalar acceptance bands are unchanged.
     const trace = [], M = { maxPitchDeg: -1e9, minPitchDeg: 1e9, maxAbsRollDeg: 0, maxDecelG: 0, maxAccelG: 0, minNF: 1e9, minNR: 1e9, maxNF: 0, maxNR: 0, maxLiftF: 0, maxLiftR: 0, stopT: null, crashT: null, finite: true,
       frontLockT: null, rearLiftT: null, firstBodyContactT: null, firstBodyContactName: null,
-      terminationReason: null, terminationPitchDeg: null, terminationRollDeg: null, maxLoadedFrontForceRatio: 0 };
+      terminationReason: null, terminationPitchDeg: null, terminationRollDeg: null, maxLoadedFrontForceRatio: 0,
+      groundStopT: null, headingVelocityReversalT: null };
     let cogPrev = null, vPrev = null, vHist = [];
     const t0 = performance.now();
     for (let i = 0; i <= n; i++) {
@@ -329,11 +334,18 @@
         M.maxNF = Math.max(M.maxNF, s2.NF); M.maxNR = Math.max(M.maxNR, s2.NR);
         M.maxLiftF = Math.max(M.maxLiftF, s2.liftF); M.maxLiftR = Math.max(M.maxLiftR, s2.liftR);
         if (M.stopT === null && (d.speed || 0) > 1 && s2.speed < 0.3) M.stopT = +t.toFixed(3);
+        // The old stopT is projected onto the bike's body-forward heading. After
+        // overturn it changes sign even while the COM is travelling fast. Preserve
+        // it for compatibility but independently measure world-ground speed.
+        const groundV = Math.hypot(F.v[0], F.v[1]);
+        if (M.groundStopT === null && (d.speed || 0) > 1 && groundV < 0.3) M.groundStopT = +t.toFixed(3);
+        if (M.headingVelocityReversalT === null && s2.speed < -0.3 && groundV > 3)
+          M.headingVelocityReversalT = +t.toFixed(3);
         const L = F.last || {};
         if (M.crashT === null && (L.collision?.contacts?.length || F.collisions?.contacts?.length)) M.crashT = +t.toFixed(3);
         const ptl = pt?.states?.free;
         trace.push({
-          t: +t.toFixed(3), v: +s2.speed.toFixed(2), roll: +(s2.roll / DEGR).toFixed(2), pitch: +(s2.pitch / DEGR).toFixed(2), yawRate: +(s2.yawRate / DEGR).toFixed(2),
+          t: +t.toFixed(3), v: +s2.speed.toFixed(2), groundV: +groundV.toFixed(2), roll: +(s2.roll / DEGR).toFixed(2), pitch: +(s2.pitch / DEGR).toFixed(2), yawRate: +(s2.yawRate / DEGR).toFixed(2),
           steer: +((F.steer || 0) / DEGR).toFixed(2), barNm: +(F.controls.userSteerTorqueNm || 0).toFixed(2), NF: Math.round(s2.NF), NR: Math.round(s2.NR),
           kF: +s2.kF.toFixed(3), kR: +s2.kR.toFixed(3), aF: +s2.aF.toFixed(2), aR: +s2.aR.toFixed(2), fork: +(F.forkTravel * 1000).toFixed(1),
           liftF: +(s2.liftF * 1000).toFixed(0), liftR: +(s2.liftR * 1000).toFixed(0), thr: +(cmd.throttle || 0).toFixed(2), fb: +(cmd.frontBrakeBar || 0).toFixed(1),
@@ -343,7 +355,7 @@
         });
       }
       const attitude = v5bodyAngles(F.q);
-      if (Math.abs(attitude.rollRad) > 1.45) {
+      if (!opts.probeContinuePastAttitude && Math.abs(attitude.rollRad) > 1.45) {
         M.crashT = M.crashT ?? +t.toFixed(3);
         M.terminationPitchDeg = +(attitude.pitchRad / DEGR).toFixed(3);
         M.terminationRollDeg = +(attitude.rollRad / DEGR).toFixed(3);
