@@ -293,6 +293,11 @@
       frontLockT: null, rearLiftT: null, firstBodyContactT: null, firstBodyContactName: null,
       terminationReason: null, terminationPitchDeg: null, terminationRollDeg: null, maxLoadedFrontForceRatio: 0,
       groundStopT: null, headingVelocityReversalT: null,
+      work: opts.probeWork ? { samples: 0, maxForceClosure: 0,
+        maxPowerClosureW: 0, maxPitchClosureNm: 0,
+        totalGeneralizedWorkJ: 0, categories: {},
+        firstFrontLock: null, firstRearLift: null, firstVertical: null,
+        firstImpact: null, preBrake: null } : null,
       balance: opts.probeBalance ? { samples: 0, peakRelativeResidual: 0,
         peakAbsoluteResidualN: 0, peakAbsPitchCrossCouplingNm: 0,
         peakAbsPitchDiagonalNm: 0, maxImpulseRelativeResidual: 0,
@@ -318,7 +323,35 @@
       F.controls.userSteerTorqueNm = d.control ? ctx.steer : 0;
       F.__rttLite = i % every !== 0;
       F.__motoBalanceProbe = !!opts.probeBalance;
-      try { F.step(); } finally { F.__rttLite = false; F.__motoBalanceProbe = false; }
+      F.__motoWorkProbe = !!opts.probeWork;
+      try { F.step(); } finally { F.__rttLite = false; F.__motoBalanceProbe = false; F.__motoWorkProbe = false; }
+      if (M.work && F.coupled?.workProbe) {
+        const W = M.work, w = F.coupled.workProbe;
+        W.samples++;
+        W.maxForceClosure = Math.max(W.maxForceClosure, w.normForceClosure);
+        W.maxPowerClosureW = Math.max(W.maxPowerClosureW, Math.abs(w.powerClosureW));
+        W.maxPitchClosureNm = Math.max(W.maxPitchClosureNm, Math.abs(w.pitchForceClosureNm));
+        W.totalGeneralizedWorkJ += w.totalStepWorkJ;
+        for (const c of w.sources) {
+          const x = W.categories[c.name] ||= {signedWorkJ: 0, positiveWorkJ: 0, negativeWorkJ: 0, maxAbsPowerW: 0, maxAbsPitchNm: 0};
+          x.signedWorkJ += c.stepWorkJ;
+          x.positiveWorkJ += Math.max(0, c.stepWorkJ);
+          x.negativeWorkJ += Math.min(0, c.stepWorkJ);
+          x.maxAbsPowerW = Math.max(x.maxAbsPowerW, Math.abs(c.powerW));
+          x.maxAbsPitchNm = Math.max(x.maxAbsPitchNm, Math.abs(c.pitchNm));
+        }
+        // Compact per-event provenance, not 540Hz stored snapshots of the 9xN vectors.
+        const snapshot = () => ({t: +(t + dt).toFixed(4), speedMps: Math.hypot(F.v[0], F.v[1]),
+          totalPowerW: w.totalGeneralizedPowerW, frontSlip: w.frontSlip, frontLoadN: w.frontLoadN,
+          rearLoadN: w.rearLoadN, pitchGeneralizedNm: F.coupled.generalizedForce[3],
+          sources: w.sources.map(c => ({name:c.name, pitchNm:c.pitchNm, powerW:c.powerW, general:c.generalized.slice()})),
+          forceClosure: w.normForceClosure, powerClosureW: w.powerClosureW });
+        if (!W.preBrake && t >= .25) W.preBrake = snapshot();
+        if (!W.firstFrontLock && F.tf?.loadN > 100 && F.tf?.kappa <= -.9) W.firstFrontLock = snapshot();
+        if (!W.firstRearLift && s.liftR > .02) W.firstRearLift = snapshot();
+        if (!W.firstVertical && Math.abs(v5bodyAngles(F.q).pitchRad) > 75 * DEGR) W.firstVertical = snapshot();
+        if (!W.firstImpact && F.collisions?.contacts?.length) W.firstImpact = snapshot();
+      }
       if (M.balance && F.coupled?.balanceProbe) {
         const b = F.coupled.balanceProbe, B = M.balance;
         B.samples++;
@@ -416,6 +449,11 @@
           t: +t.toFixed(3), v: +s2.speed.toFixed(2), groundV: +groundV.toFixed(2), roll: +(s2.roll / DEGR).toFixed(2), pitch: +(s2.pitch / DEGR).toFixed(2), yawRate: +(s2.yawRate / DEGR).toFixed(2),
           steer: +((F.steer || 0) / DEGR).toFixed(2), barNm: +(F.controls.userSteerTorqueNm || 0).toFixed(2), NF: Math.round(s2.NF), NR: Math.round(s2.NR),
           kF: +s2.kF.toFixed(3), kR: +s2.kR.toFixed(3), aF: +s2.aF.toFixed(2), aR: +s2.aR.toFixed(2),
+          ...(opts.probeWork && F.coupled?.workProbe ? {
+            generalizedPowerW: +F.coupled.workProbe.totalGeneralizedPowerW.toFixed(2),
+            forceClosure: F.coupled.workProbe.normForceClosure,
+            workPowerClosure: F.coupled.workProbe.powerClosureW,
+          } : {}),
           ...(opts.probeBalance && F.coupled?.balanceProbe ? {
             balanceRelativeResidual: F.coupled.balanceProbe.equationRelativeResidual,
             balancePitchCrossNm: F.coupled.balanceProbe.pitchCrossCouplingTermNm,
