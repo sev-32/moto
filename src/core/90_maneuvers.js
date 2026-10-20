@@ -276,19 +276,37 @@
     const rider = riderCom(F);
     const dt = F.S.dt, T = opts.T ?? d.T ?? 5, n = Math.round(T / dt), every = Math.max(1, Math.round((opts.traceHz ? 1 / opts.traceHz : 0.05) / dt));
     const mem = { lean: leanController(opts.leanGains || d.leanGains), heading: null };
-    const trace = [], M = { maxPitchDeg: -1e9, minPitchDeg: 1e9, maxAbsRollDeg: 0, maxDecelG: 0, maxAccelG: 0, minNF: 1e9, minNR: 1e9, maxNF: 0, maxNR: 0, maxLiftF: 0, maxLiftR: 0, stopT: null, crashT: null, finite: true };
+    // Incident observability: a wheel lock, wheel lift, physical contact and an extreme
+    // attitude are distinct events. In particular, Euler roll ceases to be a reliable
+    // low-side classification as pitch approaches +/-90 degrees (gimbal singularity).
+    // These fields are diagnostic only: the integrator, tire forces, crash stop criteria,
+    // and the previous scalar acceptance bands are unchanged.
+    const trace = [], M = { maxPitchDeg: -1e9, minPitchDeg: 1e9, maxAbsRollDeg: 0, maxDecelG: 0, maxAccelG: 0, minNF: 1e9, minNR: 1e9, maxNF: 0, maxNR: 0, maxLiftF: 0, maxLiftR: 0, stopT: null, crashT: null, finite: true,
+      frontLockT: null, rearLiftT: null, firstBodyContactT: null, firstBodyContactName: null,
+      terminationReason: null, terminationPitchDeg: null, terminationRollDeg: null, maxLoadedFrontForceRatio: 0 };
     let cogPrev = null, vPrev = null, vHist = [];
     const t0 = performance.now();
     for (let i = 0; i <= n; i++) {
       const t = i * dt;
       const s = state(F, rider);
+      if (M.frontLockT === null && s.NF > 100 && s.kF <= -0.9) M.frontLockT = +t.toFixed(4);
+      if (M.rearLiftT === null && s.liftR > 0.02) M.rearLiftT = +t.toFixed(4);
+      if (s.NF > 100) M.maxLoadedFrontForceRatio = Math.max(M.maxLoadedFrontForceRatio,
+        Math.hypot(F.tf?.FxN || 0, F.tf?.FyN || 0) / s.NF);
       const ctx = { F, cmd, s, t, dt, mem, steer: 0, rpm: pt?.states?.free?.engine?.rpm || 0 };
       if (d.control) d.control(ctx);
       F.controls.userSteerTorqueNm = d.control ? ctx.steer : 0;
       F.__rttLite = i % every !== 0;
       F.step();
       F.__rttLite = false;
-      if (!Number.isFinite(F.p[2]) || !Number.isFinite(F.v[1])) { M.finite = false; break; }
+      if (!Number.isFinite(F.p[2]) || !Number.isFinite(F.v[1])) { M.finite = false; M.terminationReason = "nonfinite_state"; break; }
+      // Preserve the first *actual proxy-ground collision* even if a later frame has none.
+      // The old crashT field is a termination flag, not proof of an impact.
+      const bodyContacts = F.collisions?.contacts || [];
+      if (bodyContacts.length && M.firstBodyContactT === null) {
+        M.firstBodyContactT = +t.toFixed(4);
+        M.firstBodyContactName = bodyContacts[0].name;
+      }
       // CoG kinematics for honest accelerations (the body origin swings with pitch)
       const cg = systemCog(F, rider).c, vcg = cogPrev ? [(cg[0] - cogPrev[0]) / dt, (cg[1] - cogPrev[1]) / dt, (cg[2] - cogPrev[2]) / dt] : null;
       cogPrev = cg;
@@ -324,8 +342,19 @@
           ...(opts.extra ? opts.extra(t) : {}),
         });
       }
-      if (Math.abs(v5bodyAngles(F.q).rollRad) > 1.45) { M.crashT = M.crashT ?? +t.toFixed(3); break; }
+      const attitude = v5bodyAngles(F.q);
+      if (Math.abs(attitude.rollRad) > 1.45) {
+        M.crashT = M.crashT ?? +t.toFixed(3);
+        M.terminationPitchDeg = +(attitude.pitchRad / DEGR).toFixed(3);
+        M.terminationRollDeg = +(attitude.rollRad / DEGR).toFixed(3);
+        // The previous threshold is preserved, but near vertical pitch its Euler
+        // roll component cannot identify a low-side. Name the mode accordingly.
+        M.terminationReason = Math.abs(attitude.pitchRad) > 75 * DEGR
+          ? "near_vertical_pitch_attitude" : "high_bank_attitude";
+        break;
+      }
     }
+    if (!M.terminationReason && M.firstBodyContactT !== null) M.terminationReason = "body_contact";
     if (d.teardown) d.teardown();
     if (BIO && riderSave) {
       BIO.auto = riderSave.auto;
