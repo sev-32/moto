@@ -27,9 +27,10 @@
 // sternocleidomastoids); 46 switches both back when she stops. The rest, each where it is written: a
 // planted sole's flat follows where its pads lay it while they bear broadly (soleFullFrac); the
 // height of her centre of mass held over the feet that support her; on one foot, the pelvis, chest,
-// spine and legs held where she stood as the foot came up (reanchor_*); the free foot held from her
-// hip turned only with her heading; a stepping foot aimed across as well as along at her capture
-// point; the QP solved on unit-diagonal variables.
+// spine and legs held where she stood as the foot came up (reanchor_*), the free leg held at its
+// joints (hold_leg), her standing parameters but a firmer neck (single_overrides, from lift-off), her
+// legs' posture rows at full strength through the weight shift (leg_posture_scale); a stepping foot
+// aimed across as well as along at her capture point; the QP solved on unit-diagonal variables.
 // Pure JS (no browser APIs) so it runs in the unit tests.
 (function (global) {
   "use strict";
@@ -56,26 +57,41 @@
     muscle_candidates: ["scmNodAntagonist"],
     drift: true, implicitInertia: true, contact_margin: 0.004, soleSettleS: 0.05, soleFullFrac: 0.6, contact_rows: "foot", cop_min_cap: 0.05, dcm_ff: 0, hull_max: 6, head_axes: [1, 1, 1], joint_armature: 0,
   };
+  // R1.5's parameters on one foot (lucid_bcr/fitted/agility_single_v1.json "single_overrides", CANDIDATE) -
+  // fitted on MuJoCo's near-rigid feet; on her soft soles, stiffer posture and orientation holds than her
+  // standing ones saturate her trunk's and neck's muscles and she falls in the single-leg hold. Kept for
+  // reference: agility { single_overrides: PACKAGE_SINGLE, single_from: "shift" } runs the package's
+  const PACKAGE_SINGLE = {
+    com_kp: 5.616026177816835, com_kd: 3.8609813185877275, w_com: 149.58755302053882, ori_kp: 274.4112618502181, ori_kd: 142.63846691618633,
+    head_ori_scale: 1.0198182376161198, w_pelvis: 3.692690693719037, w_thorax: 2.537219133824893, w_head: 6.2644428638529766,
+    w_angmom: 7.375066453793215, angmom_k: 7.490306984924407, q_kp: 146.63913329104128, q_kd: 13.43725378036352, w_post: 1.5061571184105433,
+    w_post_trunk: 2.0545731405148104, w_post_neck: 6.659973585286406, w_contact: 2271.6197094242784, contact_kd: 59.82066123063514,
+    w_swing: 31.69991147815781, swing_kp: 279.9118992751573, swing_kd: 28.574048947164968, w_act: 0.5519534874094937,
+    capture_k: 1.1847807820721448, cop_margin: 0.007637385634238301, w_foot_flat: 5.774771484469889, foot_flat_kp: 62.072676091435355,
+    foot_flat_kd: 15.412438795426032,
+  };
   // R1.5 lucid_bcr/agility.py AgilityParams, as fitted in lucid_bcr/fitted/agility_single_v1.json (its
   // "agility" block, CANDIDATE): the support state machine's timings, thresholds and the controller's
   // parameters on one foot. This port's own terms, declared: blend_s (the one-foot parameters fade in and
   // out over it, not switched at a state change - R1.5's handoff: "context switch at touchdown"),
   // land_ramp_s (a landing foot's force cap ramps in over it), reanchor_land (both legs' intended posture
-  // re-anchored at touchdown, as R1.5 re-anchors the stance leg at lift-off)
+  // re-anchored at touchdown, as R1.5 re-anchors the stance leg at lift-off). And this port's values,
+  // declared (measured: tests/rider_wbc.test.mjs, docs/PHYSICS.md):
+  //   leg_posture_scale  her legs' posture rows at full strength through the weight shift (the package:
+  //                      0.297 - on her soft soles a sideways sway of legs, pelvis and both feet rolling on
+  //                      their pads then grows, and she falls in the shift)
+  //   single_overrides   on one foot her standing parameters, but for a firmer neck (w_post_neck 1.5; the
+  //                      package's own, PACKAGE_SINGLE, above)
+  //   single_from        engaged as the foot lifts ("lift"; the package: "shift", as the shift begins)
+  //   hold_leg           the free leg held at its joints where they are as it comes up ("joint"; the
+  //                      package: "foot", a foot target following her pelvis - leg and pelvis then drive
+  //                      each other, the free hip swinging +-7 deg, and she falls in the hold)
   const AGILITY = {
     step_trigger_m: 0.01, shift_time: 0.14, shift_time_voluntary: 0.5518191617571635, unload_frac: 0.12, unload_frac_voluntary: 0.03,
     unload_time: 0.29280249609608416, lift_margin: 0.008081395934923873, swing_time: 0.36, lift_height: 0.06, hold_height: 0.13591409142295227,
     step_margin: 0.06, max_step: 0.55, min_step: 0.12, lat_margin: 0.03, min_width: 0.1, max_width: 0.45, land_force_frac: 0.15, settle_time: 0.3, lat_inner: 0.0,
-    leg_posture_scale: 0.2972832765573508, sag_scale_shift: 0.15, reactive: true,
-    single_overrides: {
-      com_kp: 5.616026177816835, com_kd: 3.8609813185877275, w_com: 149.58755302053882, ori_kp: 274.4112618502181, ori_kd: 142.63846691618633,
-      head_ori_scale: 1.0198182376161198, w_pelvis: 3.692690693719037, w_thorax: 2.537219133824893, w_head: 6.2644428638529766,
-      w_angmom: 7.375066453793215, angmom_k: 7.490306984924407, q_kp: 146.63913329104128, q_kd: 13.43725378036352, w_post: 1.5061571184105433,
-      w_post_trunk: 2.0545731405148104, w_post_neck: 6.659973585286406, w_contact: 2271.6197094242784, contact_kd: 59.82066123063514,
-      w_swing: 31.69991147815781, swing_kp: 279.9118992751573, swing_kd: 28.574048947164968, w_act: 0.5519534874094937,
-      capture_k: 1.1847807820721448, cop_margin: 0.007637385634238301, w_foot_flat: 5.774771484469889, foot_flat_kp: 62.072676091435355,
-      foot_flat_kd: 15.412438795426032,
-    },
+    leg_posture_scale: 1, sag_scale_shift: 0.15, reactive: true,
+    single_overrides: { w_post_neck: 1.5 }, single_from: "lift", hold_leg: "joint",
     use_single_overrides: true, blend_s: 0.15, land_ramp_s: 0.08, reanchor_land: true, reanchor_trunk: true, reanchor_spine: true, unload_com_margin: 0.01, shift_wait_s: 2.0, shift_along: 0,
   };
   const minjerk = (p0, p1, s) => {
@@ -821,7 +837,7 @@
       const cap = capture(), load = footLoad(), bw = I.bodyWeightN;
       // (the one-foot parameters fade in on one foot, out on two)
       if (A.use_single_overrides) {
-        const want = F.state === "shift" || F.state === "swing" || F.state === "hold" ? 1 : 0;
+        const want = (A.single_from === "lift" ? F.state === "swing" : F.state === "shift" || F.state === "swing") || F.state === "hold" ? 1 : 0;
         F.blend = clamp(F.blend + Math.sign(want - F.blend) * Math.min(Math.abs(want - F.blend), dt / A.blend_s), 0, 1);
         for (const k in A.single_overrides) p[k] = base[k] + F.blend * (A.single_overrides[k] - base[k]);
       }
@@ -899,8 +915,12 @@
           // towards the free side then swings the held leg out with it, and the leg's reaction rolls it
           // further)
           const Rh = Rz(W.heading), ph = b.ow[0], li = foot[sw].link;
-          if (!pl.holdRel) { pl.holdRel = mtv(Rh, sub(b.ow[li], ph)); pl.holdRrel = mm(mt(Rh), b.Rw[li]); }
-          W.swing = { side: sw, pos: add(ph, mv(Rh, pl.holdRel)), vel: b.pointVelocity(0, [0, 0, 0]), acc: [0, 0, 0], R: mm(Rh, pl.holdRrel) };
+          if (!pl.holdRel) {
+            pl.holdRel = mtv(Rh, sub(b.ow[li], ph)); pl.holdRrel = mm(mt(Rh), b.Rw[li]);
+            // (held at its joints instead: the free leg's intended posture where it is as it comes up)
+            if (A.hold_leg === "joint") for (const h of H) if (h.id.startsWith(sw === "L" ? "left" : "right") && /(Hip|Knee|Ankle)\./.test(h.id)) qStar[h.link] = b.q[h.link];
+          }
+          W.swing = A.hold_leg === "joint" ? null : { side: sw, pos: add(ph, mv(Rh, pl.holdRel)), vel: b.pointVelocity(0, [0, 0, 0]), acc: [0, 0, 0], R: mm(Rh, pl.holdRrel) };
           W.comGoal = { p: pl.goal, v: [0, 0, 0], a: [0, 0, 0] }; W.comAxisScale = [1, 1, 1];
           if (F.request && F.request[0] === "down") { F.request = null; pl.target = add(pl.foot0, [0, 0, -0.01]); pl.Tsw = 0.6; pl.height = 0; F.mode = "down"; enter("swing"); }
           return;
@@ -959,7 +979,7 @@
     return W;
   }
 
-  const api = { create, PARAMS, AGILITY };
+  const api = { create, PARAMS, AGILITY, PACKAGE_SINGLE };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   global.LUCID_RIDER_WBC = api;
 })(typeof window !== "undefined" ? window : globalThis);

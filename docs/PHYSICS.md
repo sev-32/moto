@@ -730,8 +730,8 @@ Standing and stepping driven by her muscles alone: no joint motors, no pose serv
 assist (48's stands down while it drives). It is R1.5's `lucid_bcr.neuro` whole-body controller,
 ported - the muscle-level whole-body QP of Lee, Park, Kwon & Lee (2014, "Locomotion control for
 many-muscle humanoids") as the package writes it, with the package's lab-fitted parameters
-(`fitted/neuro_stance_v2.json`, and `agility_single_v1.json` on one foot; CANDIDATE, not
-owner-approved). Every control tick (100 Hz) she senses her joints, where her soles touch, her centre
+(`fitted/neuro_stance_v2.json`, and `agility_single_v1.json`'s state machine; CANDIDATE, not
+owner-approved) but where this port declares its own (below). Every control tick (100 Hz) she senses her joints, where her soles touch, her centre
 of mass and its velocity and the orientation of pelvis, chest and head, and solves one bounded
 least-squares problem whose unknowns are the activations of the 56 muscles of her legs, trunk and
 neck (her arms hang on their tissue at 1 % tone, as R1.5's relaxed arms) and the ground's push at the
@@ -777,10 +777,20 @@ capture point), the clock only bounding a phase.
   the feet that support her (with both, a lifting foot raised it 7 cm); her sternocleidomastoids as
   head-nod antagonists (BioRig R585: no muscle of the R1.5 model flexes the head on the neck -
   measured here too - and her head flipped on a forward push), engaged while this controller drives
-  and released when it stops (the riding drives were tuned without it); on one foot the pelvis,
-  chest, spine and legs held where she stood as the foot came up, the free foot held from her hip
-  turned only with her heading; a stepping foot aimed across as well as along at her capture point
-  (Hof 2008); the plan solved on unit-diagonal variables.
+  and released when it stops (the riding drives were tuned without it); a stepping foot aimed across
+  as well as along at her capture point (Hof 2008); the plan solved on unit-diagonal variables. On
+  one foot (`AGILITY`, measured why): her legs' posture rows at full strength through the weight
+  shift (the package: 0.3 of it - on her soft soles a sideways sway of legs, pelvis and both feet
+  rolling on their pads then grows from ~0.1 rad/s, the stance ankle inverting to 40-48°, and she
+  falls in the shift: the plan takes the ground to be rigid and does not see a planted foot roll,
+  and only the joints' posture rows resist that sway - held at 6.5-7.5 cm over one foot on two feet
+  she stands at full strength and falls at 0.3); on one foot her standing parameters but a firmer
+  neck, from lift-off (the package's one-foot set, fitted on MuJoCo's near-rigid feet, holds posture
+  and orientation far more stiffly - posture gain 147 against 24, its weight 1.5 against 0.5,
+  orientation 274 / 143 against 179 / 74: her trunk's and neck's muscles saturate and she falls in the
+  hold); the free leg held at its joints where they are as it comes up (the package: a foot target
+  following her pelvis - leg and pelvis then drive each other, the free hip swinging ±7°); the pelvis,
+  chest, spine and stance leg held where she stood as the foot came up.
 * **Measured** (Node, `tests/rider_wbc.test.mjs` and the R1.5 push protocol): quiet stance - her
   centre of mass within 2.9 mm, head within 2.7°, mean squared activation 0.008 after the first
   1.5 s, the strongest muscle then at 0.92 (R1.5 G12.1: 1.38 mm, 1.11°); chest pushes of 60 / 80 /
@@ -788,29 +798,22 @@ capture point), the clock only bounding a phase.
   centre of mass moving up to 21 mm, the head up to 16° during the push and back within 3.6° at the
   end (R1.5 v2: forward 60 N, the others ≥ 100 N). A plan takes 2.8 ms (median; 9 ms at the 95th
   percentile; CPU, one core) every 10 ms of her time, solved to optimality (KKT residual ≤ 2.3 × 10⁻⁵).
-* **Not yet / known**: on one foot she does not get there - asked to stand on either foot she
-  falls in the weight shift (left 2.1 s, right 1.9 s after asking), and so does the shift of a
-  voluntary step (R1.5's receipt: on one foot from 1.8 s to the end of its 8 s scene). Measured why:
-  partway through the shift, with her centre of mass only about half way over the stance foot, both
-  feet begin to roll towards the stance side together - the stance foot onto its outer edge, the
-  other onto its inner one, the stance ankle inverting to 40-48° - a sideways sway of legs, pelvis and
-  feet that grows exponentially from ~0.1 rad/s. Her pads allow the feet that roll; the plan's
-  model does not contain it: it takes the ground to be rigid, the ground's push at each sole free
-  within its friction cones, so it asks for each sole's pressure to move across it within a few
-  milliseconds (13 to 30-39 mm towards the outer edge at the onset) as MuJoCo's near-rigid contacts
-  can deliver and soft tissue cannot, and nothing in it resists a slow roll of a planted foot (its
-  contact rows only damp, its flat-foot reference settles to where the pads lay the foot). Tried,
-  not enough on its own: planning at 270 Hz with the shift's goal set at once and the free foot
-  carried softly (her left foot then holds, from 3.85 s to the end of 8 s, still within 4° - but her
-  right falls as before, and the pushes she keeps drop to 60 N back and 80 N left); slower shifts
-  (1.5 and 2.5 s, fed forward); pads 4-10 times stiffer; the tripod soles; each sole's pressure kept
-  in from its edges or drawn to its middle; a sole's flat always settling, or not held; the plan's ground
-  wrench held to what the pads push, or to what they would push given its own accelerations;
-  active muscle's short-range stiffness. The next step is a plan that models the soft contact it
-  stands on. Walking, strafing and turning on her muscles are therefore not yet built; she walks on
-  48's motors. Her neck: the left longus colli and upper trapezius carry most of her standing
-  effort - the model's neck lacks the deep head flexors and the shoulder girdle's protractors. The
-  controller is not yet wired into the game.
+  On one foot, either foot, asked at 0.8 / 1.0 / 1.2 / 1.6 / 2.0 s and run 7 s on: 9 of 10 stand on
+  it to the end (the left asked at 0.8 s, while she still settles from being placed, falls as the
+  foot comes up) - the shift 1.4 s, the lift 0.9 s, then 5.4 s on one foot; through the hold her
+  pelvis within 5-8.4°, chest 17-21°, mean squared activation 0.07-0.09; her head swings out to
+  54-78° about a second into the hold and comes back within 2° by 3.7 s into it (R1.5's receipt: on
+  one foot from 1.8 s to the end of its 8 s scene).
+* **Not yet / known**: her head on one foot - the neck's muscles saturate as the foot comes up and
+  the head swings out (above); held firmer it couples into her trunk (at a one-foot neck posture
+  weight of 3 her right foot holds with the head within 9° but her left falls), and past the neck's
+  range its muscles' paths lose or flip their moment arms (the left neck extensors from +11 to
+  −28 mm at 55° of side bend: nothing lifts the head back - on her standing parameters alone, without
+  the firmer neck, her left foot's hold kept the head at ~90°); the model's neck lacks the deep head
+  flexors and the shoulder girdle's protractors. Steps do not yet recover: a voluntary step forward
+  falls in its swing, a step to the side completes once and falls after the second lands, a reactive
+  step (150 N pushes) falls as it lands. Walking, strafing and turning on her muscles are therefore not
+  yet built; she walks on 48's motors. The controller is not yet wired into the game.
 
 ## Legacy rider (`40_rider_body.js`, `?rider=legacy`)
 

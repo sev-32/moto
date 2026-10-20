@@ -2,10 +2,11 @@
 // she stands on her own muscles - no motors, no pose servos, no balance assist - on her plantar soles
 // (46's "plantar" foot model), each control tick one bounded least-squares plan over her muscles'
 // activations and the ground's push. Quiet stance and chest pushes, as R1.5's stance receipts measure
-// them; the plan's optimality; what the drive engages while it drives and hands back when it stops.
-// Bands are sanity bounds around this controller's measured behaviour (quiet stance: centre of mass
-// within ~3 mm, head within ~3 deg; a 100 N chest push in each direction kept without a step), not
-// measured human data.
+// them; standing on one foot, either foot (R1.5's single-leg receipt); the plan's optimality; what the
+// drive engages while it drives and hands back when it stops. Bands are sanity bounds around this
+// controller's measured behaviour (quiet stance: centre of mass within ~3 mm, head within ~3 deg; a
+// 100 N chest push in each direction kept without a step; on one foot 3.7 s of 7, pelvis within ~8 deg,
+// chest ~21 deg, head back within ~2 deg), not measured human data.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { character, surfaces, BIO, stubBike } from "./lib/rider-harness.mjs";
@@ -15,7 +16,7 @@ const OF = globalThis.LUCID_RIDER_ONFOOT, WBC = globalThis.LUCID_RIDER_WBC, dt =
 const ground = { height: () => 0, normal: () => [0, 0, 1], grip: () => 1 };
 
 // stand her on her muscles for T s; each(t, R, W) observes after every step, push(t) adds a force
-function onMuscles(T, { push, each, params } = {}) {
+function onMuscles(T, { push, each, params, fsm } = {}) {
   const R = BIO.createRider(character, surfaces), G = OF.install(R), b = R.body;
   const bk = stubBike(); bk.p = [0, 0, 100];
   G.placeStanding([0, 0, 0], 0);
@@ -23,7 +24,7 @@ function onMuscles(T, { push, each, params } = {}) {
   W.setPosture(b.q, 0);
   // (48's own foot mode plans nothing: the controller holds her)
   R.modes.foot = () => { G.com = b.totals().com; };
-  W.reset(); W.driving = true;
+  W.reset(); W.driving = true; W.fsmOn = !!fsm;
   const tilt = (li) => { const up = [b.Rw[li][1], b.Rw[li][4], b.Rw[li][7]]; return Math.acos(Math.max(-1, Math.min(1, up[2]))) / DEG; };
   const o = { R, G, W, b, finite: true, fell: null, comEx: 0, headMax: 0, a2Late: 0, nLate: 0, tilt };
   let com0 = null;
@@ -71,6 +72,28 @@ for (const [name, F] of [["forward", [0, 80, 0]], ["to her left", [-80, 0, 0]]])
     assert.ok(o.headEnd < 10, `head ${o.headEnd.toFixed(1)} deg at the end`);
     // (no step: her feet where they stood)
     for (const S of ["L", "R"]) assert.ok(o.R.feel.feet[S].N > 100, `${S} foot bears ${o.R.feel.feet[S].N.toFixed(0)} N`);
+  });
+}
+
+for (const side of ["L", "R"]) {
+  const other = side === "L" ? "R" : "L";
+  test(`on one foot (her ${side === "L" ? "left" : "right"}): asked at 1 s, she shifts onto it, lifts the other foot and holds it up - pelvis within 10 deg, chest 25, her head back within 8 deg`, () => {
+    let up = 0, pel = 0, chest = 0;
+    const o = onMuscles(7, {
+      fsm: true,
+      each: (t, R, W, o_) => {
+        if (Math.abs(t - 1) < dt / 2) W.requestSingleLeg(side);
+        if (W.fsm.state !== "hold") return;
+        if (!R.spheres.some((s) => s.kind === "sole" && s.side === other && s.ground.on)) up += dt;
+        pel = Math.max(pel, o_.tilt(0)); chest = Math.max(chest, o_.tilt(R.model.linkOf.Spine02));
+      },
+    });
+    assert.ok(o.finite && o.fell == null, `fell at ${o.fell}`);
+    assert.deepEqual(o.W.fsm.log.map((e) => e[2]), ["shift", "swing", "hold"]);
+    assert.ok(up > 3, `on one foot ${up.toFixed(2)} s`);
+    assert.ok(pel < 10, `pelvis ${pel.toFixed(1)} deg`);
+    assert.ok(chest < 25, `chest ${chest.toFixed(1)} deg`);
+    assert.ok(o.headEnd < 8, `head ${o.headEnd.toFixed(1)} deg at the end`);
   });
 }
 
