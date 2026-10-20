@@ -452,6 +452,10 @@
     this.energy.steerAssistDampingJ = (this.energy.steerAssistDampingJ || 0) + Math.max(0, -A.steering.dampingTorqueNm * this.steerRate) * dt;
     const u = [this.v[0], this.v[1], this.v[2], this.w[0], this.w[1], this.w[2], this.steerRate, this.forkRate, this.rearRate];
     for (let i = 0; i < 9; i++) u[i] += a[i] * dt;
+    // Diagnostic-only pre-impulse velocity. The state vector and integration
+    // below are unchanged. Keep the snapshot only for an explicitly requested
+    // nine-coordinate consistency audit, never for normal riding.
+    const balanceBeforeLimits = this.__motoBalanceProbe ? u.slice() : null;
     const hits = CH.impulseJointLimits ? jointLimitImpulses(this, u, mb.M, dt) : [];
     this.v = [u[0], u[1], u[2]];
     this.w = [u[3], u[4], u[5]];
@@ -480,12 +484,54 @@
       steerTorqueDampingNm: steerDampTau, steerTorqueFrictionNm: steerFricTau, steerTorqueStopNm: steerStopTau,
       steerTorqueAssistNm: A.steering.netTorqueNm, rollTorqueAssistNm: A.roll.netTorqueNm, steerTorqueNetNm: Q[6], rollTorqueNetNm: Q[4], ...su,
     };
+    // Full nine-DOF numerical-equation check (M*a = Q-C) and joint-limit
+    // impulse check (M*delta(u) = J^T*lambda), with the exact matrix and
+    // acceleration the solver just used. This detects solver/algebra failures;
+    // a small residual is NOT evidence of physical model calibration or
+    // global angular momentum/energy conservation.
+    let balanceProbe = null;
+    if (balanceBeforeLimits) {
+      const mul = (mat, vec) => mat.map(row => row.reduce((sum, x, i) => sum + x * vec[i], 0));
+      const norm = vec => Math.hypot(...vec);
+      const ma = mul(mb.M, a), residual = ma.map((v, i) => v - rhs[i]);
+      const delta = u.map((v, i) => v - balanceBeforeLimits[i]);
+      const impulseByDof = Array(9).fill(0);
+      for (const hit of hits) impulseByDof[hit.dof] += hit.impulse;
+      const impulseResidual = mul(mb.M, delta).map((v, i) => v - impulseByDof[i]);
+      const kinetic = vec => 0.5 * vec.reduce((sum, vi, i) => sum + vi * mul(mb.M, vec)[i], 0);
+      const pitchDiag = mb.M[3][3] * a[3];
+      const pitchCross = ma[3] - pitchDiag;
+      balanceProbe = {
+        schema: "lucid.core.nine-dof-residual.v1",
+        equationResidual: residual,
+        equationResidualNorm: norm(residual),
+        equationRelativeResidual: norm(residual) / Math.max(1, norm(rhs), norm(ma)),
+        equationRhsNorm: norm(rhs),
+        equationMassTimesAccelNorm: norm(ma),
+        pitchDiagonalInertiaTermNm: pitchDiag,
+        pitchCrossCouplingTermNm: pitchCross,
+        pitchBiasNm: mb.C[3],
+        pitchGeneralizedForceNm: Q[3],
+        pitchEquationResidualNm: residual[3],
+        impulseCount: hits.length,
+        jointImpulseResidual: impulseResidual,
+        jointImpulseResidualNorm: norm(impulseResidual),
+        jointImpulseRelativeResidual: norm(impulseResidual) / Math.max(1, norm(impulseByDof)),
+        jointImpulseGeneralizedNorm: norm(impulseByDof),
+        jointImpulseDeltaQuadraticKineticJ: hits.length ? kinetic(u) - kinetic(balanceBeforeLimits) : 0,
+        matrix: mb.M.map(row => row.slice()),
+        generalizedAcceleration: a.slice(),
+        generalizedRhs: rhs.slice(),
+        generalizedBias: mb.C.slice(),
+      };
+    }
     this.coupled = {
       schema: "lucid.core.coupled-mass.v1 (V5.5 + chain/aero/feet-down wrenches + impulse joint limits)",
       generalizedAccel: a.slice(), generalizedForce: Q.slice(), legacyGeneralizedForce: Qlegacy, biasGeneralized: mb.C.slice(),
       massMatrixDiag: mb.M.map((r, i) => r[i]), massMatrixSymmetryError: mb.symmetryError, solveConditionProxy: sol.conditionProxy,
       minPivot: sol.minPivot, maxPivot: sol.maxPivot, baseAccelWorld: a.slice(0, 3), angularAccelBody: a.slice(3, 6), rotorMomentumRateBodyNm: rotor,
       frontPointMassKg: S.mUnsprungF, rearPointMassKg: S.mUnsprungR, jointLimitImpulses: hits,
+      ...(balanceProbe ? { balanceProbe } : {}),
     };
     CH.last.jointLimits = hits;
   };
