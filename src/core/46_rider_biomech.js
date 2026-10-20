@@ -83,6 +83,23 @@
     // foot softly and bears it firmly (declared priors: the heel pad, the thickest, ~5 mm under her
     // standing weight on it; the forefoot's thinner fat pads; the toes' soft pulp)
     pads: { heel: [6e4, 380, 0.004], ball: [5e4, 300, 0.003], mid: [3e4, 200, 0.003], toe: [2e4, 100, 0.002] },
+    // her plantar surface (the feet below): contact elements cellM apart on her sole (up to
+    // plantarMaxM above its lowest point - the medial arch, ~35-40 mm up, stands clear), each a small
+    // sphere (rM) at the skin; regions along the foot: heel to heelEnd of its length, the midfoot's
+    // outer border to ballBand before the toe joint, the balls to toeGap past it, then the toes. Each
+    // region's soft tissue as one pad, shared by its elements by area: F = A (exp(d / lam) - 1) - its
+    // stiffness rising ~10x from first touch to full load as the heel pad's does in vivo (Wearing et
+    // al., heel fat pad review) - with damping tauS x its stiffness. The heel (A 48 N, lam 3.2 mm):
+    // fitted so that under her full weight it compresses 8.8 mm - her unloaded heel pad ~18.7 mm
+    // thick with a compressibility index 0.53 (Prichasuk 1994: 400 adults) - its first-touch
+    // stiffness 15 N/mm (indentation in vivo: 17-20 N/mm, ISB 2005) and ~5.5 mm under its ~60 % share
+    // of standing on two feet (quiet-standing pressure: heel ~60 %, midfoot ~8 %, forefoot ~28 %, the
+    // toes little). The balls (A 55 N, lam 1.8 mm: tissue ~10 mm thick under the metatarsal heads -
+    // 7-13.5 mm by ultrasound - pressed ~46 % at push-off), the outer midfoot and the toes thinner
+    // still (A 25 N, lam 1.5 mm; A 12 N, lam 1.2 mm) - declared priors scaled by thickness, CANDIDATE;
+    // tauS: the earlier pads' damping-to-stiffness ratio (declared).
+    plantar: { cellM: 0.018, rM: 0.004, plantarMaxM: 0.025, heelEnd: 0.27, ballBand: 0.17, toeGap: 0.01, tauS: 0.006, expMax: 7,
+      heel: { A: 48, lam: 0.0032 }, ball: { A: 55, lam: 0.0018 }, mid: { A: 25, lam: 0.0015 }, toe: { A: 12, lam: 0.0012 } },
     // her toes' muscles (not among the R1.5 muscles - a lumped flexor / extensor pair, declared): a
     // neural elastic hold about their relaxed angle (toeRelaxDeg) - soft near it, firmer the further
     // they are bent (N m/rad at the pose, doubling every toeSoftDeg of bend) and firmer with the load
@@ -96,11 +113,26 @@
     // (the palm point is ~3 cm out from the palm: the bar at the palm itself; R.canCloseGrip)
     gripCaptureM: 0.08, gripPalmDepthM: 0.045,
     mu: { seat: 0.6, bike: 0.45, peg: 1.0, ground: 0.55, sole: 0.8 },
+    // the model of her soles that stands on the ground (createRider: footRef): "tripod" - the drives
+    // on the bike and the scripted ones off it were tuned on it; under her own muscles (46_rider_wbc
+    // driving) "plantar", always
+    footModel: "tripod",
+    // the ground's contacts implicit over the step (contacts(): added inertia at the point) - under her
+    // own muscles always; the other drives were tuned with them explicit
+    groundImplicit: false,
+    // (and its friction's spring with them, while the contact sticks: under her own muscles - 46_rider_wbc
+    // driving - always; the other drives were tuned with it explicit)
+    groundImplicitFriction: false,
     clavicleMassKg: 0.05, // physbody.py CLAVICLE_MASS, taken from the chest
     // muscle drive (46_rider_muscles.js): allocation of the intent torques to the 84 muscles -
     // activation effort weight (per hinge the torque error counts in units of its capacity) and the
     // projected Gauss-Seidel sweeps per step (warm-started); resting tone (lucid_bcr.neuro: 0.01)
     muscleReg: 0.001, muscleSweeps: 12, muscleTone: 0.01,
+    // declared CANDIDATE refinements of the package's muscle geometry (46_rider_muscles.js CANDIDATES)
+    // in every drive: none (the drives on the bike were tuned on the package's geometry); the on-foot
+    // muscle controller engages its own while it drives (46_rider_wbc.js muscle_candidates: the
+    // sternocleidomastoids as head-nod antagonists, BioRig R585)
+    muscleCandidates: [],
     // neural elastic holds (riding on her muscles): around the posture each joint has settled into
     // (following it over holdSettleS) each muscle stretched past its length there is recruited -
     // soft near the posture, firmer the further it is pushed: activation holdGain x d x (1 + d /
@@ -399,7 +431,7 @@
     const body = MB.createArticulatedBody(M.spec), ikb = MB.createArticulatedBody(M.spec);
     // her muscles (46_rider_muscles.js): the 84 R1.5 musculotendon units on this body
     const MU = global.LUCID_MUSCLES, MUA = opts.muscleAsset || (MU && MU.asset);
-    const MUS = MU && MUA ? MU.createMuscles(MUA, M, body) : null;
+    const MUS = MU && MUA ? MU.createMuscles(MUA, M, body, { candidates: opts.muscleCandidates ?? PRIORS.muscleCandidates }) : null;
     const SURF = createSurfaces(surfacesJson), L = M.links, H = M.hinges, NH = H.length, TI = M.TI, B = M.B;
     const hingeOfLink = new Int32Array(L.length).fill(-1);
     H.forEach((h, i) => (hingeOfLink[h.link] = i));
@@ -442,23 +474,35 @@
       hand[S] = { link: M.linkOf[S + "_Hand"], p: sub(grip, wr), axis, volar };
       spheres.push({ link: M.linkOf[S + "_Hand"], seg: S + "_Hand", c: sub(grip, wr), r: 0.022, kind: "palm" });
     }
-    // her feet: an anatomical tripod on her own sole - the package's plantar contact region
-    // (contactRegions.leftFoot / rightFoot, her skin in the rest pose) - pads where its lowest points
-    // are: the heel (under the calcaneus), the balls of the big and little toes (the 1st and 5th
-    // metatarsal heads), the outer border of the midfoot (the lateral arch, a few mm up: it bears
-    // when the foot rolls out or sinks in), and the toes - the big toe and the lesser toes - on a
-    // flap hinged at her toe joint (ToeBase: the asset's toe DOF, folded into the foot in the R1.5
+    // her feet - two models of her sole on the same foot, one of them touching the ground at a time
+    // (R.footModel - R.setFootModel): the package's plantar contact region (contactRegions.leftFoot /
+    // rightFoot, her skin in the rest pose) either way, and the toes - the big toe and the lesser toes -
+    // on a flap hinged at her toe joint (ToeBase: the asset's toe DOF, folded into the foot in the R1.5
     // physical body; its ~50 g are negligible, so its angle is where the ground's push on the toes
-    // balances the joint, each step - footToes). Each pad is soft tissue: soft at first touch,
-    // stiffening as it is pressed (PRIORS.pads). The foot's reference points: ball = between the two
-    // metatarsal heads on the sole (what stands on a peg), heel, toe = the toe tips.
-    // In her shoes (opts.shoes: fit-shoes.mjs' contact data) her pads are where her bones bear, as
-    // barefoot, each standing on the shoe's tread below it - the outsole's rubber and the insole
-    // between (her pads' tissue as before: the sole is far stiffer than it, in series it changes
-    // little - declared) - and her toe pads turn with the shoe's forefoot, about the line in its sole
-    // where it bends, against the rubber's bending stiffness there as well as her toes' own (footToes).
-    const foot = {};
+    // balances the joint, each step - footToes). In her shoes (opts.shoes: fit-shoes.mjs' contact data)
+    // each pad or element stands on the shoe's tread below it - the outsole's rubber and the insole
+    // between (her tissue as before: the sole is far stiffer than it, in series it changes little -
+    // declared) - and her toe pads turn with the shoe's forefoot, about the line in its sole where it
+    // bends, against the rubber's bending stiffness there as well as her toes' own (footToes).
+    //  - "tripod": an anatomical tripod - pads where her sole's lowest points are: the heel (under the
+    //    calcaneus), the balls of the big and little toes (the 1st and 5th metatarsal heads), the outer
+    //    border of the midfoot (the lateral arch, a few mm up: it bears when the foot rolls out or sinks
+    //    in) and the toes; each pad soft tissue, soft at first touch, stiffening as it is pressed
+    //    (PRIORS.pads). The drives on the bike and the scripted ones off it were tuned on it.
+    //  - "plantar": a padded plantar surface - small contact elements (PRIORS.plantar.cellM apart),
+    //    each at the lowest point of her skin in its cell: the heel pad under the calcaneus, the outer
+    //    border of the midfoot (her medial arch stands clear of the ground - its skin is ~35-40 mm up -
+    //    and is left out, plantarMaxM), the balls of the five metatarsal heads and the toes. The
+    //    elements are her sole's touch and its pressure sense (R.feel: by region - heel, midLat,
+    //    ballMed / ballLat either side of the foot's middle, hallux, toes); each region's tissue a
+    //    soft-tissue pad that stiffens as it is pressed (PRIORS.plantar), its force shared over its
+    //    elements by area, each element's friction its own (a lightly pressed edge slips while the
+    //    middle holds: a contact patch's partial slip). Her own muscles stand on it (46_rider_wbc.js).
+    // The foot's reference points, each model's own: ball = between the two balls on the sole (what
+    // stands on a peg), heel, toe = the toe tips.
+    const foot = {}, footRef = { tripod: {}, plantar: {} };
     let standM = 0;
+    const PL_ = PRIORS.plantar;
     for (const S of ["L", "R"]) {
       const an = B[TI[S + "_Foot"]], mtpW = B[TI[S + "_ToeBase"]], mtp = sub(mtpW, an), link = M.linkOf[S + "_Foot"], seg = S + "_Foot";
       const reg = ch.contactRegions?.[(S === "L" ? "left" : "right") + "Foot"], V = ch.vrest, shoe = opts.shoes?.sides?.[S], tread = shoe && reg && shoe.treadBelowM.length === reg.length ? shoe.treadBelowM : null;
@@ -468,43 +512,90 @@
       // (how much her shoes raise her: her sole's lowest point to their tread's)
       standM = Math.max(standM, Math.min(...P.map((p) => p[1])) - Math.min(...P.map((p) => p[1] - p[3])));
       const soleY = Math.min(...P.map((p) => p[1] - p[3])), zBack = Math.max(...P.map((p) => p[2])), zFront = Math.min(...P.map((p) => p[2]));
-      const band = (z0, z1) => P.filter((p) => p[2] >= Math.min(z0, z1) && p[2] <= Math.max(z0, z1));
-      const lowest = (A, h = 0.004) => { const y0 = Math.min(...A.map((p) => p[1])); return A.filter((p) => p[1] < y0 + h); };
-      const at = (A) => [A.reduce((s_, p) => s_ + p[0], 0) / A.length, Math.min(...A.map((p) => p[1])) - A.reduce((s_, p) => s_ + p[3], 0) / A.length, A.reduce((s_, p) => s_ + p[2], 0) / A.length];
-      const across = (A, inner, w) => { const xs = A.map((p) => p[0] * med), lo = Math.min(...xs), hi = Math.max(...xs); return A.filter((p) => (inner ? p[0] * med > hi - w : p[0] * med < lo + w)); };
-      const ballBand = band(mtp[2] + 0.004, mtp[2] + 0.04), midBand = band(mtp[2] + 0.05, mtp[2] + 0.09), toeBand = band(mtp[2] - 0.008, zFront);
-      const tx = toeBand.map((p) => p[0] * med), tMid = (Math.min(...tx) + Math.max(...tx)) / 2;
-      const pads = [
-        ["heel", at(lowest(band(zBack, zBack - 0.05))), 0.02],
-        ["ballMed", at(lowest(across(ballBand, true, 0.025))), 0.015],
-        ["ballLat", at(lowest(across(ballBand, false, 0.025))), 0.015],
-        ["midLat", at(lowest(across(midBand, false, 0.02))), 0.012],
-        ["hallux", at(lowest(toeBand.filter((p) => p[0] * med > tMid))), 0.01, true],
-        ["toes", at(lowest(toeBand.filter((p) => p[0] * med <= tMid))), 0.01, true],
-      ];
-      const pad = Object.fromEntries(pads.map(([n, p]) => [n, p]));
-      const ball = [(pad.ballMed[0] + pad.ballLat[0]) / 2, soleY, (pad.ballMed[2] + pad.ballLat[2]) / 2], heel = [pad.heel[0], soleY, pad.heel[2]], toe = [(pad.hallux[0] + pad.toes[0]) / 2, soleY, zFront + 0.01];
-      // the toe flap: hinged at the toe joint about the asset's toe axis (+ lifts the toes)
+      // the toe flap: hinged at the toe joint about the asset's toe axis (+ lifts the toes) - one per
+      // foot, whichever model stands on it
       const tdof = ch.dofs.find((d) => d.joint === S + "_ToeBase");
       const toes = tdof ? { id: tdof.id, pivot: tread ? sub(shoe.flexPoint, an) : mtp, axis: unit(tdof.axis), lo: tdof.min * DEG, hi: tdof.max * DEG, passive: tdof.passive, tmax: tdof.torqueLimitNm ?? 28, q: 0, M: 0, K: 0, felt: 0, soleK: tread ? opts.shoes.soleBend?.NmPerRad || 0 : 0 } : null;
-      foot[S] = { link, ball, heel, toe, forward: unit(sub(ball, heel)), up: [0, 1, 0], med: [med, 0, 0], soleY, toes };
-      for (const [name, p, r, onToes] of pads) spheres.push({ link, seg, c: [p[0], p[1] + r, p[2]], r, kind: "sole", at: name, pad: name === "heel" ? "heel" : name.startsWith("ball") ? "ball" : name === "midLat" ? "mid" : "toe", toe: !!(onToes && toes), side: S });
+      // ---- the tripod
+      {
+        const band = (z0, z1) => P.filter((p) => p[2] >= Math.min(z0, z1) && p[2] <= Math.max(z0, z1));
+        const lowest = (A, h = 0.004) => { const y0 = Math.min(...A.map((p) => p[1])); return A.filter((p) => p[1] < y0 + h); };
+        const at = (A) => [A.reduce((s_, p) => s_ + p[0], 0) / A.length, Math.min(...A.map((p) => p[1])) - A.reduce((s_, p) => s_ + p[3], 0) / A.length, A.reduce((s_, p) => s_ + p[2], 0) / A.length];
+        const across = (A, inner, w) => { const xs = A.map((p) => p[0] * med), lo = Math.min(...xs), hi = Math.max(...xs); return A.filter((p) => (inner ? p[0] * med > hi - w : p[0] * med < lo + w)); };
+        const ballBand = band(mtp[2] + 0.004, mtp[2] + 0.04), midBand = band(mtp[2] + 0.05, mtp[2] + 0.09), toeBand = band(mtp[2] - 0.008, zFront);
+        const tx = toeBand.map((p) => p[0] * med), tMid = (Math.min(...tx) + Math.max(...tx)) / 2;
+        const pads = [
+          ["heel", at(lowest(band(zBack, zBack - 0.05))), 0.02],
+          ["ballMed", at(lowest(across(ballBand, true, 0.025))), 0.015],
+          ["ballLat", at(lowest(across(ballBand, false, 0.025))), 0.015],
+          ["midLat", at(lowest(across(midBand, false, 0.02))), 0.012],
+          ["hallux", at(lowest(toeBand.filter((p) => p[0] * med > tMid))), 0.01, true],
+          ["toes", at(lowest(toeBand.filter((p) => p[0] * med <= tMid))), 0.01, true],
+        ];
+        const pad = Object.fromEntries(pads.map(([n, p_]) => [n, p_]));
+        const ball = [(pad.ballMed[0] + pad.ballLat[0]) / 2, soleY, (pad.ballMed[2] + pad.ballLat[2]) / 2], heel = [pad.heel[0], soleY, pad.heel[2]], toe = [(pad.hallux[0] + pad.toes[0]) / 2, soleY, zFront + 0.01];
+        footRef.tripod[S] = { link, ball, heel, toe, forward: unit(sub(ball, heel)), up: [0, 1, 0], med: [med, 0, 0], soleY, toes, regions: pad };
+        for (const [name, p_, r, onToes] of pads) spheres.push({ link, seg, c: [p_[0], p_[1] + r, p_[2]], r, kind: "sole", model: "tripod", at: name, pad: name === "heel" ? "heel" : name.startsWith("ball") ? "ball" : name === "midLat" ? "mid" : "toe", toe: !!(onToes && toes), side: S });
+      }
+      // ---- the plantar surface: points within plantarMaxM of the lowest, by the bottom of the tread
+      // under them; cells across the foot (x) and along it (z), the lowest point of each
+      {
+        const low = P.filter((p) => p[1] - p[3] - soleY < PL_.plantarMaxM), cell = new Map(), cs = PL_.cellM;
+        for (const p of low) { const k = Math.floor(p[0] / cs) + "," + Math.floor(p[2] / cs), c = cell.get(k); if (!c || p[1] - p[3] < c[1] - c[3]) cell.set(k, p); }
+        const els = [...cell.values()];
+        // regions: along the foot from its back (0) to its front (1), the toe joint's place; across, her
+        // midline side of the foot's middle line (medial) or the other (lateral)
+        const Lf = zBack - zFront, along = (p) => (zBack - p[2]) / Lf, sMtp = along(mtp);
+        // (medial or lateral of the middle of its own band across the foot: the balls about the
+        // forefoot's middle, the toes about theirs)
+        const bandMid = (lo_, hi_) => { const xs = els.filter((p) => along(p) >= lo_ && along(p) < hi_).map((p) => p[0] * med); return xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0; };
+        const midBall = bandMid(sMtp - PL_.ballBand, sMtp + PL_.toeGap), midToe = bandMid(sMtp + PL_.toeGap, 2);
+        const regionOf = (p) => {
+          const s_ = along(p), x_ = p[0] * med;
+          if (s_ < PL_.heelEnd) return "heel";
+          if (s_ < sMtp - PL_.ballBand) return "midLat";
+          if (s_ < sMtp + PL_.toeGap) return x_ > midBall ? "ballMed" : "ballLat";
+          return x_ > midToe ? "hallux" : "toes";
+        };
+        const padOf = (r) => (r === "heel" ? "heel" : r.startsWith("ball") ? "ball" : r === "midLat" ? "mid" : "toe");
+        const counts = {};
+        for (const p of els) { const r = padOf(regionOf(p)); counts[r] = (counts[r] || 0) + 1; }
+        const cen = {};
+        for (const p of els) {
+          const at = regionOf(p), pd = padOf(at), T = PL_[pd], y = p[1] - p[3];
+          spheres.push({ link, seg, c: [p[0], y + PL_.rM, p[2]], r: PL_.rM, kind: "sole", model: "plantar", at, pad: pd, toe: !!(pd === "toe" && toes), side: S, A: T.A / counts[pd], lam: T.lam, tau: PL_.tauS });
+          const c_ = cen[at] || (cen[at] = [0, 0, 0, 0]);
+          c_[0] += p[0]; c_[1] += y; c_[2] += p[2]; c_[3]++;
+        }
+        const pad = Object.fromEntries(Object.entries(cen).map(([k, c_]) => [k, [c_[0] / c_[3], c_[1] / c_[3], c_[2] / c_[3]]]));
+        const bm = pad.ballMed || pad.ballLat, bl = pad.ballLat || pad.ballMed, hx = pad.hallux || pad.toes || [mtp[0], soleY, zFront], tz = pad.toes || hx;
+        const ball = [(bm[0] + bl[0]) / 2, soleY, (bm[2] + bl[2]) / 2], heel = [pad.heel[0], soleY, pad.heel[2]], toe = [(hx[0] + tz[0]) / 2, soleY, zFront + 0.01];
+        footRef.plantar[S] = { link, ball, heel, toe, forward: unit(sub(ball, heel)), up: [0, 1, 0], med: [med, 0, 0], soleY, toes, regions: pad };
+      }
+      foot[S] = { ...footRef[PRIORS.footModel][S] };
     }
     function mkSphere(s) {
-      const pd = s.kind === "sole" ? PRIORS.pads[s.pad] : null;
+      const pd = s.kind === "sole" && !s.A ? PRIORS.pads[s.pad] : null;
       s.k = pd ? pd[0] : PRIORS.tissueK * s.r * (s.at === "front" ? PRIORS.softTissueScale : 1);
       s.cN = pd ? pd[1] : s.k * PRIORS.tissueTau;
       s.soft = pd ? pd[2] : 0;
+      // (a plantar element: its tangential hold - the anchored friction spring - at its stiffness a
+      // few lam into its pad, e^1.5 x the first touch's; damping tauS x that)
+      if (s.A) { s.k = (s.A / s.lam) * Math.exp(1.5); s.cN = s.tau * s.k; }
       s.bike = { on: false, anchor: null, F: [0, 0, 0], x: null, n: null, pen: 0, where: "" };
       s.ground = { on: false, anchor: null, F: [0, 0, 0] };
       s.peg = { on: false, anchor: null, F: [0, 0, 0], side: null };
       return s;
     }
     for (const s of spheres) mkSphere(s);
+    // (each model's soles; those of the model not standing are kept aside, out of her spheres - what
+    // stands, touches, feels and is cleared is the one model)
+    const soles = { tripod: spheres.filter((s) => s.kind === "sole" && s.model === "tripod"), plantar: spheres.filter((s) => s.kind === "sole" && s.model === "plantar") };
+    for (let i = spheres.length - 1; i >= 0; i--) if (spheres[i].kind === "sole" && spheres[i].model !== PRIORS.footModel) spheres.splice(i, 1);
 
     // ---- state
     const R = {
-      model: M, body, ikb, spheres, hand, foot, surfaces: SURF, M2B, priors: PRIORS, shoes: opts.shoes || null, standM, footInertiaScale: footInertiaScale(ch, M, opts),
+      model: M, body, ikb, spheres, soles, hand, foot, footRef, footModel: PRIORS.footModel, surfaces: SURF, M2B, priors: PRIORS, shoes: opts.shoes || null, standM, footInertiaScale: footInertiaScale(ch, M, opts),
       qT: new Float64Array(L.length), qdT: new Float64Array(L.length), tauFF: new Float64Array(L.length), tauVF: new Float64Array(L.length),
       activation: 0.5, servo: true, time: 0,
       // muscle drive: on, the servos are her intent (the torque each joint should have) and only her
@@ -954,7 +1045,40 @@
       }
       return true;
     }
+    // her whole-body muscle control on her feet (46_rider_wbc.js, while it drives): her joints get
+    // their passive tissue and her muscles - no servo, no intent torque
+    function wbcTorques(dt) {
+      const b = body, RM = R.muscles;
+      RM.active = true;
+      for (let i = 0; i < NH; i++) {
+        const h = H[i], li = h.link, P = passiveTau(h, b.q[li], b.qd[li]);
+        b.tau[li] = P.tau;
+        b.armature[li] = h.passive.d * dt + P.k * dt * dt + (R.wbc.p.joint_armature || 0);
+      }
+      R.wbc.drive(dt);
+      tire(dt, RM);
+    }
+    // (which of her soles' models stands on the ground: switching, the other's contacts let go and her
+    // feet's reference points become the new one's)
+    R.setFootModel = (m) => {
+      if (m === R.footModel || !footRef[m]) return;
+      for (const s of soles[R.footModel]) for (const st of [s.ground, s.peg, s.bike]) { st.on = false; st.anchor = null; st.F = [0, 0, 0]; st.slide = false; }
+      for (let i = spheres.length - 1; i >= 0; i--) if (spheres[i].kind === "sole") spheres.splice(i, 1);
+      spheres.push(...soles[m]);
+      for (const S of ["L", "R"]) Object.assign(foot[S], footRef[m][S]);
+      R.footModel = m;
+    };
+    // (the on-foot controller's candidate geometry engaged while it drives, released when it stops)
+    let wbcCands = [];
+    const engageCands = (want) => {
+      const MU = R.muscles.M;
+      if (!MU || !MU.useCandidate || (want.length === wbcCands.length && want.every((c) => wbcCands.includes(c)))) return;
+      for (const c of wbcCands) if (!want.includes(c)) MU.useCandidate(c, false);
+      for (const c of want) MU.useCandidate(c, true);
+      wbcCands = want.slice();
+    };
     function servoTorques(dt, bk) {
+      if (R.wbc && R.wbc.driving && R.muscles.M) { wbcTorques(dt); return; }
       const b = body, act = R.activation, gain = 0.45 + 0.55 * act, RM = R.muscles;
       const MD = RM.on && (PL.fallen ? RM.onFoot : RM.ride) ? RM : null;
       // (taking over from the motors, her muscles start already holding what the motors held)
@@ -1175,13 +1299,16 @@
 
     // ------------------------------------------------------------------ contacts
     // anchored Coulomb friction: tangential spring from the stick anchor, anchor dragged at mu N
-    function frictionForce(st, x, n, vt, k, c, mu, Fn, anchorToWorld, worldToAnchor) {
+    // (hDt: the step, for a contact taken implicitly - the spring's pull over the step in its explicit
+    // part, k hDt of damping; st.slide tells whether it slid)
+    function frictionForce(st, x, n, vt, k, c, mu, Fn, anchorToWorld, worldToAnchor, hDt = 0) {
       if (!st.anchor) st.anchor = worldToAnchor(x);
       const aw = anchorToWorld(st.anchor);
       let u = sub(x, aw);
       u = sub(u, scl(n, dot(u, n)));
-      let Ft = sub(scl(u, -k), scl(vt, c));
+      let Ft = sub(scl(u, -k), scl(vt, c + k * hDt));
       const fl = len(Ft), lim = mu * Fn;
+      st.slide = fl > lim;
       if (fl > lim) {
         Ft = fl > 1e-9 ? scl(Ft, lim / fl) : [0, 0, 0];
         // slide: re-anchor so that the spring alone carries the kinetic force
@@ -1194,9 +1321,12 @@
     // a pad of her sole (PRIORS.pads): soft at first touch - its stiffness and damping build up over
     // its soft start - then firm (the force-depth curve smooth through it); it only presses
     function padForce(s, pen, vn) {
+      if (s.A) { const x = Math.min(pen / s.lam, PRIORS.plantar.expMax), ex = Math.exp(x), kx = (s.A / s.lam) * ex; return Math.max(0, s.A * (ex - 1) + (pen > s.lam * PRIORS.plantar.expMax ? kx * (pen - s.lam * PRIORS.plantar.expMax) : 0) - s.tau * kx * vn); }
       const d0 = s.soft, e = pen < d0 ? (s.k * pen * pen) / (2 * d0) : s.k * (pen - d0 / 2);
       return Math.max(0, e - s.cN * Math.min(1, pen / d0) * vn);
     }
+    // a plantar element's spring force and stiffness at a depth (no damping)
+    const plantarSpring = (s, pen) => { const xm = PRIORS.plantar.expMax, x = Math.min(pen / s.lam, xm), ex = Math.exp(x), kx = (s.A / s.lam) * ex; return [s.A * (ex - 1) + (pen > s.lam * xm ? kx * (pen - s.lam * xm) : 0), kx]; };
     // the toe flap: where a toe pad is (link-local) at the toes' angle; what the ground's push on the
     // toes does about the toe joint (moment, and its stiffness: normal stiffness x lever^2)
     const toeLocal = (s) => { const t = foot[s.side].toes; return t.q ? add(t.pivot, mv(axisAngle(t.axis, t.q), sub(s.c, t.pivot))) : s.c; };
@@ -1206,15 +1336,17 @@
       const lever = dot(n, cross(aw, r));
       t.K += s.k * lever * lever;
     }
+    const footLinks = new Set([M.linkOf.L_Foot, M.linkOf.R_Foot]);
     // everything the rider and the bike exert on each other this step; returns the reactions
-    function contacts(bk, ground) {
+    function contacts(bk, ground, dt = 0) {
       const out = [];
       const b = body;
       for (const S of ["L", "R"]) if (foot[S].toes) foot[S].toes.M = foot[S].toes.K = 0;
+      const ownMuscles = !!(R.wbc && R.wbc.driving), plantarOn = R.footModel === "plantar";
       for (const s of spheres) {
         const lc = s.toe ? toeLocal(s) : s.c, cw = b.toWorld(s.link, lc), vc = b.pointVelocity(s.link, lc);
         // --- bike envelope (sdf in the bike frame)
-        const cb = toBikeFrame(bk, cw), gb = [0, 0, 1], d = SURF.sdf(cb, gb);
+        const cb = toBikeFrame(bk, cw), gb = [0, 0, 1], d = s.kind === "sole" ? Infinity : SURF.sdf(cb, gb);
         const st = s.bike;
         if (s.kind !== "sole" && d < s.r) {
           const pen = s.r - d, nw = mv(bk.R, gb), x = sub(cw, scl(nw, s.r - pen / 2));
@@ -1251,15 +1383,34 @@
             ps.on = true; ps.F = F; ps.side = hit.side; ps.x = x; ps.n = nw; ps.mu = mu;
           } else if (ps.on) { ps.on = false; ps.anchor = null; ps.F = [0, 0, 0]; }
         }
-        // --- ground
-        if (ground) {
+        // --- ground (a foot's skin spheres stand back for its plantar elements: the sole is theirs)
+        if (ground && !(plantarOn && s.kind === "body" && footLinks.has(s.link))) {
           const gs = s.ground, gz = ground.height(cw[0], cw[1]), gn = ground.normal ? ground.normal(cw[0], cw[1]) : [0, 0, 1];
           const dz = dot(sub(cw, [cw[0], cw[1], gz]), gn), pen = s.r - dz;
           if (pen > 0) {
             const x = sub(cw, scl(gn, s.r - pen / 2)), vn = dot(vc, gn), vt = sub(vc, scl(gn, vn));
-            const k = s.k, c = s.cN;
-            const Fn = s.kind === "sole" ? padForce(s, pen, vn) : Math.max(0, k * pen - c * vn), mu = (s.kind === "sole" ? PRIORS.mu.sole : PRIORS.mu.ground) * (ground.grip ? ground.grip(cw[0], cw[1]) : 1);
-            const Ft = Fn > 0 ? frictionForce(gs, x, gn, vt, k, c, mu, Fn, (a) => a, (w) => w) : [0, 0, 0];
+            const k = s.k, c = s.cN, mu = (s.kind === "sole" ? PRIORS.mu.sole : PRIORS.mu.ground) * (ground.grip ? ground.grip(cw[0], cw[1]) : 1);
+            let Fn, Ft;
+            const imp = (PRIORS.groundImplicit || ownMuscles) && dt > 0, fI = PRIORS.groundImplicitFriction || ownMuscles;
+            if (imp) {
+              // the ground is fixed: its spring-dampers taken implicitly over the step (as MuJoCo's
+              // soft contacts are, and as the joint servos' stable PD is) - explicit part at the
+              // present state less (k dt) of the velocity, the rest an added inertia at the point.
+              // Explicit pad damping is past its stability limit on a foot pitching about its ankle
+              // (c dt / I ~ 5, the limit 2): the motors' armature hid it, her muscles do not.
+              const d0 = s.kind === "sole" ? s.soft : 0, sf = d0 && pen < d0 ? pen / d0 : 1;
+              let ke = k * sf, ce = c * sf, e = d0 ? (pen < d0 ? (k * pen * pen) / (2 * d0) : k * (pen - d0 / 2)) : k * pen;
+              if (s.A) { const [fe, kx] = plantarSpring(s, pen); e = fe; ke = kx; ce = s.tau * kx; }
+              Fn = Math.max(0, e - (ce + ke * dt) * vn);
+              Ft = Fn > 0 ? frictionForce(gs, x, gn, vt, k, c, mu, Fn, (a) => a, (w) => w, fI ? dt : 0) : [0, 0, 0];
+              if (Fn > 0) {
+                const mN = ce * dt + ke * dt * dt, mT = gs.slide || !fI ? 0 : c * dt + k * dt * dt, d = mN - mT;
+                body.addPointInertia(s.link, x, [mT + d * gn[0] * gn[0], d * gn[0] * gn[1], d * gn[0] * gn[2], d * gn[1] * gn[0], mT + d * gn[1] * gn[1], d * gn[1] * gn[2], d * gn[2] * gn[0], d * gn[2] * gn[1], mT + d * gn[2] * gn[2]]);
+              }
+            } else {
+              Fn = s.kind === "sole" ? padForce(s, pen, vn) : Math.max(0, k * pen - c * vn);
+              Ft = Fn > 0 ? frictionForce(gs, x, gn, vt, k, c, mu, Fn, (a) => a, (w) => w) : [0, 0, 0];
+            }
             const F = add(scl(gn, Fn), Ft);
             applyContact(s.link, F, x);
             if (s.toe) toeLoad(s, x, F, gn);
@@ -2405,7 +2556,7 @@
       // her feet (each touching pad of the sole: the heel, the balls, the outer border, the toes)
       for (const S of ["L", "R"]) {
         if (o.feet && !o.feet.includes(S)) continue;
-        for (const s of soleOf[S]) if (s.ground.on && s.ground.n) C.push({ link: s.link, x: s.ground.x, dirs: pyramid(s.ground.n, s.ground.mu), kind: "foot", side: S });
+        for (const s of soleOf[R.footModel][S]) if (s.ground.on && s.ground.n) C.push({ link: s.link, x: s.ground.x, dirs: pyramid(s.ground.n, s.ground.mu), kind: "foot", side: S });
       }
       if (o.bike) {
         for (const S of ["L", "R"]) { const gr = R.grips[S]; if (gr.held) C.push({ link: hand[S].link, x: b.toWorld(hand[S].link, hand[S].p), dirs: AXES6, ub: LOAD.gripShare * R.gripStrength(S), kind: "grip", side: S, bike: true }); }
@@ -2534,17 +2685,19 @@
     const PADS = ["heel", "ballMed", "ballLat", "midLat", "hallux", "toes"];
     const mkFoot = () => ({ N: 0, pads: Object.fromEntries(PADS.map((k) => [k, 0])), cop: [0, 0], fore: 0, lat: 0, n: [0, 0, 1], on: "", felt: { N: 0, cop: [0, 0], fore: 0, lat: 0 } });
     R.feel = { feet: { L: mkFoot(), R: mkFoot() } };
-    const soleOf = { L: spheres.filter((s) => s.kind === "sole" && s.side === "L"), R: spheres.filter((s) => s.kind === "sole" && s.side === "R") };
+    const soleOf = {};
+    for (const m of ["tripod", "plantar"]) soleOf[m] = { L: soles[m].filter((s) => s.side === "L"), R: soles[m].filter((s) => s.side === "R") };
     function plantarFeel(dt) {
       const b = body, k = 1 - Math.exp(-dt / FEEL.feelTauS);
       for (const S of ["L", "R"]) {
         const f = R.feel.feet[S], ft = foot[S], fw = ft.forward, md = ft.med;
         let N = 0, ca = 0, cl = 0, fore = 0, lat = 0, med = 0, n = [0, 0, 0], on = "";
-        for (const s of soleOf[S]) {
+        for (const k_ of PADS) f.pads[k_] = 0;
+        for (const s of soleOf[R.footModel][S]) {
           let Fn = 0, x = null, nn = null;
           if (s.ground.on && s.ground.n) { Fn = dot(s.ground.F, s.ground.n); x = s.ground.x; nn = s.ground.n; on = "ground"; }
           if (s.peg.on && s.peg.n) { const F2 = dot(s.peg.F, s.peg.n); if (F2 > Fn) { Fn = F2; x = s.peg.x; nn = s.peg.n; on = on || "peg"; } }
-          f.pads[s.at] = Fn;
+          f.pads[s.at] += Fn;
           if (Fn <= 0 || !x) continue;
           const xl = b.toLocal(s.link, x);
           N += Fn; ca += Fn * dot(xl, md); cl += Fn * dot(xl, fw); n = add(n, scl(nn, Fn));
@@ -2629,6 +2782,11 @@
     R.forces = function (bk, ground, dt) {
       const b = body;
       R.lastGround = ground || null;
+      // (under her own muscles: her plantar soles and the candidate muscle geometry of 46_rider_wbc;
+      // otherwise the tripod and the package's geometry the other drives were tuned on)
+      const own = !!(R.wbc && R.wbc.driving && R.muscles.M);
+      R.setFootModel(own ? "plantar" : PRIORS.footModel);
+      engageCands(own ? R.wbc.p.muscle_candidates || [] : []);
       b.kinematics();
       if (R.planner) R.planner(R, bk, dt);
       // (off the bike the mode chooses: none - limp - or its own, computed in the planner)
@@ -2636,7 +2794,7 @@
       else if (PL.ff !== "custom") R.tauFF.fill(0);
       b.clearForces();
       b.applyGravity();
-      const reactions = contacts(bk, ground);
+      const reactions = contacts(bk, ground, dt);
       plantarFeel(dt);
       footToes();
       footFeelTorques(dt);

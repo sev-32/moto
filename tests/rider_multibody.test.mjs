@@ -88,3 +88,87 @@ test("stable PD: stiff servo on a light segment stays bounded at the rider time 
   }
   assert.ok(Math.abs(B.q[1]) < 1e-3 && Number.isFinite(B.q[1]), `settled at ${B.q[1]}`);
 });
+
+test("joint-space equations: CRBA mass matrix and RNEA bias agree with ABA; Jacobians, drifts and momentum agree with the kinematics", () => {
+  const B = chain(false), nz = B.nz, n = B.n;
+  B.R = [0.36, 0.48, -0.8, -0.8, 0.6, 0, 0.48, 0.64, 0.6];
+  B.p = [0.2, -0.1, 0.9];
+  B.vb = [0.4, -0.7, 0.5, 0.3, -0.2, 0.6];
+  for (let i = 1; i < n; i++) { B.q[i] = 0.5 * Math.sin(1.7 * i); B.qd[i] = 2 * Math.cos(1.3 * i); B.tau[i] = 3 * Math.sin(0.9 * i + 1); }
+  B.kinematics(); B.clearForces(); B.applyGravity();
+  B.applyForce(4, [12, -5, 30], B.toWorld(4, [0.02, 0.01, -0.3]));
+  B.aba();
+  const zdd = new Float64Array(nz);
+  for (let k = 0; k < 6; k++) zdd[k] = B.ab[k];
+  for (let i = 1; i < n; i++) zdd[5 + i] = B.qdd[i];
+  const M = Float64Array.from(B.massMatrix()), h = Float64Array.from(B.biasForces(undefined, { gravity: false, fext: true }));
+  let asym = 0, res = 0, scale = 0;
+  for (let r = 0; r < nz; r++) {
+    for (let c = 0; c < nz; c++) asym = Math.max(asym, Math.abs(M[r * nz + c] - M[c * nz + r]));
+    let s = h[r];
+    for (let c = 0; c < nz; c++) s += M[r * nz + c] * zdd[c];
+    const rhs = r < 6 ? 0 : B.tau[r - 5];
+    res = Math.max(res, Math.abs(s - rhs)); scale = Math.max(scale, Math.abs(rhs), Math.abs(h[r]));
+  }
+  assert.ok(asym < 1e-12, `M symmetric (${asym})`);
+  assert.ok(res < 1e-9 * scale, `M zdd + h = [0; tau] (residual ${res}, scale ${scale})`);
+  // gravity as a base acceleration, the other forces left out: the same less J^T of what was applied
+  B.clearForces(); B.applyGravity();
+  const hg = B.biasForces(undefined, { gravity: false, fext: true }), hg2 = Float64Array.from(B.biasForces(undefined, { gravity: true }));
+  let dg = 0;
+  for (let r = 0; r < nz; r++) dg = Math.max(dg, Math.abs(hg[r] - hg2[r]));
+  assert.ok(dg < 1e-9, `gravity as base acceleration (${dg})`);
+  // Jacobians against the kinematics' velocities
+  const z = new Float64Array(nz);
+  for (let k = 0; k < 6; k++) z[k] = B.vb[k];
+  for (let i = 1; i < n; i++) z[5 + i] = B.qd[i];
+  const J = new Float64Array(3 * nz), mul = (J, v) => [0, 1, 2].map((r) => { let s = 0; for (let c = 0; c < nz; c++) s += J[r * nz + c] * v[c]; return s; });
+  const xl = [0.03, -0.02, -0.25], li = n - 1, xw = B.toWorld(li, xl);
+  const vJ = mul(B.pointJacobian(li, xw, J), z), vK = B.pointVelocity(li, xl);
+  assert.ok(Math.hypot(vJ[0] - vK[0], vJ[1] - vK[1], vJ[2] - vK[2]) < 1e-12, "point Jacobian");
+  const wJ = mul(B.angularJacobian(li, J), z), wl = B.v[li], R = B.Rw[li];
+  const wK = [0, 1, 2].map((r) => R[3 * r] * wl[0] + R[3 * r + 1] * wl[1] + R[3 * r + 2] * wl[2]);
+  assert.ok(Math.hypot(wJ[0] - wK[0], wJ[1] - wK[1], wJ[2] - wK[2]) < 1e-12, "angular Jacobian");
+  // momentum rows: centre of mass, its velocity, angular momentum about it
+  const T = B.totals(), mo = B.momentum(M);
+  assert.ok(Math.abs(mo.mass - T.mass) < 1e-12, "mass");
+  assert.ok(Math.hypot(...mo.com.map((x, k) => x - T.com[k])) < 1e-12, "centre of mass");
+  assert.ok(Math.hypot(...mo.vcom.map((x, k) => x - T.P[k] / T.mass)) < 1e-12, "its velocity");
+  const cP = [T.com[1] * T.P[2] - T.com[2] * T.P[1], T.com[2] * T.P[0] - T.com[0] * T.P[2], T.com[0] * T.P[1] - T.com[1] * T.P[0]];
+  assert.ok(Math.hypot(...mo.L.map((x, k) => x - (T.H[k] - cP[k]))) < 1e-10, "centroidal angular momentum");
+  // drifts: J zdd + drift is the material point's acceleration (finite difference of its velocity)
+  B.clearForces(); B.applyGravity(); B.aba();
+  for (let k = 0; k < 6; k++) zdd[k] = B.ab[k];
+  for (let i = 1; i < n; i++) zdd[5 + i] = B.qdd[i];
+  B.biasForces(undefined, { gravity: true });
+  const aP = mul(B.pointJacobian(li, xw, J), zdd).map((x, k) => x + B.pointDrift(li, xw)[k]);
+  const aW = mul(B.angularJacobian(li, J), zdd).map((x, k) => x + B.angularDrift(li)[k]);
+  const dt = 1e-7, v0 = B.pointVelocity(li, xl), w0 = wK;
+  B.integrate(dt); B.kinematics();
+  const v1 = B.pointVelocity(li, xl), R1 = B.Rw[li], wl1 = B.v[li], w1 = [0, 1, 2].map((r) => R1[3 * r] * wl1[0] + R1[3 * r + 1] * wl1[1] + R1[3 * r + 2] * wl1[2]);
+  const fdP = v1.map((x, k) => (x - v0[k]) / dt), fdW = w1.map((x, k) => (x - w0[k]) / dt);
+  assert.ok(Math.hypot(...aP.map((x, k) => x - fdP[k])) < 1e-4 * Math.hypot(...fdP) + 1e-5, `point acceleration ${aP} vs ${fdP}`);
+  assert.ok(Math.hypot(...aW.map((x, k) => x - fdW[k])) < 1e-4 * Math.hypot(...fdW) + 1e-5, `angular acceleration ${aW} vs ${fdW}`);
+});
+
+test("implicit point inertia: an added isotropic point mass moves the body as that mass rigidly attached", () => {
+  const mk = (extra) => {
+    const links = [{ name: "base", parent: -1, mass: 10, com: [0, 0, 0.1], inertia: box(10, 0.3, 0.2, 0.4) }, { name: "arm", parent: 0, axis: [1, 0, 0], offset: [0.1, 0, 0.2], mass: extra ? 2.5 : 2, com: extra ? [0, 0.04, -0.24] : [0, 0, -0.2], inertia: box(2, 0.06, 0.06, 0.4) }];
+    if (extra) {
+      // (2 kg at [0, 0, -0.2] and 0.5 kg at [0, 0.2, -0.4]: the combined inertia about the combined COM)
+      const c = [0, 0.04, -0.24], p1 = [0, 0, -0.2], p2 = [0, 0.2, -0.4], I0 = box(2, 0.06, 0.06, 0.4);
+      const pm = (m, p) => { const d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]], dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2]; return [0, 1, 2].flatMap((r) => [0, 1, 2].map((k) => m * ((r === k ? dd : 0) - d[r] * d[k]))); };
+      links[1].inertia = I0.map((v, k) => v + pm(2, p1)[k] + pm(0.5, p2)[k]);
+    }
+    return createArticulatedBody({ links });
+  };
+  const A = mk(false), B = mk(true);
+  for (const S of [A, B]) { S.R = [0.36, 0.48, -0.8, -0.8, 0.6, 0, 0.48, 0.64, 0.6]; S.p = [0.2, -0.1, 0.9]; S.vb = [0, 0, 0, 0, 0, 0]; S.q[1] = 0.4; S.qd[1] = 0; S.tau[1] = 1.5; S.kinematics(); S.clearForces(); }
+  // A: the 0.5 kg as an implicit point inertia (no velocity, no gravity: only the acceleration couples)
+  A.addPointInertia(1, A.toWorld(1, [0, 0.2, -0.4]), [0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5]);
+  A.aba(); B.aba();
+  assert.ok(Math.abs(A.qdd[1] - B.qdd[1]) < 1e-10 * Math.abs(B.qdd[1]) + 1e-12, `qdd ${A.qdd[1]} vs ${B.qdd[1]}`);
+  for (let k = 0; k < 6; k++) assert.ok(Math.abs(A.ab[k] - B.ab[k]) < 1e-10, `ab[${k}] ${A.ab[k]} vs ${B.ab[k]}`);
+  A.clearForces();
+  assert.equal(A.hasAdd[1], 0, "cleared with the forces");
+});

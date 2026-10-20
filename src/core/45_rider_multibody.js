@@ -155,6 +155,8 @@
       Dart: new Float64Array(n),
       // per-link world state (updated by kinematics())
       Rw: L.map(f9), ow: L.map(f3), v: L.map(f6), E: L.map(f9), fext: L.map(f6),
+      // implicit external spring-dampers this step (addPointInertia), per link
+      Iadd: L.map(() => new Float64Array(36)), hasAdd: new Uint8Array(n),
       gravity: [0, 0, -9.81],
       fixedBase: !!spec.fixedBase, // base held (tests, kinematically driven bases)
       limitFailsafe: spec.limitFailsafe ?? 0, // rad beyond lo/hi before positions are clamped (null: never)
@@ -204,7 +206,26 @@
     }
     const toWorld = (i, xl) => { const R = S.Rw[i], o = S.ow[i]; return [o[0] + R[0] * xl[0] + R[1] * xl[1] + R[2] * xl[2], o[1] + R[3] * xl[0] + R[4] * xl[1] + R[5] * xl[2], o[2] + R[6] * xl[0] + R[7] * xl[1] + R[8] * xl[2]]; };
     const toLocal = (i, xw) => mtv(S.Rw[i], [xw[0] - S.ow[i][0], xw[1] - S.ow[i][1], xw[2] - S.ow[i][2]]);
-    function clearForces() { for (const f of S.fext) f.fill(0); }
+    function clearForces() { for (const f of S.fext) f.fill(0); for (let i = 0; i < n; i++) if (S.hasAdd[i]) { S.Iadd[i].fill(0); S.hasAdd[i] = 0; } }
+    // an external spring-damper to the fixed world at world point x on link i, taken implicitly in
+    // this step (as the joint servos' armature is): its velocity- and position-dependence over the
+    // step is an added inertia Mt (world 3x3, symmetric: (c dt + k dt^2) along the directions it
+    // acts in) at x - the spatial inertia of a point with mass tensor Mt, [[-rx Mt rx, rx Mt],
+    // [-Mt rx, Mt]] in link coordinates about the link origin - added to the link's in aba(). Its
+    // explicit part (the force at the present state, less (k dt) of the velocity) is applied as usual.
+    function addPointInertia(i, x, Mt) {
+      const R = S.Rw[i], o = S.ow[i], d = [x[0] - o[0], x[1] - o[1], x[2] - o[2]], r = mtv(R, d);
+      const Ml = mm(mt(R), mm(Mt, R)), rx = [0, -r[2], r[1], r[2], 0, -r[0], -r[1], r[0], 0];
+      const A = mm(rx, Ml), Bm = mm(Ml, rx), C = mm(A, rx), Ia = S.Iadd[i];
+      for (let a = 0; a < 3; a++)
+        for (let c = 0; c < 3; c++) {
+          Ia[6 * a + c] -= C[3 * a + c];
+          Ia[6 * a + 3 + c] += A[3 * a + c];
+          Ia[6 * (3 + a) + c] -= Bm[3 * a + c];
+          Ia[6 * (3 + a) + 3 + c] += Ml[3 * a + c];
+        }
+      S.hasAdd[i] = 1;
+    }
     // world force F at world point x on link i (accumulated in link coords, about the link origin)
     function applyForce(i, F, x) {
       const R = S.Rw[i], o = S.ow[i];
@@ -222,9 +243,9 @@
     const IA = L.map(() => new Float64Array(36)), pA = L.map(f6), U = L.map(f6), c = L.map(f6), acc = L.map(f6);
     const D = new Float64Array(n), u = new Float64Array(n), Iaa = new Float64Array(36), pa = f6(), t6 = f6();
     const bA = new Float64Array(9), bB = new Float64Array(9), bC = new Float64Array(9), t9 = new Float64Array(9), t9b = new Float64Array(9);
-    // v x* (I v) - fext  -> out (bias force of link i)
-    function biasForce(i, out) {
-      const Ii = I[i], v = S.v[i], fe = S.fext[i];
+    // v x* (I v) - fext  -> out (bias force of link i; ext false: without fext)
+    function biasForce(i, out, ext = true) {
+      const Ii = I[i], v = S.v[i], fe = ext ? S.fext[i] : ZERO6;
       for (let r = 0; r < 6; r++) { let s = 0; for (let k = 0; k < 6; k++) s += Ii[6 * r + k] * v[k]; t6[r] = s; }
       const wx = v[0], wy = v[1], wz = v[2], vx = v[3], vy = v[4], vz = v[5];
       const nx = t6[0], ny = t6[1], nz = t6[2], fx = t6[3], fy = t6[4], fz = t6[5];
@@ -235,6 +256,7 @@
       out[4] = wz * fx - wx * fz - fe[4];
       out[5] = wx * fy - wy * fx - fe[5];
     }
+    const ZERO6 = new Float64Array(6);
     // Ip += X^T Ic X, X = rot(E) * trans(r) (child <- parent)
     function addXtIX(Ip, Ic, E, r) {
       // rotate blocks: A' = E^T A E etc.
@@ -287,6 +309,7 @@
     function aba() {
       for (let i = 0; i < n; i++) {
         IA[i].set(I[i]);
+        if (S.hasAdd[i]) { const Ia = IA[i], Ad = S.Iadd[i]; for (let k = 0; k < 36; k++) Ia[k] += Ad[k]; }
         biasForce(i, pA[i]);
         if (i > 0) {
           const v = S.v[i], a = AX[i], qd = S.qd[i], mx = a[0] * qd, my = a[1] * qd, mz = a[2] * qd, ci = c[i];
@@ -360,6 +383,120 @@
       S.baseResidual = Array.from(fR[0]); // what the base would have to receive to stay put
       return tauOut;
     }
+    // ---- the joint-space equations of motion (whole-body control). Coordinates are those the body
+    // integrates: z = [the base's spatial velocity in its own coordinates (w; v); the hinge rates],
+    // hinge link i at index 5 + i (nz = n + 5), so that
+    //   M zdd + h = [0; tau] + sum_c J_c^T F_c       (zdd = [ab; qdd] as aba() finds them)
+    //   * massMatrix(): M by the composite-rigid-body algorithm (RBDA table 6.2; the base's motion
+    //     subspace is the identity). Its first six rows are the whole body's spatial momentum per unit
+    //     z, in base coordinates about the base origin - momentum() reads the centre of mass, its
+    //     velocity and the centroidal angular momentum from them
+    //   * biasForces(): h by RNEA with zdd = 0 - velocity products and gravity (as an acceleration of
+    //     the base: -g), and S.fext if asked. On the way it keeps each link's spatial acceleration
+    //     from the velocities alone (S.aV, link coordinates, no gravity): the J-dot z of every task
+    //   * pointJacobian / angularJacobian: the world velocity of a world point carried by a link, a
+    //     link's world angular velocity, per unit z (3 x nz, row-major); pointDrift / angularDrift:
+    //     their accelerations at zdd = 0 (after biasForces)
+    const NZ = n + 5, Mz = new Float64Array(NZ * NZ), hz = new Float64Array(NZ), Icmp = L.map(() => new Float64Array(36)), Fv = f6(), Fp = f6();
+    const aV = L.map(f6), fV = L.map(f6);
+    S.nz = NZ; S.aV = aV;
+    function massMatrix(out = Mz) {
+      out.fill(0);
+      for (let i = 0; i < n; i++) Icmp[i].set(I[i]);
+      for (let i = n - 1; i >= 1; i--) {
+        const a = AX[i], C = Icmp[i], ci = 5 + i;
+        // (Icmp[i] is complete: its children have higher indices) F = Ic S, S = [a; 0]
+        for (let r = 0; r < 6; r++) Fv[r] = C[6 * r] * a[0] + C[6 * r + 1] * a[1] + C[6 * r + 2] * a[2];
+        out[ci * NZ + ci] = a[0] * Fv[0] + a[1] * Fv[1] + a[2] * Fv[2];
+        for (let j = i; ; ) {
+          Fp.fill(0); addXtF(Fp, S.E[j], OFF[j], Fv); Fv.set(Fp);
+          j = PAR[j];
+          if (j === 0) { for (let r = 0; r < 6; r++) out[r * NZ + ci] = out[ci * NZ + r] = Fv[r]; break; }
+          const aj = AX[j], cj = 5 + j;
+          out[cj * NZ + ci] = out[ci * NZ + cj] = aj[0] * Fv[0] + aj[1] * Fv[1] + aj[2] * Fv[2];
+        }
+        addXtIX(Icmp[PAR[i]], C, S.E[i], OFF[i]);
+      }
+      const C0 = Icmp[0];
+      for (let r = 0; r < 6; r++) for (let c = 0; c < 6; c++) out[r * NZ + c] = C0[6 * r + c];
+      return out;
+    }
+    // the whole body's mass, centre of mass (world), its velocity and the angular momentum about it
+    // (world), from the composite inertia and the momentum rows of the last massMatrix()
+    function momentum(M = Mz) {
+      const C0 = Icmp[0], m = C0[21], R0 = S.R, p0 = S.ow[0], z = S.vb;
+      const cb = [C0[16] / m, C0[5] / m, C0[9] / m], h = [0, 0, 0, 0, 0, 0];
+      for (let r = 0; r < 6; r++) {
+        let s = 0;
+        for (let k = 0; k < 6; k++) s += M[r * NZ + k] * z[k];
+        for (let i = 1; i < n; i++) s += M[r * NZ + 5 + i] * S.qd[i];
+        h[r] = s;
+      }
+      const nG = [h[0] - (cb[1] * h[5] - cb[2] * h[4]), h[1] - (cb[2] * h[3] - cb[0] * h[5]), h[2] - (cb[0] * h[4] - cb[1] * h[3])];
+      return { mass: m, cb, com: add3(p0, mv(R0, cb)), vcom: mv(R0, [h[3] / m, h[4] / m, h[5] / m]), L: mv(R0, nG) };
+    }
+    const add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+    function biasForces(out = hz, opt = {}) {
+      const ext = !!opt.fext, grav = opt.gravity !== false, g = S.gravity;
+      aV[0].fill(0);
+      for (let i = 0; i < n; i++) {
+        const ai = aV[i];
+        if (i > 0) {
+          xMot(S.E[i], OFF[i], aV[PAR[i]], ai);
+          const v = S.v[i], a = AX[i], qd = S.qd[i], mx = a[0] * qd, my = a[1] * qd, mz = a[2] * qd; // + v x (S qd)
+          ai[0] += v[1] * mz - v[2] * my; ai[1] += v[2] * mx - v[0] * mz; ai[2] += v[0] * my - v[1] * mx;
+          ai[3] += v[4] * mz - v[5] * my; ai[4] += v[5] * mx - v[3] * mz; ai[5] += v[3] * my - v[4] * mx;
+        }
+        // f = I (a + [0; -R^T g]) + v x* I v (- fext)
+        const f = fV[i], Ii = I[i], R = S.Rw[i];
+        biasForce(i, f, ext);
+        const gx = grav ? -(R[0] * g[0] + R[3] * g[1] + R[6] * g[2]) : 0, gy = grav ? -(R[1] * g[0] + R[4] * g[1] + R[7] * g[2]) : 0, gz = grav ? -(R[2] * g[0] + R[5] * g[1] + R[8] * g[2]) : 0;
+        for (let r = 0; r < 6; r++) f[r] += Ii[6 * r] * ai[0] + Ii[6 * r + 1] * ai[1] + Ii[6 * r + 2] * ai[2] + Ii[6 * r + 3] * (ai[3] + gx) + Ii[6 * r + 4] * (ai[4] + gy) + Ii[6 * r + 5] * (ai[5] + gz);
+      }
+      for (let i = n - 1; i >= 1; i--) {
+        const a = AX[i], f = fV[i];
+        out[5 + i] = a[0] * f[0] + a[1] * f[1] + a[2] * f[2];
+        addXtF(fV[PAR[i]], S.E[i], OFF[i], f);
+      }
+      for (let k = 0; k < 6; k++) out[k] = fV[0][k];
+      return out;
+    }
+    function pointJacobian(i, x, out) {
+      out.fill(0);
+      const R0 = S.R, p0 = S.ow[0], dx = x[0] - p0[0], dy = x[1] - p0[1], dz = x[2] - p0[2];
+      // base: v = R0 v_b + (R0 w_b) x (x - p0)
+      for (let c = 0; c < 3; c++) {
+        const r0 = R0[c], r1 = R0[3 + c], r2 = R0[6 + c];
+        out[c] = r1 * dz - r2 * dy; out[NZ + c] = r2 * dx - r0 * dz; out[2 * NZ + c] = r0 * dy - r1 * dx;
+        out[3 + c] = r0; out[NZ + 3 + c] = r1; out[2 * NZ + 3 + c] = r2;
+      }
+      for (let j = i; j > 0; j = PAR[j]) {
+        const R = S.Rw[j], a = AX[j], o = S.ow[j], c = 5 + j;
+        const ax = R[0] * a[0] + R[1] * a[1] + R[2] * a[2], ay = R[3] * a[0] + R[4] * a[1] + R[5] * a[2], az = R[6] * a[0] + R[7] * a[1] + R[8] * a[2];
+        const ex = x[0] - o[0], ey = x[1] - o[1], ez = x[2] - o[2];
+        out[c] = ay * ez - az * ey; out[NZ + c] = az * ex - ax * ez; out[2 * NZ + c] = ax * ey - ay * ex;
+      }
+      return out;
+    }
+    function angularJacobian(i, out) {
+      out.fill(0);
+      const R0 = S.R;
+      for (let c = 0; c < 3; c++) { out[c] = R0[c]; out[NZ + c] = R0[3 + c]; out[2 * NZ + c] = R0[6 + c]; }
+      for (let j = i; j > 0; j = PAR[j]) {
+        const R = S.Rw[j], a = AX[j], c = 5 + j;
+        out[c] = R[0] * a[0] + R[1] * a[1] + R[2] * a[2]; out[NZ + c] = R[3] * a[0] + R[4] * a[1] + R[5] * a[2]; out[2 * NZ + c] = R[6] * a[0] + R[7] * a[1] + R[8] * a[2];
+      }
+      return out;
+    }
+    // classical acceleration (world) at zdd = 0 of the world point x carried by link i:
+    // a_O + alpha x r + w x (v_O + w x r), link coordinates, then to the world
+    function pointDrift(i, x) {
+      const R = S.Rw[i], o = S.ow[i], a = aV[i], v = S.v[i];
+      const r = mtv(R, [x[0] - o[0], x[1] - o[1], x[2] - o[2]]), w = [v[0], v[1], v[2]];
+      const wr = cross(w, r), vp = [v[3] + wr[0], v[4] + wr[1], v[5] + wr[2]], ar = cross([a[0], a[1], a[2]], r), wv = cross(w, vp);
+      return mv(R, [a[3] + ar[0] + wv[0], a[4] + ar[1] + wv[1], a[5] + ar[2] + wv[2]]);
+    }
+    const angularDrift = (i) => mv(S.Rw[i], [aV[i][0], aV[i][1], aV[i][2]]);
     // ---- whole-body contact forces (inverse statics). The forces the contacts should carry so that
     // (1) together they give the body the net force and moment asked for (its balance), (2) they
     // meet extra task rows (e.g. the roll moment on a bike held up by a hand), and (3) the joints
@@ -467,7 +604,7 @@
       }
       return { mass: m, com: com.map((x) => x / m), P, H: Hh, T };
     }
-    return Object.assign(S, { kinematics, pointVelocity, toWorld, toLocal, clearForces, applyForce, applyGravity, aba, integrate, inverseDynamicsStatic, totals, contactForcePlan });
+    return Object.assign(S, { kinematics, pointVelocity, toWorld, toLocal, clearForces, applyForce, addPointInertia, applyGravity, aba, integrate, inverseDynamicsStatic, totals, contactForcePlan, massMatrix, momentum, biasForces, pointJacobian, angularJacobian, pointDrift, angularDrift });
   }
 
   // min 1/2 x'Qx - g'x subject to 0 <= x <= ub (Q symmetric positive definite, n x n row-major):

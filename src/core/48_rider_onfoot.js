@@ -1533,7 +1533,7 @@
     R.forces = function (bk, ground, dt) { const r = forces0.call(this, bk, ground, dt); effortSample(dt); return r; };
     const post = R.postContacts;
     R.postContacts = (bk, dt, reactions) => {
-      if (PL.mode === "foot") assist();
+      if (PL.mode === "foot") { if (!R.wbc?.driving) assist(); } // (on her muscles alone: no assist - 46_rider_wbc.js)
       else if (PL.mode === "getup" && G.getUpT) getUpAssist(G.getUpT);
       else if (PL.mode === "script" && G.scriptT) scriptAssist(G.scriptT);
       if (post) post(bk, dt, reactions);

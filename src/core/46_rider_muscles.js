@@ -105,10 +105,31 @@
   // ------------------------------------------------------------------ the muscle layer on a body
   // model: 46's buildModel() (links with parent / joint / axis, linkOf: joint -> the link carrying
   // its segment); body: 45's articulated body (Rw, ow, qd after kinematics()).
-  function createMuscles(asset, model, body) {
+  // ---- declared CANDIDATE refinements of the package's muscle geometry (opts.candidates): applied to
+  // a copy of the asset's definitions at creation, never to the asset; each names its source
+  const CANDIDATES = {
+    // BioRig R585 (research/lucid/r585, r585_neck_repair.py:61-62; README "Actual defect measured and
+    // repaired"): no muscle of the R1.5 model gives a positive head.nod torque (every one spanning it
+    // extends the head - measured here too: +0 / -36 N m standing); each sternocleidomastoid's skull
+    // insertion moved to Head-local z = -0.025 m (anterior of the nod axis) makes it the head-nod
+    // antagonist while it still flexes the neck. The package's length range is kept (R585 moves the
+    // site after compiling). R585: "Anatomical location is an engineering hypothesis requiring
+    // further validation" - CANDIDATE, a stand-in for the deep head flexors the model lacks.
+    scmNodAntagonist: (defs) => {
+      for (const d of defs) {
+        if (!/^(left|right)_sternocleidomastoid$/.test(d.id)) continue;
+        const k = d.points.findIndex((pt) => pt.carrier === "Head");
+        if (k >= 0) d.points[k] = { ...d.points[k], local: [d.points[k].local[0], d.points[k].local[1], -0.025] };
+      }
+    },
+  };
+  function createMuscles(asset, model, body, opts = {}) {
     asset = asset || ASSET;
     if (!asset) throw Error("LUCID muscles: no asset");
-    const D = asset.muscleDefaults, defs = asset.muscles, n = defs.length, links = model.links, NL = links.length;
+    const cands = (opts.candidates || []).filter((c) => CANDIDATES[c]);
+    let defs0 = asset.muscles;
+    if (cands.length) { defs0 = JSON.parse(JSON.stringify(asset.muscles)); for (const c of cands) CANDIDATES[c](defs0); }
+    const D = asset.muscleDefaults, defs = defs0, n = defs.length, links = model.links, NL = links.length;
     const par = links.map((l) => l.parent);
     const isAnc = (a, l) => { for (let x = l; x >= 0; x = par[x]) if (x === a) return true; return false; };
     const hingeCap = new Float64Array(NL); // strength scale per hinge (N m): the rider's torque capacity
@@ -149,11 +170,28 @@
     for (let h = 1; h < NL; h++) spanned[h] = byHinge[h].length ? 1 : 0;
 
     const M = {
-      n, ids: mus.map((m) => m.id), muscles: mus, byHinge, spanned, hingeCap,
+      n, ids: mus.map((m) => m.id), muscles: mus, byHinge, spanned, hingeCap, candidates: cands,
       len: new Float64Array(n), vel: new Float64Array(n), gain: new Float64Array(n), gainDv: new Float64Array(n), bias: new Float64Array(n),
       act: new Float64Array(n).fill(D.tone ?? 0.01), u: new Float64Array(n).fill(D.tone ?? 0.01), F: new Float64Array(n),
       aDes: new Float64Array(n), lo: new Float64Array(n), hi: new Float64Array(n),
       tauAct: D.tauAct, tauDeact: D.tauDeact,
+    };
+    // (a candidate switched on or off while she runs - M.useCandidate: the points it moves, the asset's
+    // coordinates and its own; what the path spans does not change, the carriers being the same)
+    const alt = {};
+    for (const c of Object.keys(CANDIDATES)) {
+      const dc = JSON.parse(JSON.stringify(asset.muscles)), sw = [];
+      CANDIDATES[c](dc);
+      dc.forEach((d, i) => d.points.forEach((pt, k) => {
+        const a0 = asset.muscles[i].points[k].local;
+        if (pt.local.some((v, j) => v !== a0[j])) sw.push([i, k, Float64Array.from(a0), Float64Array.from(pt.local)]);
+      }));
+      alt[c] = sw;
+    }
+    M.useCandidate = (c, on) => {
+      if (!alt[c] || M.candidates.includes(c) === !!on) return;
+      for (const [i, k, a0, a1] of alt[c]) mus[i].pts[k].local.set(on ? a1 : a0);
+      M.candidates = on ? M.candidates.concat(c) : M.candidates.filter((x) => x !== c);
     };
     const u3 = [0, 0, 0];
     // geometry at the body's current kinematics(): points, lengths, moment arms, velocities
@@ -307,7 +345,7 @@
     return M;
   }
 
-  const api = { createMuscles, asset: ASSET, gainLength, gainVelocity, muscleGain, muscleGainDv, muscleBias, muscleDynamics, rotvecToMatrix, matrixToRotvec };
+  const api = { createMuscles, CANDIDATES, asset: ASSET, gainLength, gainVelocity, muscleGain, muscleGainDv, muscleBias, muscleDynamics, rotvecToMatrix, matrixToRotvec };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   global.LUCID_MUSCLES = api;
 })(typeof window !== "undefined" ? window : globalThis);

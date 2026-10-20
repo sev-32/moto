@@ -153,7 +153,10 @@ but muscle force and passive tissue acts on her joints while she rides:
   5th metatarsal heads, 4.6 cm apart; the little toe's 0.5 cm further back), the outer border of the
   midfoot (the lateral arch, 4 mm up: it bears when the foot rolls out or sinks in), and the big toe
   and lesser toes. What stands on a peg is the line between the two metatarsal heads (it was the
-  toe joint, 2.3 cm further forward).
+  toe joint, 2.3 cm further forward). This tripod is one of two models of her sole on the same feet
+  (`R.footModel`, `R.setFootModel`): every drive on the bike and the scripted ones off it stand on
+  it - they were tuned on it; under her own muscles she stands on the other, a padded plantar
+  surface (*On her own muscles, standing*, below).
   - *soft but strong pads* (declared priors): each pad's stiffness and damping build up from nothing
     over its first mm (heel 4 mm, balls 3, toes 2) and it is firm beyond (heel 60 kN/m, balls 50,
     outer border 30, toes 20): it takes the foot softly and bears it firmly (standing, the heel pad
@@ -468,7 +471,8 @@ but muscle force and passive tissue acts on her joints while she rides:
 ## Off the bike (`48_rider_onfoot.js`)
 
 The same body, contacts and joint-torque servos (motor-driven, not muscle-driven: her muscles
-drive her only while she rides - see above); this layer plans for them while she is off the bike. Everything here is CANDIDATE: gains and timings are
+drive her only while she rides - see above - and, in Node so far, while she stands on them: *On her
+own muscles, standing*, below); this layer plans for them while she is off the bike. Everything here is CANDIDATE: gains and timings are
 declared priors, and three declared assists (below) carry part of her balance - measured and
 reported, not hidden.
 
@@ -719,6 +723,94 @@ reported, not hidden.
   declared assist's, not hers: her hands only press (palm contacts), they do not pull. At the end
   of getting off the motion assist is at its cap for 1-2 s as her right foot comes down behind the
   left. The catch assist does real work and is the first thing to reduce.
+
+## On her own muscles, standing (`46_rider_wbc.js`)
+
+Standing and stepping driven by her muscles alone: no joint motors, no pose servos, no balance
+assist (48's stands down while it drives). It is R1.5's `lucid_bcr.neuro` whole-body controller,
+ported - the muscle-level whole-body QP of Lee, Park, Kwon & Lee (2014, "Locomotion control for
+many-muscle humanoids") as the package writes it, with the package's lab-fitted parameters
+(`fitted/neuro_stance_v2.json`, and `agility_single_v1.json` on one foot; CANDIDATE, not
+owner-approved). Every control tick (100 Hz) she senses her joints, where her soles touch, her centre
+of mass and its velocity and the orientation of pelvis, chest and head, and solves one bounded
+least-squares problem whose unknowns are the activations of the 56 muscles of her legs, trunk and
+neck (her arms hang on their tissue at 1 % tone, as R1.5's relaxed arms) and the ground's push at the
+corners of each sole's support polygon (non-negative weights on friction-pyramid edges, μ 0.8: the
+contact wrench cone of Caron, Pham & Nakamura 2015), subject to her own equations of motion (45's
+CRBA mass matrix and RNEA bias; the muscles' moment arms and force-length-velocity state; her passive
+tissue; the step's implicit damping). The objectives, weighted: soles that neither slide nor sink,
+planted feet flat, her centre of mass driven by the capture-point law (Hof 2005: the centre of
+pressure it asks for kept inside her support), little whole-body spin, pelvis / chest / head at their
+orientation, joints near their posture (weak), a free foot on its path, and as little effort as will
+do. Each muscle's bounds are what it can reach over the plan's interval (activation dynamics), and
+the excitation is solved for exactly. A support state machine (R1.5 `agility.py`) runs the weight
+shift, single-leg stance and steps, each change triggered by what she senses (a foot's load, her
+capture point), the clock only bounding a phase.
+
+* **Her feet under it - the plantar model** (`46_rider_biomech.js`, `R.soles.plantar`;
+  `tests/rider_feet.test.mjs`): her sole sampled into contact elements, 18 mm apart, each at the
+  lowest point of her skin in its cell (55 per foot) - the heel pad, the outer border of the midfoot
+  (the medial arch stands clear, its skin ~35-40 mm up), the balls either side of the forefoot's
+  middle, the big toe and the lesser toes on the toe flap. Each region's tissue is a pad that
+  stiffens as it is pressed, F = A (e^(d/λ) − 1), shared over its elements: heel A 48 N, λ 3.2 mm
+  (≈ 5.5 mm under its share of quiet standing; heel-pad thickness 18.7 ± 2.5 mm, compressibility
+  index 0.53, Prichasuk 1994; indentation stiffness 17-20 N/mm), the balls 55 N / 1.8 mm (≈ 4.7 mm at
+  700 N: the metatarsal fat pads, 7-13.5 mm, compress ~46 % under walking loads), the midfoot 25 N /
+  1.5 mm, the toes 12 N / 1.2 mm; damping 6 ms × stiffness (dissipation 0.55-0.69, Wearing). The
+  elements are her sole's touch and its pressure sense (`R.feel`, by region). Each element holds the
+  ground by its own anchored friction spring up to μ × its own load, so a lightly pressed edge can
+  slip while the middle holds (a contact patch's partial slip; a foot-wide sheet sliding only as a
+  whole, tried, let the nearly unloaded foot of a weight shift go all at once). Under her muscles the ground's springs are
+  implicit over the step (an added inertia at each element; explicit pad damping is past its
+  stability limit on a foot pitching about its ankle without the motors' armature). Standing quietly
+  her load spreads heel 43 %, midfoot 15 %, balls 41 % (outer 29, inner 12), toes ~1 %, the centre of
+  pressure 35 % of the way from heel to toe tip (Cavanagh 1987: heel 60 %, midfoot 8 %, forefoot 28 %,
+  toes 4 % - she stands further forward). The tripod stays for the other drives: on these stiffer,
+  literature-fitted forefoot and toe pads (2-4× the tripod's at 3-5 mm) the scripted motions at the
+  bike - tuned on the tripod - change course (on her toes at the end of a lift, the heel of the
+  planted foot up through a dismount); switching the models (`R.setFootModel`) keeps theirs as it was
+  until they are retuned on the plantar model.
+* **Declared differences from the package**: the task accelerations carry their velocity-product
+  terms; the inertia the plan sees includes the integrator's implicit damping; a planted sole's flat
+  follows where its pads lay it while they bear broadly (held to a fixed flat, the foot-flat and
+  contact rows fought each other, ±10⁶ in the plan's gradient); the centre of mass's height held over
+  the feet that support her (with both, a lifting foot raised it 7 cm); her sternocleidomastoids as
+  head-nod antagonists (BioRig R585: no muscle of the R1.5 model flexes the head on the neck -
+  measured here too - and her head flipped on a forward push), engaged while this controller drives
+  and released when it stops (the riding drives were tuned without it); on one foot the pelvis,
+  chest, spine and legs held where she stood as the foot came up, the free foot held from her hip
+  turned only with her heading; a stepping foot aimed across as well as along at her capture point
+  (Hof 2008); the plan solved on unit-diagonal variables.
+* **Measured** (Node, `tests/rider_wbc.test.mjs` and the R1.5 push protocol): quiet stance - her
+  centre of mass within 2.9 mm, head within 2.7°, mean squared activation 0.008 after the first
+  1.5 s, the strongest muscle then at 0.92 (R1.5 G12.1: 1.38 mm, 1.11°); chest pushes of 60 / 80 /
+  100 N for 0.1 s, forward, back, left and right, at two onsets - all 24 kept without a step, her
+  centre of mass moving up to 21 mm, the head up to 16° during the push and back within 3.6° at the
+  end (R1.5 v2: forward 60 N, the others ≥ 100 N). A plan takes 2.8 ms (median; 9 ms at the 95th
+  percentile; CPU, one core) every 10 ms of her time, solved to optimality (KKT residual ≤ 2.3 × 10⁻⁵).
+* **Not yet / known**: on one foot she does not get there - asked to stand on either foot she
+  falls in the weight shift (left 2.1 s, right 1.9 s after asking), and so does the shift of a
+  voluntary step (R1.5's receipt: on one foot from 1.8 s to the end of its 8 s scene). Measured why:
+  partway through the shift, with her centre of mass only about half way over the stance foot, both
+  feet begin to roll towards the stance side together - the stance foot onto its outer edge, the
+  other onto its inner one, the stance ankle inverting to 40-48° - a sideways sway of legs, pelvis and
+  feet that grows exponentially from ~0.1 rad/s. Her pads allow the feet that roll; the plan's
+  model does not contain it: it takes the ground to be rigid, the ground's push at each sole free
+  within its friction cones, so it asks for each sole's pressure to move across it within a few
+  milliseconds (13 to 30-39 mm towards the outer edge at the onset) as MuJoCo's near-rigid contacts
+  can deliver and soft tissue cannot, and nothing in it resists a slow roll of a planted foot (its
+  contact rows only damp, its flat-foot reference settles to where the pads lay the foot). Tried,
+  not enough on its own: planning at 270 Hz with the shift's goal set at once and the free foot
+  carried softly (her left foot then holds, from 3.85 s to the end of 8 s, still within 4° - but her
+  right falls as before, and the pushes she keeps drop to 60 N back and 80 N left); slower shifts
+  (1.5 and 2.5 s, fed forward); pads 4-10 times stiffer; the tripod soles; each sole's pressure kept
+  in from its edges or drawn to its middle; a sole's flat always settling, or not held; the plan's ground
+  wrench held to what the pads push, or to what they would push given its own accelerations;
+  active muscle's short-range stiffness. The next step is a plan that models the soft contact it
+  stands on. Walking, strafing and turning on her muscles are therefore not yet built; she walks on
+  48's motors. Her neck: the left longus colli and upper trapezius carry most of her standing
+  effort - the model's neck lacks the deep head flexors and the shoulder girdle's protractors. The
+  controller is not yet wired into the game.
 
 ## Legacy rider (`40_rider_body.js`, `?rider=legacy`)
 

@@ -1,6 +1,8 @@
-// Her feet (src/core/46_rider_biomech.js): an anatomical tripod on her own sole - the package's
-// plantar contact region (contactRegions.leftFoot / rightFoot) - with pads at the heel, the balls of
-// the big and little toes and the outer midfoot, and the toes on a flap hinged at her toe joint;
+// Her feet (src/core/46_rider_biomech.js), two models of her sole on her own skin - the package's
+// plantar contact region (contactRegions.leftFoot / rightFoot): an anatomical tripod (pads at the
+// heel, the balls of the big and little toes and the outer midfoot) and a padded plantar surface
+// (contact elements by region: heel, outer midfoot, the balls either side of the forefoot's middle,
+// the toes) - the toes on a flap hinged at her toe joint either way;
 // what each sole feels (R.feel); the ankle's roll worked from that feel; the toes' elastic hold.
 // Standing (48_rider_onfoot.js, joint-torque servos off the bike), her weight spreads over the
 // tripod and the feet conform to the ground. Bands are sanity bounds from quiet-standing pressure
@@ -14,8 +16,9 @@ const OF = globalThis.LUCID_RIDER_ONFOOT, dt = 1 / 540, DEG = Math.PI / 180;
 
 test("her feet: pads where her own sole is lowest - heel, the two balls, the outer border, the toes on a flap", () => {
   const R = BIO.createRider(character, surfaces);
+  assert.equal(R.footModel, "tripod");
   for (const S of ["L", "R"]) {
-    const ft = R.foot[S], pads = R.spheres.filter((s) => s.kind === "sole" && s.side === S);
+    const ft = R.foot[S], pads = R.spheres.filter((s) => s.kind === "sole" && s.model === "tripod" && s.side === S);
     const at = Object.fromEntries(pads.map((s) => [s.at, s]));
     assert.deepEqual(Object.keys(at).sort(), ["ballLat", "ballMed", "hallux", "heel", "midLat", "toes"]);
     const fwd = (s) => s.c[0] * ft.forward[0] + s.c[1] * ft.forward[1] + s.c[2] * ft.forward[2], med = (s) => s.c[0] * ft.med[0];
@@ -29,6 +32,38 @@ test("her feet: pads where her own sole is lowest - heel, the two balls, the out
     for (const s of pads) assert.ok(s.c[1] - s.r - ft.soleY < 0.007, `${s.at} ${(1000 * (s.c[1] - s.r - ft.soleY)).toFixed(1)} mm up`);
     // (what stands on a peg: between the two metatarsal heads)
     assert.ok(Math.abs(fwd({ c: ft.ball }) - (fwd(at.ballMed) + fwd(at.ballLat)) / 2) < 1e-9);
+    // (the toe joint is the asset's toe DOF, within its range)
+    assert.ok(ft.toes.id.endsWith("Toe.flexionExtension") && ft.toes.lo < 0 && ft.toes.hi > 0);
+  }
+});
+
+test("her feet: a padded plantar surface on her own sole - heel, outer midfoot, the balls either side, the toes on a flap", () => {
+  const R = BIO.createRider(character, surfaces), PL = R.priors.plantar;
+  for (const S of ["L", "R"]) {
+    const ft = R.footRef.plantar[S], els = R.soles.plantar.filter((s) => s.side === S);
+    const by = {};
+    for (const e of els) (by[e.at] || (by[e.at] = [])).push(e);
+    assert.deepEqual(Object.keys(by).sort(), ["ballLat", "ballMed", "hallux", "heel", "midLat", "toes"]);
+    assert.ok(els.length >= 40, `${S} ${els.length} plantar elements`);
+    for (const k in by) assert.ok(by[k].length >= 2, `${S} ${k}: ${by[k].length} elements`);
+    // (each region's pad shared by its elements: the regions' scales as declared)
+    const sumA = (ks) => ks.reduce((a, k) => a + by[k].reduce((b, e) => b + e.A, 0), 0);
+    assert.ok(Math.abs(sumA(["heel"]) - PL.heel.A) < 1e-9 && Math.abs(sumA(["ballMed", "ballLat"]) - PL.ball.A) < 1e-9 && Math.abs(sumA(["midLat"]) - PL.mid.A) < 1e-9 && Math.abs(sumA(["hallux", "toes"]) - PL.toe.A) < 1e-9);
+    const fwd = (c) => c[0] * ft.forward[0] + c[1] * ft.forward[1] + c[2] * ft.forward[2], med = (c) => c[0] * ft.med[0];
+    const cen = (k) => [0, 1, 2].map((i) => by[k].reduce((a, e) => a + e.c[i], 0) / by[k].length);
+    // (heel behind the midfoot, the midfoot behind the balls, the balls behind the toe joint, the
+    // toes ahead of it; the little toe's side outside the big toe's)
+    const toeJoint = fwd(ft.toes.pivot);
+    assert.ok(fwd(cen("heel")) < fwd(cen("midLat")) && fwd(cen("midLat")) < fwd(cen("ballLat")) && fwd(cen("ballMed")) < toeJoint + 0.01 && toeJoint < fwd(cen("hallux")));
+    assert.ok(med(cen("ballMed")) - med(cen("ballLat")) > 0.03, `forefoot width ${(med(cen("ballMed")) - med(cen("ballLat"))).toFixed(3)} m`);
+    assert.ok(med(cen("hallux")) > med(cen("toes")));
+    assert.ok(by.hallux.every((e) => e.toe) && by.toes.every((e) => e.toe) && !by.heel.some((e) => e.toe) && !by.ballMed.some((e) => e.toe));
+    // (each element's bottom on her rest sole: within plantarMaxM of its lowest point, the heel's and
+    // the balls' lowest a few mm)
+    for (const e of els) assert.ok(e.c[1] - e.r - ft.soleY < PL.plantarMaxM + 1e-9, `${e.at} ${(1000 * (e.c[1] - e.r - ft.soleY)).toFixed(1)} mm up`);
+    for (const k of ["heel", "ballMed", "ballLat"]) assert.ok(Math.min(...by[k].map((e) => e.c[1] - e.r - ft.soleY)) < 0.004, `${k} lowest ${(1000 * Math.min(...by[k].map((e) => e.c[1] - e.r - ft.soleY))).toFixed(1)} mm`);
+    // (what stands on a peg: between the two balls)
+    assert.ok(Math.abs(fwd(ft.ball) - (fwd(cen("ballMed")) + fwd(cen("ballLat"))) / 2) < 1e-9);
     // (the toe joint is the asset's toe DOF, within its range)
     assert.ok(ft.toes.id.endsWith("Toe.flexionExtension") && ft.toes.lo < 0 && ft.toes.hi > 0);
   }

@@ -59,6 +59,11 @@
       "description": "Physical rider: the LUCID character as an articulated body (Semantic51 hinges, R1.5 17-body profile, skin-fitted contact spheres) on the 916's contact surfaces (envelope SDF, pegs, grips, ground); torque-limited servos, IK planner (world-referenced trunk/head, hang-off/tuck/stand, braking brace), coupled into the V5 multibody"
     },
     {
+      "id": "rider-wbc",
+      "file": "46_rider_wbc.js",
+      "description": "Her whole-body muscle control on her feet (R1.5 lucid_bcr.neuro, ported): one bounded least-squares plan per control tick over her muscles' activations and her plantar soles' ground forces - contacts, flat feet, capture-point balance of her centre of mass, angular momentum, pelvis / chest / head orientation, posture, effort - and the support state machine (weight shift, single leg, steps); no motors, no assist"
+    },
+    {
       "id": "rider-render",
       "file": "47_rider_render.js",
       "description": "The physical rider drawn through the canonical skin path (compile -> helper clusters -> Skin78 LBS) every frame from her body's Semantic51 commands + placement; hands closed on the grips with the declared bottle grip synergy; legacy mannequins hidden while she is active"
