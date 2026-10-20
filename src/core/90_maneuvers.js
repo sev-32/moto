@@ -240,6 +240,11 @@
   function simulate(name, opts = {}) {
     const d = DEFS[name];
     if (!d) throw Error("unknown maneuver " + name);
+    // A free ride can enter the burnout rig before a scripted maneuver begins.
+    // The rig forces a temporary tuck/fore-aft posture. Stop it BEFORE saving the
+    // rider's posture; otherwise F.reset() stops the rig after the snapshot and
+    // the maneuver restores the stale burnout pose at teardown.
+    if (RIG.active) burnoutRig.stop();
     const F = free, pt = PT(), RB = CORE.rider, WORLD = CORE.world;
     const wasPaused = API.isPaused?.();
     // chassis tests run on the flat, uniform-grip reference road unless the maneuver asks for the world
