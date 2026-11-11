@@ -1,3 +1,74 @@
+# LUCID MOTO
+
+### A motorcycle is a balancing act of real forces.
+
+**Ducati 916 research platform · motorcycle multibody dynamics · contact-patch mechanics · rider biomechanics · physically driven effects**
+
+A believable motorcycle should not lean because its handlebar input triggers a predefined animation. Counter-steering, tyre contact and relaxation, gyroscopic response, load transfer, suspension and the rider's body should jointly produce the machine's motion.
+
+**LUCID MOTO** is a research-driven Ducati 916 simulator combining a retained original studio/source lineage with motorcycle mechanics, transient tyre force models, a physical rider, a proving-ground environment and measurable control/ride scenarios.
+
+> **Status:** implemented modeling, source-conservation and browser-test infrastructure. The built simulator uses physical and semi-empirical laws and includes measured internal tests. These do **not** prove that every cornering, tyre, rider or crash behavior matches a measured Ducati 916. A scene that runs and looks plausible remains distinct from one with full vehicle-system validation.
+
+**[Physics and known model assumptions](docs/PHYSICS.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Source audit](docs/AUDIT.md)**
+
+---
+
+## The bike and its rider are one coupled system
+
+```mermaid
+flowchart TD
+  INPUT["Rider actions<br/>throttle · brake · torque · posture"] --> CTRL["Control and biomechanical intent"]
+  CTRL --> RIDER["Articulated rider / muscle and contact response"]
+  CTRL --> BIKE["Chassis · steering · swingarm · suspension"]
+  RIDER <--> BIKE
+  BIKE <--> TIRE["Front/rear tyre contact<br/>patch, slip, camber, load"]
+  GROUND["Terrain and surface conditions"] <--> TIRE
+  BIKE --> EFFECT["Exhaust · tyre marks · smoke · sound"]
+  RIDER --> OBS["Physical state and observation"]
+  EFFECT --> OBS
+  BIKE --> OBS
+```
+
+A tyre-force model should determine what the motorcycle can do on the road. The body, frame and rider then respond to those actual forces. Visible motion, rubber marks and mechanical audio should remain consequences of those states—not parallel systems guessing what probably happened.
+
+### Source-grounded distinctions
+
+| Area | What the development line contains |
+|---|---|
+| **Chassis** | Multibody 916 geometry with coupled inertia, steering, fork and swingarm response at a 540 Hz fixed simulation step |
+| **Tyres** | Contact footprint from tread geometry, brush-element shear history, camber and slip coupling, and transient carcass compliance |
+| **Drivetrain** | Clutch, chain loads, wheel dynamics, engine-state telemetry and torque reactions |
+| **Rider** | Articulated LUCID body, biomechanics and constrained muscle-response research; controlled body posture and interactions |
+| **Environment** | Proving-ground surface, physically motivated smoke/exhaust, surface marks and sound cues |
+| **Evidence** | Preserved original builds, unit tests, browser smoke and named maneuver scenarios with quantitative limits |
+
+## Why motorcycle realism is uniquely difficult
+
+Unlike a car, a motorcycle is not statically stable at a standstill. Control laws must handle roll, pitch, steer and tyre behavior over changing speed and lean. Small mistakes in contact direction, steering torque, chain reaction or a rider's support load can produce a simulation that technically moves yet feels profoundly wrong.
+
+The project's tyre model uses brush-patch memory; the chassis retains physical suspension and steering dynamics; the rider has her own support, joint and control state. Those components require **coupled validation**, not a screenshot of a good turn. The [physics documentation](docs/PHYSICS.md) records parameters, source assumptions and original maneuver tests.
+
+## Preserve the original. Add measurable layers.
+
+The source tree retains the earlier original studio scripts and a layer-based consolidated runtime. Reference builders reproduce archived pages by recorded hashes. Experiments are expected to maintain those original source identities and show exactly what changed between baseline and candidate.
+
+```bash
+npm run build
+npm run build:legacy
+npm test
+npm run test:browser
+npm run test:maneuvers
+```
+
+These are documented commands; they have not been re-executed during this README change. Browser tests require the specified Chromium/Playwright environment.
+
+**The aim is not to make the bike appear to ride correctly. It is to make its actual forces, rider and environment capable of producing that ride.**
+
+---
+
+## Original development and controls
+
 # LUCID MOTO — Ducati 916 hyper-real motorcycle simulation
 
 Consolidated source tree for the Ducati 916 / LUCID MOTO builds. The V5.6.7 + V1.31.0
