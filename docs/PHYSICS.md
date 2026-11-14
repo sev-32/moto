@@ -804,16 +804,40 @@ capture point), the clock only bounding a phase.
   pelvis within 5-8.4°, chest 17-21°, mean squared activation 0.07-0.09; her head swings out to
   54-78° about a second into the hold and comes back within 2° by 3.7 s into it (R1.5's receipt: on
   one foot from 1.8 s to the end of its 8 s scene).
+* **Stepping and the walk (work in progress, `efeb968`; CANDIDATE)**: what the controller has for
+  moving her feet, none of it solved yet.
+  - *Voluntary and reactive steps* (`W.requestStep(swing, [across, along])`; a reactive step starts
+    when her capture point leaves her feet by more than 1 cm): weight shifted over the stance foot
+    (`AGILITY.shift_along_step` along it), the free leg's joint posture reference following an IK solve
+    of the planned foot path (`swing_ik`), a knee range guard while she steps (`PARAMS.w_range`,
+    `range_*`), and a warm start that no longer lets a lifted foot's force cap give NaN at landing.
+  - *The walk* (this port's, declared; the package has none; `GAIT`, `W.requestWalk({ n, step: [along,
+    across] })`): a footstep plan and her capture point's path through it solved backwards from rest
+    (Englsberger, Ott & Albu-Schaeffer 2015), tracked through `W.dcmRef` in alternating single and double
+    support (`wss` / `wds`), with the firmer one-foot neck setting while it walks.
+  - *Hip internal rotators* (`tools/character/hip_rotators_experiment.mjs`, CANDIDATE, **not wired in**):
+    her hip has no internal rotators, so loading a new stance foot twists it outward. The experiment
+    registers Rajagopal et al. (2016) gluteus medius 1, gluteus minimus 1 and tensor fasciae latae on her
+    skeleton and takes glmed1 + glmin1 off the lumped gluteus medius's Fmax. With it the walk reached 5
+    landings (fall at 5.0 s) instead of 2.
+  - *Measured at this head* (`tests/rider_wbc_frontier.test.mjs`, requested at 1 s, 8 s run; "fell" =
+    pelvis under 0.6 m): a step out 0.12 m, either foot, lands and she stands (head 1.4-2.5 deg at the
+    end) but her head swings out to 42-43 deg on the way; a step forward 0.15 m lands, then she drifts
+    into reactive steps and falls (left foot at ~6.7 s, right at ~5.9 s - at 6 s the left case is not yet
+    "fallen" by the pelvis and has its head at 53 deg, which is why the tests gate the head too); a step
+    back 0.12 m (left) lands, then four reactive steps and a fall at 4.7 s; a 150 N push at the chest
+    for 0.1 s is answered by repeated steps and a fall at 2.6 s; a walk of 10 steps of 0.25 m falls at
+    ~3.2 s after two landings, and the walk's plan runs on after she has fallen.
 * **Not yet / known**: her head on one foot - the neck's muscles saturate as the foot comes up and
   the head swings out (above); held firmer it couples into her trunk (at a one-foot neck posture
   weight of 3 her right foot holds with the head within 9° but her left falls), and past the neck's
   range its muscles' paths lose or flip their moment arms (the left neck extensors from +11 to
   −28 mm at 55° of side bend: nothing lifts the head back - on her standing parameters alone, without
   the firmer neck, her left foot's hold kept the head at ~90°); the model's neck lacks the deep head
-  flexors and the shoulder girdle's protractors. Steps do not yet recover: a voluntary step forward
-  falls in its swing, a step to the side completes once and falls after the second lands, a reactive
-  step (150 N pushes) falls as it lands. Walking, strafing and turning on her muscles are therefore not
-  yet built; she walks on 48's motors. The controller is not yet wired into the game.
+  flexors and the shoulder girdle's protractors. Steps do not yet recover (the bullet above: seven
+  `todo` tests in `tests/rider_wbc_frontier.test.mjs` state what "done" means and flip to passing as it
+  is reached). Walking, strafing and turning on her muscles are therefore not yet built; she walks on
+  48's motors. The controller is not yet wired into the game.
 
 ## Legacy rider (`40_rider_body.js`, `?rider=legacy`)
 
