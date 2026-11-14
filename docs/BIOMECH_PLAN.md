@@ -58,6 +58,11 @@ updated.
 
 ## 3. Strategy
 
+**The gym is the spine** (`docs/GYM.md`, owner's idea, built as v1): a training camp of events from
+standing still to gymnastics, on which every method - muscles, motors, a reflex controller, whatever
+comes - is judged by the same whole-body gate and the same statistics, and which later doubles as the
+objective for training. Phase 1's instruments are its parts; each later phase is a rung of its ladder.
+
 Instruments before controllers. Plant before plan. A step before a walk. Zero delay before delay.
 Model-based before learned. The JS body is the product runtime and, for now, also the lab, because
 it is the one that runs everywhere; MuJoCo becomes the high-throughput lab once parity fixtures
@@ -91,26 +96,17 @@ Each package ends with a commit, updated tests, and a report of at most one page
 
 ### Phase 1 - instruments (Builder builds, Lead reviews the definitions)
 
-- **P1.1 Whole-body gate** (`tests/lib/gate.mjs`). One definition of a valid episode, used by every
-  muscle-driven test, restoring the R541 coverage that R562 lost. Candidate thresholds: head to
-  thorax <= 15 deg in quiet tasks (<= 30 deg transient, back under 10 deg within 1 s); pelvis
-  <= 10 deg, chest <= 25 deg; no ground contact except the soles; sole slip <= 10 mm per stance;
-  no unplanned contact on/off chatter; zero assists and zero motors; finite state; ends settled
-  (centre-of-mass speed < 0.05 m/s, capture point >= 1 cm inside the support for the last 1 s).
-  It reports the first violated criterion and its time, not just pass/fail.
-- **P1.2 Episode recorder and ensemble runner** (`tools/lab/ensemble.mjs`, `worker_threads`).
-  Scenario x perturbation seeds (joint angles +-0.5 deg, small velocities, push timing and size
-  +-10 %, friction 0.6 / 0.8 / 1.0, physics rate 270 / 540 / 1080 Hz). Output: survival fraction
-  with a Wilson 95 % interval, margin distributions, time-to-fail and first-violation histograms,
-  as `lab/out/scoreboard.json` plus a Markdown table. From here on a capability "passes" when the
-  lower bound of its interval is >= 0.8 over at least 32 seeds; single runs are anecdotes.
-- **P1.3 The capability ladder** (scenarios for P1.2):
-  S0 quiet stance 10 s · S1 pushes 60-100 N, four directions · S2 one-foot hold, both feet, onsets
-  0.8-2.0 s · S3 step and recover (forward 0.15 / 0.30 m, side, back) · S4 reactive step, 150 N
-  push · S5 walk 10 steps and stop, then 20 steps at 0.8 m/s · S6 turn, strafe, start / stop ·
-  S7 seated on a stool 24 s plus a 120 N hip push (the R587 / R590 protocol on the JS body, which
-  unifies the two lineages without the archives) · S8 S0-S5 again under 20 / 40 ms sensing delay.
-- **P1.4 Fall forensics** (`tools/lab/why.mjs`). From a failing trace, the ordered chain of what
+- **P1.1-P1.3 The gym core** - **built as v1** (`gym/`, `docs/GYM.md`, `docs/lab/SCOREBOARD.md`):
+  the whole-body gate (`gym/core/gate.mjs`: finite, pelvis, head at every instant and at the end,
+  soles only, settled), the episode runner and the seeded ensemble in worker threads
+  (`gym/core/episode.mjs`, `ensemble.mjs`: joint, timing, push and grip jitter; Wilson 95 % verdicts
+  PASS / FAIL / UNSURE), two methods (`wbc` muscles, `motors`) and 23 events over levels 1-4 and 7.
+  Left to do here: (a) the S7 stool-and-push seated event and the R587 / R590 protocol on the JS body;
+  (b) the modifiers (sensing delay, physics rate 270 / 540 / 1080 Hz, payload, fatigue) as ensemble
+  axes; (c) levels 5, 6, 8-10 (terrain, flight phases, the 916, delay); (d) a claim-grade run is
+  32 seeds, not the 8 of the first scoreboard; (e) a CI-style comparison of two scoreboards that
+  fails on a regression.
+- **P1.4 Fall forensics** (`gym/why.mjs`; the gym keeps traces of the first two episodes per event). From a failing trace, the ordered chain of what
   hit a limit first: muscle activation bounds, centre of pressure at the polygon edge, friction
   cone, joint range, the largest QP task residuals by row group, and planned versus realised
   ground force per foot. Twenty lines of output, not a data dump.
@@ -122,7 +118,7 @@ Each package ends with a commit, updated tests, and a report of at most one page
   inside the range, arms under 5 mm, capacity under 1.5 x demand. Plus a whole-body static
   feasibility solve (least maximum activation that balances gravity) at one-foot stance, mid-swing,
   touchdown and deep hang-off. A unit test pins the flag list so the asset cannot regress unseen.
-- **P1.6 Rate and replay study** (`tools/lab/replay.mjs`). Record the excitations of a 540 Hz
+- **P1.6 Rate and replay study** (`gym/replay.mjs`; the rate becomes an ensemble axis). Record the excitations of a 540 Hz
   one-foot run and replay them open-loop at 270 / 540 / 1080 / 2160 Hz. If the open-loop
   trajectories agree, the rate sensitivity is closed-loop marginal stability (go to P2.2 / P2.3); if
   they diverge, it is the integration of the pads (fix that first).
