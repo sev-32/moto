@@ -18,6 +18,8 @@ node gym/run.mjs --methods wbc --level 1-3 --seeds 32     # one method, easy lev
 node gym/run.mjs --events hold. --seeds 4 --no-vary --mods '{"jointStdDeg":0}'   # no perturbation: the unit tests' physics
 ```
 
+First results: [`docs/lab/SCOREBOARD.md`](lab/SCOREBOARD.md) and [`docs/lab/REPORT_gym_v1.md`](lab/REPORT_gym_v1.md).
+
 ## What a run is
 
 * **Event** (`gym/events/`): data. A level and a difficulty value `D`, a length `T`, a script of

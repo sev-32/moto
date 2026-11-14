@@ -8,11 +8,11 @@ pre-installed Chromium with SwiftShader - no GPU), from a clean checkout of
 | | at `b528f31` (before P0) | at the P0 head |
 | --- | --- | --- |
 | `npm run build` | ok, 3 s, `dist/LucidMoto_V2.0.0_dev.html` 30.64 MiB, 26 core layers | ok, 2 s |
-| `npm test` (unit, `node --test`) | 103 tests: **102 pass, 1 fail** (`rider_onfoot.test.mjs:196`), 96 s | 110 tests: **103 pass, 0 fail, 7 todo** (the frontier, below), 82 s |
+| `npm test` (unit, `node --test`) | 103 tests: **102 pass, 1 fail** (`rider_onfoot.test.mjs:196`), 96 s | 117 tests: **110 pass, 0 fail, 7 todo** (the frontier, below; 7 of the passes are `tests/gym.test.mjs`), 85 s |
 | `npm run test:browser` (smoke) | 10 of 10 checks, 84 s | 10 of 10, 81 s |
 | `npm run test:maneuvers` (muscle-driven rider) | 15 of 15 within bands, 72 s | 15 of 15, identical numbers (table below), 58 s |
 
-The failing test is explained, bisected and fixed in `REPORT_P0.2.md`. The 7 `todo` tests
+The failing test is explained, bisected and fixed in `REPORT_P0.2.md`. (The gym's claim-grade scoreboard is `docs/lab/SCOREBOARD.md`, with `REPORT_gym_v1.md`.) The 7 `todo` tests
 (`tests/rider_wbc_frontier.test.mjs`) are the muscle controller's frontier - steps, a reactive step and
 a walk, each judged by a whole-body gate - and all 7 fail today, by design; `PHYSICS.md` (*Stepping and
 the walk*) has what each does.
