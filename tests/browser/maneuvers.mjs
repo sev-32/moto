@@ -17,7 +17,7 @@ const EXPECT = {
   standstill: { noCrash: 1, maxAbsRollDeg: [0, 5] },
   brakeFirm: { noCrash: 1, maxAbsRollDeg: [0, 3], maxDecelG: [0.6, 1.0], stopT: [2.5, 4.6] },
   brakeMax: { noCrash: 1, maxAbsRollDeg: [0, 5], maxDecelG: [0.9, 1.35] },
-  brakeGrab: { maxNF: [0, 20000] },
+  brakeGrab: { maxNF: [0, 20000] }, // Lock + failure-mechanism consistency checked below; a straight grab need not low-side.
   brakeAbs: { noCrash: 1, minPitchDeg: [-12, 0], maxDecelG: [0.9, 1.9], stopT: [2.5, 4.2] },
   stoppie: { noCrash: 1, maxLiftR: [0.06, 0.3], minPitchDeg: [-20, -4] },
   launch: { noCrash: 1, maxAccelG: [0.6, 1.4] },
@@ -31,6 +31,21 @@ function check(name, m) {
   const e = EXPECT[name] || {}, fails = [];
   if (!m.finite) fails.push("non-finite state");
   if (e.noCrash && m.crashT !== null) fails.push(`crash at ${m.crashT}s`);
+  // A 40-bar panic grab on an upright bike may produce a lock, stoppie or end-over-end;
+  // numerical boundedness alone says nothing about mechanism. Test recorded events
+  // and reject a fabricated "impact" when no collision proxy actually contacted ground.
+  if (name === "brakeGrab") {
+    if (m.frontLockT === null || !(m.frontLockT >= 0.3)) fails.push("front lock not observed after lever grab");
+    if (m.terminationReason === "near_vertical_pitch_attitude" &&
+        !(Math.abs(m.terminationPitchDeg) > 75)) fails.push("near-vertical pitch label inconsistent with attitude");
+    if (m.terminationReason === "body_contact" && m.firstBodyContactT === null)
+      fails.push("body contact claimed without a proxy collision");
+    if (m.terminationReason !== null &&
+        !["near_vertical_pitch_attitude", "high_bank_attitude", "body_contact", "nonfinite_state"].includes(m.terminationReason))
+      fails.push(`unknown termination reason: ${m.terminationReason}`);
+    if (m.firstBodyContactT !== null && !m.firstBodyContactName)
+      fails.push("body contact lacks collider provenance");
+  }
   for (const [k, v] of Object.entries(e)) {
     if (!Array.isArray(v)) continue;
     const x = m[k];

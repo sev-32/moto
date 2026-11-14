@@ -240,6 +240,15 @@
   function simulate(name, opts = {}) {
     const d = DEFS[name];
     if (!d) throw Error("unknown maneuver " + name);
+    // Reject invalid diagnostics BEFORE mutating ride state, controls, thermal state
+    // or the burnout rig. Previously a rejected >3s probe left the live ride reset.
+    if (opts.probeContinuePastAttitude && (!Number.isFinite(opts.T ?? d.T ?? 5) || (opts.T ?? d.T ?? 5) > 3 || (opts.T ?? d.T ?? 5) <= 0))
+      throw Error("overturn probe duration must be >0 and limited to 3 simulated seconds");
+    // A free ride can enter the burnout rig before a scripted maneuver begins.
+    // The rig forces a temporary tuck/fore-aft posture. Stop it BEFORE saving the
+    // rider's posture; otherwise F.reset() stops the rig after the snapshot and
+    // the maneuver restores the stale burnout pose at teardown.
+    if (RIG.active) burnoutRig.stop();
     const F = free, pt = PT(), RB = CORE.rider, WORLD = CORE.world;
     const wasPaused = API.isPaused?.();
     // chassis tests run on the flat, uniform-grip reference road unless the maneuver asks for the world
@@ -270,20 +279,187 @@
     F.controls.userSteerTorqueNm = 0;
     const rider = riderCom(F);
     const dt = F.S.dt, T = opts.T ?? d.T ?? 5, n = Math.round(T / dt), every = Math.max(1, Math.round((opts.traceHz ? 1 / opts.traceHz : 0.05) / dt));
+    // An explicit, bounded crash-reconstruction experiment may continue past the
+    // normal Euler-angle guard to capture the FIRST actual proxy collision. It
+    // never changes production rider physics or normal maneuver termination.
+    // Probe duration was validated before any session state changed.
     const mem = { lean: leanController(opts.leanGains || d.leanGains), heading: null };
-    const trace = [], M = { maxPitchDeg: -1e9, minPitchDeg: 1e9, maxAbsRollDeg: 0, maxDecelG: 0, maxAccelG: 0, minNF: 1e9, minNR: 1e9, maxNF: 0, maxNR: 0, maxLiftF: 0, maxLiftR: 0, stopT: null, crashT: null, finite: true };
+    // Incident observability: a wheel lock, wheel lift, physical contact and an extreme
+    // attitude are distinct events. In particular, Euler roll ceases to be a reliable
+    // low-side classification as pitch approaches +/-90 degrees (gimbal singularity).
+    // These fields are diagnostic only: the integrator, tire forces, crash stop criteria,
+    // and the previous scalar acceptance bands are unchanged.
+    const trace = [], M = { maxPitchDeg: -1e9, minPitchDeg: 1e9, maxAbsRollDeg: 0, maxDecelG: 0, maxAccelG: 0, minNF: 1e9, minNR: 1e9, maxNF: 0, maxNR: 0, maxLiftF: 0, maxLiftR: 0, stopT: null, crashT: null, finite: true,
+      frontLockT: null, rearLiftT: null, firstBodyContactT: null, firstBodyContactName: null,
+      terminationReason: null, terminationPitchDeg: null, terminationRollDeg: null, maxLoadedFrontForceRatio: 0,
+      groundStopT: null, headingVelocityReversalT: null,
+      interface: opts.probeInterface ? { samples: 0, sourcePairs: {},
+        bikeWorkJ: 0, riderContactWorkJ: 0, pairSlipWorkJ: 0,
+        groundWorkJ: 0, jointWorkJ: 0, riderEnergyDeltaJ: 0,
+        riderKineticDeltaJ: 0, riderPotentialDeltaJ: 0,
+        riderMassKg: null, initialRiderKineticJ: null, initialRiderPotentialJ: null,
+        finalRiderKineticJ: null, finalRiderPotentialJ: null,
+        residualJ: 0, maxAbsInstantaneousResidualJ: 0,
+        bikeLedgerMismatchJ: 0, peakAbsBikeLedgerPowerMismatchW: 0,
+        missingSamples: 0, firstContact: null } : null,
+      work: opts.probeWork ? { samples: 0, maxForceClosure: 0,
+        maxPowerClosureW: 0, maxPitchClosureNm: 0,
+        totalGeneralizedWorkJ: 0, categories: {},
+        firstFrontLock: null, firstRearLift: null, firstVertical: null,
+        firstImpact: null, preBrake: null } : null,
+      balance: opts.probeBalance ? { samples: 0, peakRelativeResidual: 0,
+        peakAbsoluteResidualN: 0, peakAbsPitchCrossCouplingNm: 0,
+        peakAbsPitchDiagonalNm: 0, maxImpulseRelativeResidual: 0,
+        maxAbsJointImpulseEnergyDeltaJ: 0, jointImpulseFrames: 0,
+        firstFrontLock: null, firstRearLift: null, firstVertical: null,
+        firstImpact: null } : null,
+      dynamics: opts.probeDynamics ? { samples: 0, peakAbsPitchAccelBodyRadS2: 0,
+        peakAbsPitchGeneralizedForceNm: 0, peakAbsPitchBiasNm: 0,
+        peakGeneralizedSolveConditionProxy: 0, peakMassSymmetryError: 0,
+        rotorXPeakAbsNm: 0, jointLimitImpulseFrames: 0,
+        firstLock: null, firstRearLift: null, firstVertical: null, firstProxyImpact: null } : null };
     let cogPrev = null, vPrev = null, vHist = [];
     const t0 = performance.now();
     for (let i = 0; i <= n; i++) {
       const t = i * dt;
       const s = state(F, rider);
+      if (M.frontLockT === null && s.NF > 100 && s.kF <= -0.9) M.frontLockT = +t.toFixed(4);
+      if (M.rearLiftT === null && s.liftR > 0.02) M.rearLiftT = +t.toFixed(4);
+      if (s.NF > 100) M.maxLoadedFrontForceRatio = Math.max(M.maxLoadedFrontForceRatio,
+        Math.hypot(F.tf?.FxN || 0, F.tf?.FyN || 0) / s.NF);
       const ctx = { F, cmd, s, t, dt, mem, steer: 0, rpm: pt?.states?.free?.engine?.rpm || 0 };
       if (d.control) d.control(ctx);
       F.controls.userSteerTorqueNm = d.control ? ctx.steer : 0;
       F.__rttLite = i % every !== 0;
-      F.step();
-      F.__rttLite = false;
-      if (!Number.isFinite(F.p[2]) || !Number.isFinite(F.v[1])) { M.finite = false; break; }
+      F.__motoBalanceProbe = !!opts.probeBalance;
+      F.__motoWorkProbe = !!opts.probeWork;
+      F.__motoInterfaceProbe = !!opts.probeInterface;
+      try { F.step(); } finally { F.__rttLite = false; F.__motoBalanceProbe = false; F.__motoWorkProbe = false; F.__motoInterfaceProbe = false; }
+      if (M.interface) {
+        const I = M.interface, c = CORE.riderBio?.interfaceProbe;
+        if (!c || c.riderEnergyDeltaJ === null) I.missingSamples++;
+        else {
+          I.samples++;
+          I.bikeWorkJ += c.bikePowerW * dt;
+          I.riderContactWorkJ += c.riderPowerW * dt;
+          I.pairSlipWorkJ += c.pairPowerW * dt;
+          I.groundWorkJ += c.groundPowerW * dt;
+          I.jointWorkJ += c.jointPowerW * dt;
+          I.riderEnergyDeltaJ += c.riderEnergyDeltaJ;
+          I.riderKineticDeltaJ += c.riderKineticAfterJ - c.riderKineticBeforeJ;
+          I.riderPotentialDeltaJ += c.riderPotentialAfterJ - c.riderPotentialBeforeJ;
+          I.riderMassKg = c.riderMassKg;
+          if (I.initialRiderKineticJ === null) { I.initialRiderKineticJ = c.riderKineticBeforeJ; I.initialRiderPotentialJ = c.riderPotentialBeforeJ; }
+          I.finalRiderKineticJ = c.riderKineticAfterJ;
+          I.finalRiderPotentialJ = c.riderPotentialAfterJ;
+          I.residualJ += c.riderEnergyBudgetResidualJ;
+          I.maxAbsInstantaneousResidualJ = Math.max(I.maxAbsInstantaneousResidualJ, Math.abs(c.riderEnergyBudgetResidualJ));
+          for (const [name,src] of Object.entries(c.categories)) {
+            const item = I.sourcePairs[name] ||= { count:0, bikeWorkJ:0, riderWorkJ:0, slipWorkJ:0 };
+            item.count += src.contacts;
+            item.bikeWorkJ += src.bikePowerW * dt;
+            item.riderWorkJ += src.riderPowerW * dt;
+            item.slipWorkJ += src.pairPowerW * dt;
+          }
+          const cw = F.coupled?.workProbe?.sources?.find(x => x.name === "wrench_7_riderWrench");
+          if (cw) {
+            const mismatchW = c.bikePowerW - cw.powerW;
+            I.bikeLedgerMismatchJ += mismatchW * dt;
+            I.peakAbsBikeLedgerPowerMismatchW = Math.max(I.peakAbsBikeLedgerPowerMismatchW, Math.abs(mismatchW));
+          }
+          if (!I.firstContact && c.count) I.firstContact = { t: +(t+dt).toFixed(4), sourceCount: Object.keys(c.categories).length,
+            bikePowerW: c.bikePowerW, riderPowerW: c.riderPowerW, pairPowerW: c.pairPowerW,
+            jointPowerW: c.jointPowerW, groundPowerW: c.groundPowerW, energyResidualJ: c.riderEnergyBudgetResidualJ };
+        }
+      }
+      if (M.work && F.coupled?.workProbe) {
+        const W = M.work, w = F.coupled.workProbe;
+        W.samples++;
+        W.maxForceClosure = Math.max(W.maxForceClosure, w.normForceClosure);
+        W.maxPowerClosureW = Math.max(W.maxPowerClosureW, Math.abs(w.powerClosureW));
+        W.maxPitchClosureNm = Math.max(W.maxPitchClosureNm, Math.abs(w.pitchForceClosureNm));
+        W.totalGeneralizedWorkJ += w.totalStepWorkJ;
+        for (const c of w.sources) {
+          const x = W.categories[c.name] ||= {signedWorkJ: 0, positiveWorkJ: 0, negativeWorkJ: 0, maxAbsPowerW: 0, maxAbsPitchNm: 0};
+          x.signedWorkJ += c.stepWorkJ;
+          x.positiveWorkJ += Math.max(0, c.stepWorkJ);
+          x.negativeWorkJ += Math.min(0, c.stepWorkJ);
+          x.maxAbsPowerW = Math.max(x.maxAbsPowerW, Math.abs(c.powerW));
+          x.maxAbsPitchNm = Math.max(x.maxAbsPitchNm, Math.abs(c.pitchNm));
+        }
+        // Compact per-event provenance, not 540Hz stored snapshots of the 9xN vectors.
+        const snapshot = () => ({t: +(t + dt).toFixed(4), speedMps: Math.hypot(F.v[0], F.v[1]),
+          totalPowerW: w.totalGeneralizedPowerW, frontSlip: w.frontSlip, frontLoadN: w.frontLoadN,
+          rearLoadN: w.rearLoadN, pitchGeneralizedNm: F.coupled.generalizedForce[3],
+          sources: w.sources.map(c => ({name:c.name, pitchNm:c.pitchNm, powerW:c.powerW, general:c.generalized.slice()})),
+          forceClosure: w.normForceClosure, powerClosureW: w.powerClosureW });
+        if (!W.preBrake && t >= .25) W.preBrake = snapshot();
+        if (!W.firstFrontLock && F.tf?.loadN > 100 && F.tf?.kappa <= -.9) W.firstFrontLock = snapshot();
+        if (!W.firstRearLift && s.liftR > .02) W.firstRearLift = snapshot();
+        if (!W.firstVertical && Math.abs(v5bodyAngles(F.q).pitchRad) > 75 * DEGR) W.firstVertical = snapshot();
+        if (!W.firstImpact && F.collisions?.contacts?.length) W.firstImpact = snapshot();
+      }
+      if (M.balance && F.coupled?.balanceProbe) {
+        const b = F.coupled.balanceProbe, B = M.balance;
+        B.samples++;
+        B.peakRelativeResidual = Math.max(B.peakRelativeResidual, b.equationRelativeResidual);
+        B.peakAbsoluteResidualN = Math.max(B.peakAbsoluteResidualN, b.equationResidualNorm);
+        B.peakAbsPitchCrossCouplingNm = Math.max(B.peakAbsPitchCrossCouplingNm, Math.abs(b.pitchCrossCouplingTermNm));
+        B.peakAbsPitchDiagonalNm = Math.max(B.peakAbsPitchDiagonalNm, Math.abs(b.pitchDiagonalInertiaTermNm));
+        B.maxImpulseRelativeResidual = Math.max(B.maxImpulseRelativeResidual, b.jointImpulseRelativeResidual);
+        B.maxAbsJointImpulseEnergyDeltaJ = Math.max(B.maxAbsJointImpulseEnergyDeltaJ, Math.abs(b.jointImpulseDeltaQuadraticKineticJ));
+        if (b.impulseCount) B.jointImpulseFrames++;
+        const snap = () => ({ t: +(t + dt).toFixed(4), pitchResidualNm: b.pitchEquationResidualNm,
+          pitchDiagonalNm: b.pitchDiagonalInertiaTermNm, pitchCrossNm: b.pitchCrossCouplingTermNm,
+          pitchBiasNm: b.pitchBiasNm, pitchForceNm: b.pitchGeneralizedForceNm,
+          equationRelativeResidual: b.equationRelativeResidual,
+          generalizedForceNorm: b.equationRhsNorm, jointImpulseCount: b.impulseCount,
+          impulseRelativeResidual: b.jointImpulseRelativeResidual,
+          impulseDeltaKineticJ: b.jointImpulseDeltaQuadraticKineticJ,
+          matrix: b.matrix, acceleration: b.generalizedAcceleration, rhs: b.generalizedRhs });
+        if (!B.firstFrontLock && F.tf?.loadN > 100 && F.tf?.kappa <= -0.9) B.firstFrontLock = snap();
+        if (!B.firstRearLift && s.liftR > .02) B.firstRearLift = snap();
+        if (!B.firstVertical && Math.abs(v5bodyAngles(F.q).pitchRad) > 75 * DEGR) B.firstVertical = snap();
+        if (!B.firstImpact && F.collisions?.contacts?.length) B.firstImpact = snap();
+      }
+      // Sample the *existing* coupled solver outputs: no recomputation of dynamics,
+      // and no artificial pitch stabilizer. Q[3] is the pitch generalized force in
+      // BODY axes; it cannot be treated as net external torque without the mass
+      // matrix/bias and the nine coupled generalized coordinates.
+      if (M.dynamics && F.coupled) {
+        const c = F.coupled, aX = c.angularAccelBody?.[0] || 0;
+        const qX = c.generalizedForce?.[3] || 0, biasX = c.biasGeneralized?.[3] || 0;
+        const dyn = M.dynamics;
+        dyn.samples++;
+        dyn.peakAbsPitchAccelBodyRadS2 = Math.max(dyn.peakAbsPitchAccelBodyRadS2, Math.abs(aX));
+        dyn.peakAbsPitchGeneralizedForceNm = Math.max(dyn.peakAbsPitchGeneralizedForceNm, Math.abs(qX));
+        dyn.peakAbsPitchBiasNm = Math.max(dyn.peakAbsPitchBiasNm, Math.abs(biasX));
+        dyn.peakGeneralizedSolveConditionProxy = Math.max(dyn.peakGeneralizedSolveConditionProxy, c.solveConditionProxy || 0);
+        dyn.peakMassSymmetryError = Math.max(dyn.peakMassSymmetryError, c.massMatrixSymmetryError || 0);
+        dyn.rotorXPeakAbsNm = Math.max(dyn.rotorXPeakAbsNm, Math.abs(c.rotorMomentumRateBodyNm?.[0] || 0));
+        if (c.jointLimitImpulses?.length) dyn.jointLimitImpulseFrames++;
+        const snapshot = () => ({ t: +(t + dt).toFixed(4), pitchDeg: +(v5bodyAngles(F.q).pitchRad / DEGR).toFixed(3),
+          pitchRateBodyRadS: F.w[0], pitchAccelerationBodyRadS2: aX,
+          pitchGeneralizedForceNm: qX, pitchBiasNm: biasX,
+          pitchMassMatrixDiagonalKgM2: c.massMatrixDiag?.[3],
+          rotorMomentumRatePitchNm: c.rotorMomentumRateBodyNm?.[0],
+          frontFxN: F.tf?.FxN || 0, frontFzN: F.tf?.loadN || 0, frontSlip: F.tf?.kappa || 0,
+          rearFzN: F.tr?.loadN || 0, worldGroundSpeedMps: Math.hypot(F.v[0], F.v[1]),
+          jointLimitImpulses: c.jointLimitImpulses?.length || 0,
+          bodyContacts: F.collisions?.contacts?.map(x => x.name) || [] });
+        if (!dyn.firstLock && F.tf?.loadN > 100 && F.tf?.kappa <= -0.9) dyn.firstLock = snapshot();
+        if (!dyn.firstRearLift && s.liftR > 0.02) dyn.firstRearLift = snapshot();
+        if (!dyn.firstVertical && Math.abs(v5bodyAngles(F.q).pitchRad) > 75 * DEGR) dyn.firstVertical = snapshot();
+        if (!dyn.firstProxyImpact && F.collisions?.contacts?.length) dyn.firstProxyImpact = snapshot();
+      }
+      if (!Number.isFinite(F.p[2]) || !Number.isFinite(F.v[1])) { M.finite = false; M.terminationReason = "nonfinite_state"; break; }
+      // Preserve the first *actual proxy-ground collision* even if a later frame has none.
+      // The old crashT field is a termination flag, not proof of an impact.
+      const bodyContacts = F.collisions?.contacts || [];
+      if (bodyContacts.length && M.firstBodyContactT === null) {
+        M.firstBodyContactT = +t.toFixed(4);
+        M.firstBodyContactName = bodyContacts[0].name;
+      }
       // CoG kinematics for honest accelerations (the body origin swings with pitch)
       const cg = systemCog(F, rider).c, vcg = cogPrev ? [(cg[0] - cogPrev[0]) / dt, (cg[1] - cogPrev[1]) / dt, (cg[2] - cogPrev[2]) / dt] : null;
       cogPrev = cg;
@@ -306,21 +482,55 @@
         M.maxNF = Math.max(M.maxNF, s2.NF); M.maxNR = Math.max(M.maxNR, s2.NR);
         M.maxLiftF = Math.max(M.maxLiftF, s2.liftF); M.maxLiftR = Math.max(M.maxLiftR, s2.liftR);
         if (M.stopT === null && (d.speed || 0) > 1 && s2.speed < 0.3) M.stopT = +t.toFixed(3);
+        // The old stopT is projected onto the bike's body-forward heading. After
+        // overturn it changes sign even while the COM is travelling fast. Preserve
+        // it for compatibility but independently measure world-ground speed.
+        const groundV = Math.hypot(F.v[0], F.v[1]);
+        if (M.groundStopT === null && (d.speed || 0) > 1 && groundV < 0.3) M.groundStopT = +t.toFixed(3);
+        if (M.headingVelocityReversalT === null && s2.speed < -0.3 && groundV > 3)
+          M.headingVelocityReversalT = +t.toFixed(3);
         const L = F.last || {};
         if (M.crashT === null && (L.collision?.contacts?.length || F.collisions?.contacts?.length)) M.crashT = +t.toFixed(3);
         const ptl = pt?.states?.free;
         trace.push({
-          t: +t.toFixed(3), v: +s2.speed.toFixed(2), roll: +(s2.roll / DEGR).toFixed(2), pitch: +(s2.pitch / DEGR).toFixed(2), yawRate: +(s2.yawRate / DEGR).toFixed(2),
+          t: +t.toFixed(3), v: +s2.speed.toFixed(2), groundV: +groundV.toFixed(2), roll: +(s2.roll / DEGR).toFixed(2), pitch: +(s2.pitch / DEGR).toFixed(2), yawRate: +(s2.yawRate / DEGR).toFixed(2),
           steer: +((F.steer || 0) / DEGR).toFixed(2), barNm: +(F.controls.userSteerTorqueNm || 0).toFixed(2), NF: Math.round(s2.NF), NR: Math.round(s2.NR),
-          kF: +s2.kF.toFixed(3), kR: +s2.kR.toFixed(3), aF: +s2.aF.toFixed(2), aR: +s2.aR.toFixed(2), fork: +(F.forkTravel * 1000).toFixed(1),
+          kF: +s2.kF.toFixed(3), kR: +s2.kR.toFixed(3), aF: +s2.aF.toFixed(2), aR: +s2.aR.toFixed(2),
+          ...(opts.probeWork && F.coupled?.workProbe ? {
+            generalizedPowerW: +F.coupled.workProbe.totalGeneralizedPowerW.toFixed(2),
+            forceClosure: F.coupled.workProbe.normForceClosure,
+            workPowerClosure: F.coupled.workProbe.powerClosureW,
+          } : {}),
+          ...(opts.probeBalance && F.coupled?.balanceProbe ? {
+            balanceRelativeResidual: F.coupled.balanceProbe.equationRelativeResidual,
+            balancePitchCrossNm: F.coupled.balanceProbe.pitchCrossCouplingTermNm,
+            balancePitchDiagonalNm: F.coupled.balanceProbe.pitchDiagonalInertiaTermNm,
+            balanceImpulseResidual: F.coupled.balanceProbe.jointImpulseRelativeResidual
+          } : {}),
+          ...(opts.probeDynamics && F.coupled ? { pitchAccelBody: +F.coupled.angularAccelBody[0].toFixed(3),
+            pitchGeneralizedForce: +F.coupled.generalizedForce[3].toFixed(2),
+            pitchBias: +F.coupled.biasGeneralized[3].toFixed(2),
+            pitchInertiaDiag: +F.coupled.massMatrixDiag[3].toFixed(2),
+            rotorPitch: +F.coupled.rotorMomentumRateBodyNm[0].toFixed(3) } : {}), fork: +(F.forkTravel * 1000).toFixed(1),
           liftF: +(s2.liftF * 1000).toFixed(0), liftR: +(s2.liftR * 1000).toFixed(0), thr: +(cmd.throttle || 0).toFixed(2), fb: +(cmd.frontBrakeBar || 0).toFixed(1),
           rb: +(cmd.rearBrakeBar || 0).toFixed(1), rpm: Math.round(ptl?.engine?.rpm || 0), gear: cmd.gear,
           // (opts.extra: a probe's own fields - e.g. the rider's state - at each sample)
           ...(opts.extra ? opts.extra(t) : {}),
         });
       }
-      if (Math.abs(v5bodyAngles(F.q).rollRad) > 1.45) { M.crashT = M.crashT ?? +t.toFixed(3); break; }
+      const attitude = v5bodyAngles(F.q);
+      if (!opts.probeContinuePastAttitude && Math.abs(attitude.rollRad) > 1.45) {
+        M.crashT = M.crashT ?? +t.toFixed(3);
+        M.terminationPitchDeg = +(attitude.pitchRad / DEGR).toFixed(3);
+        M.terminationRollDeg = +(attitude.rollRad / DEGR).toFixed(3);
+        // The previous threshold is preserved, but near vertical pitch its Euler
+        // roll component cannot identify a low-side. Name the mode accordingly.
+        M.terminationReason = Math.abs(attitude.pitchRad) > 75 * DEGR
+          ? "near_vertical_pitch_attitude" : "high_bank_attitude";
+        break;
+      }
     }
+    if (!M.terminationReason && M.firstBodyContactT !== null) M.terminationReason = "body_contact";
     if (d.teardown) d.teardown();
     if (BIO && riderSave) {
       BIO.auto = riderSave.auto;

@@ -411,17 +411,38 @@
   FP._integrateCoupled = function (dt) {
     if (!CH.enabled) return legacyCoupled.call(this, dt);
     const S = this.S, su = this._suspensionForces(), mb = CH.massMatrix ? CH.massMatrix(this) : this._massMatrixAndBias(), Q = Array(9).fill(0);
+    // R6: diagnostic-only generalized force provenance. Observe Q after every
+    // *existing* calculation without evaluating the physics twice. Entries are
+    // in mixed world-translation/body-rotation/joint coordinates and are only
+    // conjugate to the matching generalized velocity vector; they are NOT nine
+    // forces in a common Cartesian frame. Run-time opt-in, off on normal rides.
+    const auditWork = !!this.__motoWorkProbe;
+    const workStages = auditWork ? [] : null;
+    const workMark = auditWork ? (name) => {
+      const last = workStages.length ? workStages[workStages.length - 1].cumulative : null;
+      const now = Q.slice();
+      workStages.push({ name, contribution: now.map((x, i) => x - (last ? last[i] : 0)), cumulative: now });
+    } : null;
     const gF = [0, 0, -S.mUnsprungF * S.g], gR = [0, 0, -S.mUnsprungR * S.g];
     Q[2] -= (CH.sprungGravityMassKg ? CH.sprungGravityMassKg(this) : S.mSprung) * S.g;
+    if (workMark) workMark("sprung_gravity");
     this._addExternalForce(Q, this.tf.force, this.tf.contactPoint, this.FK, "front");
+    if (workMark) workMark("front_tire_force");
     this._addExternalForce(Q, this.tr.force, this.tr.contactPoint, this.RK, "rear");
+    if (workMark) workMark("rear_tire_force");
     this._addExternalMoment(Q, this.tf.aligningMomentWorld, this.FK, "front");
+    if (workMark) workMark("front_aligning_moment");
     this._addExternalMoment(Q, this.tr.aligningMomentWorld, this.RK, "rear");
+    if (workMark) workMark("rear_aligning_moment");
     this._addExternalForce(Q, gF, this.FK.hubW, this.FK, "front");
+    if (workMark) workMark("front_unsprung_gravity");
     this._addExternalForce(Q, gR, this.RK.hubW, this.RK, "rear");
+    if (workMark) workMark("rear_unsprung_gravity");
     Q[7] -= su.frontForceN;
+    if (workMark) workMark("fork_suspension");
     const dzd = v5cross(V5_X, this.RK.rFromPivotBody)[2];
     Q[8] += -su.rearForceN * dzd - S.swingPivotDamping * this.rearRate;
+    if (workMark) workMark("rear_suspension_and_damping");
     const lim = S.steerLimitDeg * DEG;
     let stop = 0;
     if (this.steer < -lim) stop = -S.steerStopK * (this.steer + lim) - S.steerStopC * this.steerRate;
@@ -432,7 +453,9 @@
     const steerStopTau = stop, A = this._assistTorques();
     this.assistState = A;
     Q[4] += A.roll.netTorqueNm;
+    if (workMark) workMark("roll_assist");
     Q[6] += userSteerTau + steerDampTau + steerFricTau + steerStopTau + A.steering.netTorqueNm;
+    if (workMark) workMark("steer_user_friction_damping_assist");
     const spinFB = v5mul(v5norm(this.FK.axleBody), -1), spinRB = [-1, 0, 0];
     const Hf = v5mul(spinFB, S.IwF * this.omegaF), Hr = v5mul(spinRB, S.IwR * this.omegaR);
     const dAxisF = v5mul(v5cross(this.geom.forkAxisBody, spinFB), this.steerRate);
@@ -441,10 +464,52 @@
       v5add(v5mul(dAxisF, S.IwF * this.omegaF), v5cross(this.w, v5add(Hf, Hr))),
     );
     for (let i = 0; i < 3; i++) Q[3 + i] -= rotor[i];
+    if (workMark) workMark("wheel_rotor_body_reaction");
     const gyroSteerRaw = v5dot(v5cross(this.w, Hf), this.geom.forkAxisBody), gyroSteer = gyroSteerRaw * (S.gyroSteerScale ?? 1);
     Q[6] -= gyroSteer;
+    if (workMark) workMark("wheel_gyro_steering");
     const Qlegacy = Q.slice();
-    for (const fn of CH.wrenches) fn(this, Q, dt);
+    let wrenchOrdinal = 0;
+    for (const fn of CH.wrenches) {
+      fn(this, Q, dt);
+      // Two independent rider layers deliberately define functions with the
+      // same JS name. Index by registry position so biomechanical reactions
+      // cannot be silently merged into the older servo rider wrench.
+      if (workMark) workMark("wrench_" + wrenchOrdinal + "_" + (fn.name || "unnamed"));
+      wrenchOrdinal++;
+    }
+    // Form a force/work ledger from the assembled Q and the *pre-step*
+    // generalized velocity. Power is instantaneous qdot·Q in the chosen mixed
+    // coordinates, not a total energy closure: conservative potential changes,
+    // wheel spin, heat, moving M(q), and impacts require separate accounts.
+    let workProbe = null;
+    if (workStages) {
+      const velocity = [this.v[0], this.v[1], this.v[2], this.w[0], this.w[1], this.w[2], this.steerRate, this.forkRate, this.rearRate];
+      const dot = (a, b) => a.reduce((sum, x, i) => sum + x * b[i], 0);
+      const norm = xs => Math.hypot(...xs);
+      const sources = workStages.map(({ name, contribution }) => ({
+        name, generalized: contribution, pitchNm: contribution[3],
+        powerW: dot(contribution, velocity), stepWorkJ: dot(contribution, velocity) * dt,
+      }));
+      const reconstructed = Array.from({length: 9}, (_, i) => sources.reduce((sum, x) => sum + x.generalized[i], 0));
+      const mismatch = Q.map((x, i) => reconstructed[i] - x);
+      const summedPower = sources.reduce((sum, x) => sum + x.powerW, 0);
+      const directPower = dot(Q, velocity);
+      workProbe = {
+        schema: "lucid.core.generalized-work-provenance.r6",
+        frame: "world_translation_body_rotation_joint_rates",
+        velocity: velocity.slice(), dt, sources,
+        totalGeneralizedPowerW: directPower,
+        totalStepWorkJ: directPower * dt,
+        biasGeneralizedPowerW: dot(mb.C, velocity),
+        maxComponentForceClosure: Math.max(...mismatch.map(Math.abs)),
+        normForceClosure: norm(mismatch),
+        powerClosureW: summedPower - directPower,
+        pitchForceClosureNm: reconstructed[3] - Q[3],
+        frontSlip: this.tf?.kappa ?? null, frontLoadN: this.tf?.loadN ?? null,
+        rearLoadN: this.tr?.loadN ?? null,
+      };
+    }
     const rhs = Q.map((x, i) => x - mb.C[i]), sol = v5solveDense(mb.M, rhs), a = sol.x;
     this.energy.rollAssistWorkJ = (this.energy.rollAssistWorkJ || 0) + A.roll.netTorqueNm * this.w[1] * dt;
     this.energy.steerAssistWorkJ = (this.energy.steerAssistWorkJ || 0) + A.steering.netTorqueNm * this.steerRate * dt;
@@ -452,6 +517,10 @@
     this.energy.steerAssistDampingJ = (this.energy.steerAssistDampingJ || 0) + Math.max(0, -A.steering.dampingTorqueNm * this.steerRate) * dt;
     const u = [this.v[0], this.v[1], this.v[2], this.w[0], this.w[1], this.w[2], this.steerRate, this.forkRate, this.rearRate];
     for (let i = 0; i < 9; i++) u[i] += a[i] * dt;
+    // Diagnostic-only pre-impulse velocity. The state vector and integration
+    // below are unchanged. Keep the snapshot only for an explicitly requested
+    // nine-coordinate consistency audit, never for normal riding.
+    const balanceBeforeLimits = this.__motoBalanceProbe ? u.slice() : null;
     const hits = CH.impulseJointLimits ? jointLimitImpulses(this, u, mb.M, dt) : [];
     this.v = [u[0], u[1], u[2]];
     this.w = [u[3], u[4], u[5]];
@@ -480,12 +549,55 @@
       steerTorqueDampingNm: steerDampTau, steerTorqueFrictionNm: steerFricTau, steerTorqueStopNm: steerStopTau,
       steerTorqueAssistNm: A.steering.netTorqueNm, rollTorqueAssistNm: A.roll.netTorqueNm, steerTorqueNetNm: Q[6], rollTorqueNetNm: Q[4], ...su,
     };
+    // Full nine-DOF numerical-equation check (M*a = Q-C) and joint-limit
+    // impulse check (M*delta(u) = J^T*lambda), with the exact matrix and
+    // acceleration the solver just used. This detects solver/algebra failures;
+    // a small residual is NOT evidence of physical model calibration or
+    // global angular momentum/energy conservation.
+    let balanceProbe = null;
+    if (balanceBeforeLimits) {
+      const mul = (mat, vec) => mat.map(row => row.reduce((sum, x, i) => sum + x * vec[i], 0));
+      const norm = vec => Math.hypot(...vec);
+      const ma = mul(mb.M, a), residual = ma.map((v, i) => v - rhs[i]);
+      const delta = u.map((v, i) => v - balanceBeforeLimits[i]);
+      const impulseByDof = Array(9).fill(0);
+      for (const hit of hits) impulseByDof[hit.dof] += hit.impulse;
+      const impulseResidual = mul(mb.M, delta).map((v, i) => v - impulseByDof[i]);
+      const kinetic = vec => 0.5 * vec.reduce((sum, vi, i) => sum + vi * mul(mb.M, vec)[i], 0);
+      const pitchDiag = mb.M[3][3] * a[3];
+      const pitchCross = ma[3] - pitchDiag;
+      balanceProbe = {
+        schema: "lucid.core.nine-dof-residual.v1",
+        equationResidual: residual,
+        equationResidualNorm: norm(residual),
+        equationRelativeResidual: norm(residual) / Math.max(1, norm(rhs), norm(ma)),
+        equationRhsNorm: norm(rhs),
+        equationMassTimesAccelNorm: norm(ma),
+        pitchDiagonalInertiaTermNm: pitchDiag,
+        pitchCrossCouplingTermNm: pitchCross,
+        pitchBiasNm: mb.C[3],
+        pitchGeneralizedForceNm: Q[3],
+        pitchEquationResidualNm: residual[3],
+        impulseCount: hits.length,
+        jointImpulseResidual: impulseResidual,
+        jointImpulseResidualNorm: norm(impulseResidual),
+        jointImpulseRelativeResidual: norm(impulseResidual) / Math.max(1, norm(impulseByDof)),
+        jointImpulseGeneralizedNorm: norm(impulseByDof),
+        jointImpulseDeltaQuadraticKineticJ: hits.length ? kinetic(u) - kinetic(balanceBeforeLimits) : 0,
+        matrix: mb.M.map(row => row.slice()),
+        generalizedAcceleration: a.slice(),
+        generalizedRhs: rhs.slice(),
+        generalizedBias: mb.C.slice(),
+      };
+    }
     this.coupled = {
       schema: "lucid.core.coupled-mass.v1 (V5.5 + chain/aero/feet-down wrenches + impulse joint limits)",
       generalizedAccel: a.slice(), generalizedForce: Q.slice(), legacyGeneralizedForce: Qlegacy, biasGeneralized: mb.C.slice(),
       massMatrixDiag: mb.M.map((r, i) => r[i]), massMatrixSymmetryError: mb.symmetryError, solveConditionProxy: sol.conditionProxy,
       minPivot: sol.minPivot, maxPivot: sol.maxPivot, baseAccelWorld: a.slice(0, 3), angularAccelBody: a.slice(3, 6), rotorMomentumRateBodyNm: rotor,
       frontPointMassKg: S.mUnsprungF, rearPointMassKg: S.mUnsprungR, jointLimitImpulses: hits,
+      ...(balanceProbe ? { balanceProbe } : {}),
+      ...(workProbe ? { workProbe } : {}),
     };
     CH.last.jointLimits = hits;
   };
