@@ -1245,10 +1245,10 @@
       start: { pelvis: [-0.44, -0.16, 0.87], pitch: 30, roll: 0, chest: 30, twist: -15, knee: [-0.36, -0.24, 0.44], kneeDeg: 20, footOff: [-0.01, -0.05, -0.44] },
       stance: [-0.46, -0.05, 0], bikeRollDeg: P.holdLeanDeg, grip: true, balance: true,
       keys: [
-        { T: 0.6, pelvis: [-0.396, -0.227, 0.896], pitch: 63, roll: -18, chest: 42, twist: -15, knee: [-0.449, -0.588, 0.67], kneeDeg: 46, footOff: [-0.111, -0.255, 0.132] },
-        { T: 0.5, pelvis: [-0.312, -0.089, 0.95], pitch: 58, roll: -42, chest: 39, twist: -15, knee: [-0.201, -0.539, 1.042], kneeDeg: 66, footOff: [-0.022, -0.314, 0.113], must: true },
-        { T: 0.5, pelvis: [-0.351, -0.114, 0.95], pitch: 31, roll: -47, chest: 45, twist: -15, knee: [0.029, -0.425, 0.992], kneeDeg: 48, footOff: [0.121, -0.382, 0.257], must: true },
-        { T: 0.45, pelvis: [-0.331, -0.249, 0.936], pitch: 49, roll: -48, chest: 45, twist: -10, knee: [0.144, -0.403, 1.025], kneeDeg: 50, footOff: [-0.049, -0.25, 0.047] },
+        { T: 0.6, pelvis: [-0.427, -0.229, 0.927], pitch: 55, roll: -22, chest: 32, twist: -15, knee: [-0.5, -0.569, 0.696], kneeDeg: 53, footOff: [-0.152, -0.363, 0.18] },
+        { T: 0.5, pelvis: [-0.289, -0.106, 0.95], pitch: 61, roll: -43, chest: 39, twist: -15, knee: [-0.209, -0.555, 1.064], kneeDeg: 76, footOff: [-0.026, -0.43, 0.118], must: true },
+        { T: 0.5, pelvis: [-0.433, -0.105, 0.933], pitch: 38, roll: -38, chest: 41, twist: -15, knee: [-0.035, -0.425, 1.042], kneeDeg: 30, footOff: [0.195, -0.434, 0.309], must: true },
+        { T: 0.45, pelvis: [-0.318, -0.22, 0.94], pitch: 45, roll: -48, chest: 45, twist: -10, knee: [0.157, -0.369, 1.024], kneeDeg: 48, footOff: [-0.043, -0.262, 0.133] },
       ],
       final: { T: 0.5, pelvis: [-0.08, -0.27, 0.95], pitch: 35, roll: -10, chest: 40, twist: -5, knee: [0.24, -0.2, 0.72], kneeDeg: 80, footOff: [0.06, -0.25, -0.2] },
     };

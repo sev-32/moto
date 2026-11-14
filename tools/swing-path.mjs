@@ -6,7 +6,7 @@
 // motion places them). This tool reads that data, so what it checks is what the game runs.
 //
 //   node tools/swing-path.mjs check  mount|dismount [--roll deg] [--steps n] [--verbose]
-//   node tools/swing-path.mjs search mount|dismount [--seed n] [--iters n] [--roll deg]
+//   node tools/swing-path.mjs search mount|dismount [--seed n] [--iters n] [--roll deg] [--clear cm]
 //
 // Along the path (each key reached from the last with the motion's smoothstep, `steps` poses per
 // key, each IK warm-started from the last), the leg as the motion solves it - hip only: the knee
@@ -30,7 +30,7 @@ const args = process.argv.slice(2);
 const cmd = args[0], which = args[1];
 const opt = (name, dflt) => { const i = args.indexOf("--" + name); return i < 0 ? dflt : args[i + 1] === undefined || args[i + 1].startsWith("--") ? true : args[i + 1]; };
 if (!["check", "search"].includes(cmd) || !["mount", "dismount"].includes(which)) {
-  console.error("usage: node tools/swing-path.mjs check|search mount|dismount [--roll deg] [--steps n] [--verbose] [--seed n] [--iters n]");
+  console.error("usage: node tools/swing-path.mjs check|search mount|dismount [--roll deg] [--steps n] [--verbose] [--seed n] [--iters n] [--clear cm]");
   process.exit(2);
 }
 const R = BIO.createRider(character, surfaces), G = globalThis.LUCID_RIDER_ONFOOT.install(R), h = R.helpers, I = R.internal, ikb = I.ikb, H = I.H;
@@ -145,7 +145,8 @@ const cm = (x) => `${(100 * x).toFixed(1)} cm`;
 // seat), the knee missing its target past 3 cm, the standing foot past 2 cm, hip joints at a limit,
 // her weight off her standing foot and her hand off its grip (getting on, where they hold the bike),
 // the standing sole tilted past 3 deg (its heel off the ground)
-const score = (r) => Math.min(r.low, 0.03) + (path0.balance ? 0.3 * Math.min(r.thigh, 0) : 0) - 3 * Math.max(0, r.err - 0.03) - 0.001 * r.hipLim - 2 * Math.max(0, r.stErr - 0.02) - 0.002 * r.stLim - 0.002 * Math.max(0, r.stTilt - 3) - (path0.balance ? Math.max(0, r.comOff) : 0) - (path0.grip ? Math.max(0, r.gripErr - 0.03) : 0);
+const CLEAR = +opt("clear", 3) / 100; // cm of knee / calf / foot clearance the search aims for (default 3)
+const score = (r) => Math.min(r.low, CLEAR) + (path0.balance ? 0.3 * Math.min(r.thigh, 0) : 0) - 3 * Math.max(0, r.err - 0.03) - 0.001 * r.hipLim - 2 * Math.max(0, r.stErr - 0.02) - 0.002 * r.stLim - 0.002 * Math.max(0, r.stTilt - 3) - (path0.balance ? Math.max(0, r.comOff) : 0) - (path0.grip ? Math.max(0, r.gripErr - 0.03) : 0);
 function report(r) {
   console.log(`${which}: ${path0.keys.length} keys and the last, ${STEPS} poses each, the bike leaning ${ROLL} deg`);
   console.log(`  clearance to the envelope: knee, calf and foot ${cm(r.low)} at worst - ${r.lowAt}; the thigh ${cm(r.thigh)}`);
